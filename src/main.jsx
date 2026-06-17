@@ -1,8 +1,11 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
-import App from '@/App.jsx'
-import '@/index.css'
-import { initTheme } from '@/lib/theme'
+// import App from '@/App.jsx'
+// import '@/index.css'
+// import { initTheme } from '@/lib/theme'
+import './index.css'
+import App from './App.jsx'
+import {initTheme} from './lib/theme'
 
 // Strip Alipay return params BEFORE app-params.js reads the URL and caches from_url.
 // Without this, the Alipay callback params pollute localStorage and can interfere with token resolution.

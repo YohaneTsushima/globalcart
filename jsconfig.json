@@ -1,8 +1,9 @@
 {
   "compilerOptions": {
     "baseUrl": ".",
+    "noImplicitAny": false,
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["src/*"]
     },
     "jsx": "react-jsx",
     "module": "esnext",
