@@ -48,39 +48,10 @@
  * The mainPage value must match a key in the PAGES object exactly.
  */
 import Home from './pages/Home';
-import SubmitOrder from './pages/SubmitOrder';
-import MyOrders from './pages/MyOrders.jsx';
-import ShippingRequests from './pages/ShippingRequests';
-import UserPreferences from './pages/UserPreferences';
-import AdminDashboard from './pages/AdminDashboard';
-import AdminOrders from './pages/AdminOrders.jsx';
-import AdminShipping from './pages/AdminShipping';
-import AdminUsers from './pages/AdminUsers';
-import AdminAnnouncements from './pages/AdminAnnouncements';
-import AdminSettings from './pages/AdminSettings';
-import Payment from './pages/Payment';
-import ConsolidationPool from './pages/ConsolidationPool';
-import ShippingPool from './pages/ShippingPool.jsx';
-import AdminShippingPool from './pages/AdminShippingPool.jsx';
 import __Layout from './Layout.jsx';
-
 
 export const PAGES = {
     "Home": Home,
-    "SubmitOrder": SubmitOrder,
-    "MyOrders": MyOrders,
-    "ShippingRequests": ShippingRequests,
-    "UserPreferences": UserPreferences,
-    "AdminDashboard": AdminDashboard,
-    "AdminOrders": AdminOrders,
-    "AdminShipping": AdminShipping,
-    "AdminUsers": AdminUsers,
-    "AdminAnnouncements": AdminAnnouncements,
-    "AdminSettings": AdminSettings,
-    "Payment": Payment,
-    "ConsolidationPool": ConsolidationPool,
-    "ShippingPool": ShippingPool,
-    "AdminShippingPool": AdminShippingPool,
 }
 
 export const pagesConfig = {

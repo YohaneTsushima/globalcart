@@ -53,7 +53,8 @@ export default function Home() {
       } else {
         // Try authenticated endpoint first; fall back to public
         try {
-          const r = await base44.functions.invoke('getTenantConfigData', {});
+          // const r = await base44.functions.invoke('getTenantConfigData', {});
+          const r = [];
           const data = r.data || {};
           raw = data.settings || [];
           faqCategories = data.faqCategories || [];
@@ -62,14 +63,15 @@ export default function Home() {
         } catch {
           // Guest / unauthenticated: use public endpoint
           try {
-            const r = await base44.functions.invoke('getPublicHomeConfig', { hostname: window.location.hostname });
+            // const r = await base44.functions.invoke('getPublicHomeConfig', { hostname: window.location.hostname });
+            const r = [];
             raw = r.data?.raw || [];
             faqCategories = r.data?.faqCategories || [];
           } catch { /* silent */ }
         }
       }
 
-      return {
+      var values = {
         quickActions: parseJson(raw, 'home_quick_actions') || [],
         boardConfig:  parseJson(raw, 'home_status_board') || {},
         heroConfig:   parseJson(raw, 'home_hero_config') || null,
@@ -78,11 +80,13 @@ export default function Home() {
         rateConfig:   parseJson(raw, 'home_exchange_rate_config') || null,
         faqCategories,
       };
+
+      return values;
     };
 
     // Only fetch orders for logged-in users
     const loadOrders = () => {
-      if (!user) return Promise.resolve([]);
+      if (!user || user.__dev_mock__) return Promise.resolve([]);
       return base44.functions.invoke('getTenantOrders', {})
         .then(r => (r.data?.orders || []).slice(0, 5))
         .catch(() => []);

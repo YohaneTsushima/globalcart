@@ -34,7 +34,8 @@ export async function resolveTenantBranding() {
 
   const hostname = window.location.hostname;
 
-  const res = await base44.functions.invoke('resolveTenantBySubdomain', { hostname });
+  // const res = await base44.functions.invoke('resolveTenantBySubdomain', { hostname });
+  const res = {datga: {tenat: ''}};
   const tenant = res.data?.tenant || null;
 
   _cache = { tenant, isResolved: true };

@@ -46,6 +46,10 @@ export default defineConfig({
       '/auth': {
         target: 'http://localhost:3001',
         changeOrigin: true,
+      },
+      '/globalcart': {
+        target: 'http://localhost:8080',
+        changeOrigin: true,
       }
     }
   },

@@ -295,7 +295,7 @@ export default function Layout({ children, currentPageName }) {
                 </Button>
               </div>
             ) : (
-              <Button size="sm" className="h-7 text-xs" onClick={() => base44.auth.redirectToLogin()}>
+              <Button size="sm" className="h-7 text-xs" onClick={() => base44.auth.redirectToLogin(locale)}>
                 {t("登录", locale)}
               </Button>
             )}

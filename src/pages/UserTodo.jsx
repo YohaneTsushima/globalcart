@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { base44 } from "@/api/base44Client";
 import { Link, useNavigate } from "react-router-dom";
+import { t, getLocale } from "@/lib/i18n";
 import { createPageUrl } from "@/utils";
 import {
   Bell, CreditCard, Truck, Package,
@@ -62,7 +63,7 @@ function Section({ icon: Icon, title, count, color, children, emptyText }) {
         <span className="font-semibold text-gray-800 text-sm flex-1">{title}</span>
         {count > 0
           ? <span className={`inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded-full text-xs font-bold text-white ${p.dot}`}>{count > 99 ? "99+" : count}</span>
-          : <span className="text-xs text-gray-400">已清空 ✓</span>
+          : <span className="text-xs text-gray-400">✓</span>
         }
       </div>
       <div className="divide-y divide-gray-50">
@@ -123,9 +124,23 @@ function BulkBar({ count, label, onClick, color = "blue" }) {
 
 // ──────────────────────────────────────────────────────────────────────────
 export default function UserTodo() {
-  const navigate = useNavigate();
+  const navigate = useNavigate();  
+  const [locale, setLocale_] = useState(getLocale());
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
+
+  // 如果没登录，直接跳转登录
+  const token = localStorage.getItem('token');
+
+  if(!token) {
+      base44.auth.redirectToLogin(locale);
+  }
+
+  useEffect(() => {
+    const handler = (e) => setLocale_(e.detail?.locale || getLocale());
+    window.addEventListener('localeChanged', handler);
+    return () => window.removeEventListener('localeChanged', handler);
+  }, []);
   const [initialData, setInitialData] = useState(null); // for notify modal
   const [currentUser, setCurrentUser] = useState(null);
 
@@ -170,7 +185,7 @@ export default function UserTodo() {
   if (loading) return (
     <div className="flex flex-col items-center justify-center py-32 gap-3">
       <div className="w-8 h-8 border-4 border-gray-200 border-t-blue-500 rounded-full animate-spin" />
-      <span className="text-sm text-gray-400">加载待办中...</span>
+      <span className="text-sm text-gray-400">{t("加载待办中...", locale)}</span>
     </div>
   );
 
@@ -244,20 +259,20 @@ export default function UserTodo() {
         <div>
           <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2">
             <Inbox className="w-5 h-5 text-gray-600" />
-            我的待办
+            {t("我的待办", locale)}
           </h1>
           <p className="text-sm text-gray-500 mt-1">
-            {totalTodo > 0 ? `共 ${totalTodo} 项待处理` : "🎉 全部处理完毕，没有待办事项"}
+            {totalTodo > 0 ? `${t("共", locale)} ${totalTodo} ${t("项待处理", locale)}` : `🎉 ${t("全部处理完毕，没有待办事项", locale)}`}
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap justify-end">
           {[
-            { label: "待确认", count: confirmCount, color: "orange" },
-            { label: "待付款", count: payCount,     color: "red" },
-            { label: "通知出货", count: notifyCount,  color: "blue" },
-            { label: "待收货", count: receiveCount,  color: "teal" },
+            { label: t("待确认", locale), count: confirmCount, color: "orange" },
+            { label: t("待付款", locale), count: payCount,     color: "red" },
+            { label: t("通知出货", locale), count: notifyCount,  color: "blue" },
+            { label: t("待收货", locale), count: receiveCount,  color: "teal" },
           ].map(s => s.count > 0 && <StatPill key={s.label} {...s} />)}
-          <button onClick={load} className="p-2 rounded-lg hover:bg-gray-100 text-gray-400 transition-colors" title="刷新">
+          <button onClick={load} className="p-2 rounded-lg hover:bg-gray-100 text-gray-400 transition-colors" title={t("刷新", locale)}>
             <RefreshCw className="w-4 h-4" />
           </button>
         </div>
@@ -270,8 +285,8 @@ export default function UserTodo() {
         <div className="space-y-4">
 
           {/* 待付款 */}
-          <Section icon={CreditCard} title="待付款" count={payCount} color="red" emptyText="暂无待付款项目">
-            <BulkBar count={selPayOrders.length} label="去付款" color="red"
+          <Section icon={CreditCard} title={t("待付款", locale)} count={payCount} color="red" emptyText={t("暂无待付款项目", locale)}>
+            <BulkBar count={selPayOrders.length} label={t("去付款", locale)} color="red"
               onClick={handleBulkPay} />
             {pendingPayOrders.map(o => (
               <Item key={o.id}
@@ -281,35 +296,35 @@ export default function UserTodo() {
                 checkbox={true} checked={selPayOrders.includes(o.id)}
                 onCheck={c => toggleSel(setSelPayOrders, o.id, c)}
                 onRowClick={() => setOrderDetailModal(o)}
-                action="去付款"
+                action={t("去付款", locale)}
                 onAction={() => handleSinglePay(o)}
               />
             ))}
             {pendingPayPools.map(p => (
               <Item key={p.id}
-                label={p.pool_code || p.title || "发货申请"}
-                sub="发货运费待支付"
+                label={p.pool_code || p.title || t("发货申请", locale)}
+                sub={t("发货运费待支付", locale)}
                 badge={fmtJpy(p.shipping_fee_jpy) ? { text: fmtJpy(p.shipping_fee_jpy), cls: "bg-red-100 text-red-700 font-semibold" } : undefined}
                 onRowClick={() => setPoolDetailModal(p)}
-                action="查看详情"
+                action={t("查看详情", locale)}
                 onAction={() => setPoolDetailModal(p)}
               />
             ))}
           </Section>
 
           {/* 待通知出货 */}
-          <Section icon={Truck} title="待通知出货" count={notifyCount} color="blue" emptyText="暂无待通知出货订单">
-            <BulkBar count={selNotifyOrders.length} label="批量通知出货"
+          <Section icon={Truck} title={t("待通知出货", locale)} count={notifyCount} color="blue" emptyText={t("暂无待通知出货订单", locale)}>
+            <BulkBar count={selNotifyOrders.length} label={t("批量通知出货", locale)}
               onClick={handleBulkNotify} />
             {pendingNotifyOrders.map(o => (
               <Item key={o.id}
                 label={o.product_name}
-                sub={`${o.order_number || ""} · 已入库，可通知发货`}
-                badge={{ text: "已入库", cls: "bg-green-100 text-green-700" }}
+                sub={`${o.order_number || ""} · ${t("已入库，可通知发货", locale)}`}
+                badge={{ text: t("已入库", locale), cls: "bg-green-100 text-green-700" }}
                 checkbox={true} checked={selNotifyOrders.includes(o.id)}
                 onCheck={c => toggleSel(setSelNotifyOrders, o.id, c)}
                 onRowClick={() => setOrderDetailModal(o)}
-                action="通知出货"
+                action={t("通知出货", locale)}
                 onAction={() => handleSingleNotify(o)}
               />
             ))}
@@ -317,14 +332,14 @@ export default function UserTodo() {
 
           {/* 待补充信息 */}
           {infoCount > 0 && (
-            <Section icon={ClipboardList} title="待补充信息" count={infoCount} color="yellow" emptyText="暂无待补充项目">
+            <Section icon={ClipboardList} title={t("待补充信息", locale)} count={infoCount} color="yellow" emptyText={t("暂无待补充项目", locale)}>
               {needsInfoOrders.map(o => (
                 <Item key={o.id}
                   label={o.product_name}
-                  sub="请完善商品链接或图片等信息"
-                  badge={{ text: "信息不完整", cls: "bg-yellow-100 text-yellow-700" }}
+                  sub={t("请完善商品链接或图片等信息", locale)}
+                  badge={{ text: t("信息不完整", locale), cls: "bg-yellow-100 text-yellow-700" }}
                   onRowClick={() => setOrderDetailModal(o)}
-                  action="查看详情"
+                  action={t("查看详情", locale)}
                   onAction={() => setOrderDetailModal(o)}
                 />
               ))}
@@ -336,48 +351,48 @@ export default function UserTodo() {
         <div className="space-y-4">
 
           {/* 待收货 */}
-          <Section icon={Package} title="待收货" count={receiveCount} color="teal" emptyText="暂无在途包裹">
+          <Section icon={Package} title={t("待收货", locale)} count={receiveCount} color="teal" emptyText={t("暂无在途包裹", locale)}>
             {pendingReceiveOrders.map(o => (
               <Item key={o.id}
                 label={o.product_name}
-                sub={o.tracking_number ? `运单号: ${o.tracking_number}` : (o.order_number || "")}
-                badge={{ text: STATUS_LABEL[o.order_status] || "运输中", cls: "bg-teal-100 text-teal-700" }}
+                sub={o.tracking_number ? `${t("运单号", locale)}: ${o.tracking_number}` : (o.order_number || "")}
+                badge={{ text: STATUS_LABEL[o.order_status] || t("运输中", locale), cls: "bg-teal-100 text-teal-700" }}
                 onRowClick={() => setOrderDetailModal(o)}
-                action="查看详情"
+                action={t("查看详情", locale)}
                 onAction={() => setOrderDetailModal(o)}
               />
             ))}
             {pendingReceivePools.map(p => (
               <Item key={p.id}
-                label={p.pool_code || p.title || "发货申请"}
-                sub={p.tracking_number ? `运单号: ${p.tracking_number}` : "发货申请已发出"}
-                badge={{ text: "已发货", cls: "bg-teal-100 text-teal-700" }}
+                label={p.pool_code || p.title || t("发货申请", locale)}
+                sub={p.tracking_number ? `${t("运单号", locale)}: ${p.tracking_number}` : t("发货申请已发出", locale)}
+                badge={{ text: t("已发货", locale), cls: "bg-teal-100 text-teal-700" }}
                 onRowClick={() => setPoolDetailModal(p)}
-                action="查看详情"
+                action={t("查看详情", locale)}
                 onAction={() => setPoolDetailModal(p)}
               />
             ))}
           </Section>
 
           {/* 待确认 */}
-          <Section icon={Bell} title="待确认" count={confirmCount} color="orange" emptyText="暂无待确认项目">
+          <Section icon={Bell} title={t("待确认", locale)} count={confirmCount} color="orange" emptyText={t("暂无待确认项目", locale)}>
             {pendingAnnouncements.map(a => (
               <Item key={a.id}
                 icon={Megaphone} iconCls="text-orange-400"
                 label={a.title}
-                sub="新公告"
-                badge={{ text: a.type === "urgent" ? "紧急" : "公告", cls: a.type === "urgent" ? "bg-red-100 text-red-700" : "bg-orange-100 text-orange-700" }}
-                action="查看"
+                sub={t("新公告", locale)}
+                badge={{ text: a.type === "urgent" ? t("紧急", locale) : t("公告", locale), cls: a.type === "urgent" ? "bg-red-100 text-red-700" : "bg-orange-100 text-orange-700" }}
+                action={t("查看", locale)}
                 onAction={() => navigate(createPageUrl("Home"))}
               />
             ))}
             {unreadNotifs.map(n => (
               <Item key={n.id}
                 icon={Bell} iconCls="text-blue-400"
-                label={n.title || n.subject || "新通知"}
+                label={n.title || n.subject || t("新通知", locale)}
                 sub={n.message?.slice(0, 60)}
-                badge={{ text: "未读", cls: "bg-blue-100 text-blue-700" }}
-                action="查看"
+                badge={{ text: t("未读", locale), cls: "bg-blue-100 text-blue-700" }}
+                action={t("查看", locale)}
                 onAction={() => navigate(createPageUrl("Notifications"))}
               />
             ))}
@@ -385,31 +400,31 @@ export default function UserTodo() {
               <Item key={o.id}
                 icon={MessageSquare} iconCls="text-purple-400"
                 label={o.product_name}
-                sub={`管理员回复了留言 · ${o.order_number || ""}`}
-                badge={{ text: "新留言", cls: "bg-purple-100 text-purple-700" }}
+                sub={`${t("管理员回复了留言", locale)} · ${o.order_number || ""}`}
+                badge={{ text: t("新留言", locale), cls: "bg-purple-100 text-purple-700" }}
                 onRowClick={() => setOrderDetailModal(o)}
-                action="查看详情"
+                action={t("查看详情", locale)}
                 onAction={() => setOrderDetailModal(o)}
               />
             ))}
             {poolsWithAdminMsg.map(p => (
               <Item key={p.id}
                 icon={MessageSquare} iconCls="text-purple-400"
-                label={p.pool_code || p.title || "发货申请"}
-                sub="管理员回复了留言"
-                badge={{ text: "新留言", cls: "bg-purple-100 text-purple-700" }}
+                label={p.pool_code || p.title || t("发货申请", locale)}
+                sub={t("管理员回复了留言", locale)}
+                badge={{ text: t("新留言", locale), cls: "bg-purple-100 text-purple-700" }}
                 onRowClick={() => setPoolDetailModal(p)}
-                action="查看详情"
+                action={t("查看详情", locale)}
                 onAction={() => setPoolDetailModal(p)}
               />
             ))}
             {faqQuestions.map(q => (
               <Item key={q.id}
                 icon={HelpCircle} iconCls="text-teal-400"
-                label={q.question?.slice(0, 45) || "我的提问"}
-                sub="管理员已回复您的问题"
-                badge={{ text: "有回复", cls: "bg-teal-100 text-teal-700" }}
-                action="查看"
+                label={q.question?.slice(0, 45) || t("我的提问", locale)}
+                sub={t("管理员已回复您的问题", locale)}
+                badge={{ text: t("有回复", locale), cls: "bg-teal-100 text-teal-700" }}
+                action={t("查看", locale)}
                 onAction={() => navigate(createPageUrl("helpcenter/faq"))}
               />
             ))}
@@ -421,9 +436,9 @@ export default function UserTodo() {
       {/* ── Quick links ────────────────────────────────────────────────── */}
       <div className="grid grid-cols-3 gap-2 pt-1">
         {[
-          { label: "我的订单", icon: Package, to: "MyOrders" },
-          { label: "发货申请", icon: Truck,   to: "ShippingPool" },
-          { label: "通知中心", icon: Bell,    to: "Notifications" },
+          { label: t("我的订单", locale), icon: Package, to: "MyOrders" },
+          { label: t("发货申请", locale), icon: Truck,   to: "ShippingPool" },
+          { label: t("通知中心", locale), icon: Bell,    to: "Notifications" },
         ].map(({ label, icon: Icon, to }) => (
           <Link key={to} to={createPageUrl(to)}
             className="flex items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white hover:bg-gray-50 hover:border-gray-300 transition-colors px-4 py-3 text-sm font-medium text-gray-600 shadow-sm">

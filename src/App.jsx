@@ -1,4 +1,5 @@
-import { Toaster } from "@/components/ui/toaster"
+import { Toaster } from "@/components/ui/toaster";
+import { Toaster as SonnerToaster } from "sonner";
 import { QueryClientProvider } from '@tanstack/react-query'
 import { queryClientInstance } from '@/lib/query-client'
 import { pagesConfig } from './pages.config'
@@ -35,6 +36,22 @@ import AdminFaq from '@/pages/AdminFaq';
 import UserTodo from '@/pages/UserTodo';
 import SubmitTicketOrder from '@/pages/SubmitTicketOrder';
 import AdminTicketOrders from '@/pages/AdminTicketOrders';
+import Login from '@/pages/Login';
+import ProtectedRoute from '@/components/ProtectedRoute';
+import SubmitOrder from '@/pages/SubmitOrder';
+import MyOrders from '@/pages/MyOrders.jsx';
+import ShippingRequests from '@/pages/ShippingRequests';
+import UserPreferences from '@/pages/UserPreferences';
+import AdminDashboard from '@/pages/AdminDashboard';
+import AdminOrders from '@/pages/AdminOrders.jsx';
+import AdminShipping from '@/pages/AdminShipping';
+import AdminUsers from '@/pages/AdminUsers';
+import AdminAnnouncements from '@/pages/AdminAnnouncements';
+import AdminSettings from '@/pages/AdminSettings';
+import Payment from '@/pages/Payment';
+import ConsolidationPool from '@/pages/ConsolidationPool';
+import ShippingPool from '@/pages/ShippingPool.jsx';
+import AdminShippingPool from '@/pages/AdminShippingPool.jsx';
 
 // 初始化订单控制器注册中心
 import '@/components/orders/controllers';
@@ -141,11 +158,25 @@ const AuthenticatedApp = () => {
           <AdminFeeRules />
         </LayoutWrapper>
       } />
-      <Route path="/:locale/PreShipmentForm" element={
-        <LayoutWrapper currentPageName="PreShipmentForm">
-          <PreShipmentForm />
-        </LayoutWrapper>
-      } />
+      {/* ===== 需要登录才能访问的路由 ===== */}
+      <Route element={<ProtectedRoute />}>
+        <Route path="/:locale/SubmitOrder" element={<LayoutWrapper currentPageName="SubmitOrder"><SubmitOrder /></LayoutWrapper>} />
+        <Route path="/:locale/MyOrders" element={<LayoutWrapper currentPageName="MyOrders"><MyOrders /></LayoutWrapper>} />
+        <Route path="/:locale/ShippingRequests" element={<LayoutWrapper currentPageName="ShippingRequests"><ShippingRequests /></LayoutWrapper>} />
+        <Route path="/:locale/UserPreferences" element={<LayoutWrapper currentPageName="UserPreferences"><UserPreferences /></LayoutWrapper>} />
+        <Route path="/:locale/AdminDashboard" element={<LayoutWrapper currentPageName="AdminDashboard"><AdminDashboard /></LayoutWrapper>} />
+        <Route path="/:locale/AdminOrders" element={<LayoutWrapper currentPageName="AdminOrders"><AdminOrders /></LayoutWrapper>} />
+        <Route path="/:locale/AdminShipping" element={<LayoutWrapper currentPageName="AdminShipping"><AdminShipping /></LayoutWrapper>} />
+        <Route path="/:locale/AdminUsers" element={<LayoutWrapper currentPageName="AdminUsers"><AdminUsers /></LayoutWrapper>} />
+        <Route path="/:locale/AdminAnnouncements" element={<LayoutWrapper currentPageName="AdminAnnouncements"><AdminAnnouncements /></LayoutWrapper>} />
+        <Route path="/:locale/AdminSettings" element={<LayoutWrapper currentPageName="AdminSettings"><AdminSettings /></LayoutWrapper>} />
+        <Route path="/:locale/Payment" element={<LayoutWrapper currentPageName="Payment"><Payment /></LayoutWrapper>} />
+        <Route path="/:locale/ConsolidationPool" element={<LayoutWrapper currentPageName="ConsolidationPool"><ConsolidationPool /></LayoutWrapper>} />
+        <Route path="/:locale/ShippingPool" element={<LayoutWrapper currentPageName="ShippingPool"><ShippingPool /></LayoutWrapper>} />
+        <Route path="/:locale/AdminShippingPool" element={<LayoutWrapper currentPageName="AdminShippingPool"><AdminShippingPool /></LayoutWrapper>} />
+        <Route path="/:locale/PreShipmentForm" element={<LayoutWrapper currentPageName="PreShipmentForm"><PreShipmentForm /></LayoutWrapper>} />
+      </Route>
+
       <Route path="/:locale/GroupBuy" element={
         <LayoutWrapper currentPageName="GroupBuy">
           <GroupBuy />
@@ -279,6 +310,13 @@ const AuthenticatedApp = () => {
         </LayoutWrapper>
       } />
       
+      <Route path="/:locale/Login" element={
+        <LayoutWrapper currentPageName="Login">
+          <Login />
+        </LayoutWrapper>
+      } />
+
+      
       <Route path="*" element={<Navigate to={`/${getPreferredLocale()}`} replace />} />
     </Routes>
   );
@@ -288,12 +326,13 @@ function App() {
   return (
     <AuthProvider>
       <QueryClientProvider client={queryClientInstance}>
-        <Router>
+        <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
           <LocaleProvider>
             <AuthenticatedApp />
           </LocaleProvider>
         </Router>
         <Toaster />
+        <SonnerToaster position="top-center" richColors />
       </QueryClientProvider>
     </AuthProvider>
   )

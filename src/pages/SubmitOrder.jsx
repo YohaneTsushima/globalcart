@@ -78,13 +78,13 @@ export default function SubmitOrder() {
       t.done('data ready');
     }).catch(() => {});
     
-    base44.functions.invoke('managePaymentMethod', { action: 'list' })
-      .then((r) => { setPaymentMethods(r.data?.methods || []); })
-      .catch(() => {});
+    // base44.functions.invoke('managePaymentMethod', { action: 'list' })
+    //   .then((r) => { setPaymentMethods(r.data?.methods || []); })
+    //   .catch(() => {});
     
-    base44.functions.invoke('getTenantShippingPools', { action: 'list_shipping_methods' })
-      .then((r) => { setShippingMethods(r.data?.methods || []); })
-      .catch(() => {});
+    // base44.functions.invoke('getTenantShippingPools', { action: 'list_shipping_methods' })
+    //   .then((r) => { setShippingMethods(r.data?.methods || []); })
+    //   .catch(() => {});
   }, []);
 
   const getAddonTotal = () => selectedAddons.reduce((sum, id) => {

@@ -32,26 +32,27 @@ export default function NotificationBellComponent() {
   const { data: unreadData, refetch: refetchUnread } = useQuery({
     queryKey: ['notification-unread-count'],
     queryFn: async () => {
-      const res = await base44.functions.invoke('getUnreadNotificationCount', {});
+      // const res = await base44.functions.invoke('getUnreadNotificationCount', {});
+      const res = {data: ''};
       return res.data;
-    },
-    refetchInterval: 30000,
+    }
   });
 
   // 始终在后台预取最近通知（跟随未读数 30 秒轮询），点开铃铛时即刻显示，无需等待加载
   const { data: notificationsData } = useQuery({
     queryKey: ['notification-recent-unread'],
     queryFn: async () => {
-      const res = await base44.functions.invoke('getUserNotifications', { limit: 7, skip: 0 });
+      // const res = await base44.functions.invoke('getUserNotifications', { limit: 7, skip: 0 });
+      const res = {data: ''};
       return res.data;
     },
-    staleTime: 25000,
-    refetchInterval: 30000,
+    staleTime: 25000
   });
 
   const markAsReadMutation = useMutation({
     mutationFn: async ({ notification_id, mark_all_read = false }) => {
-      const res = await base44.functions.invoke('markNotificationAsRead', { notification_id, mark_all_read });
+      // const res = await base44.functions.invoke('markNotificationAsRead', { notification_id, mark_all_read });
+      const res = {data: ''};
       return res.data;
     },
     onSuccess: () => {

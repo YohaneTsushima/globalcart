@@ -3,6 +3,9 @@ import { createPageUrl } from "@/utils";
 import { ShoppingBag, Globe } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { base44 } from "@/api/base44Client";
+import { useNavigate } from 'react-router-dom';
+import { useLocale, useTranslation } from '@/lib/LocaleContext';
+import { useState, useEffect } from "react";
 
 // 默认配置
 export const DEFAULT_HERO = {
@@ -41,7 +44,14 @@ function resolveAudienceConfig(config, user) {
 }
 
 export default function HeroSection({ config, user, tenant, rateOverlay = null, ratePosition = "hero_right" }) {
+  const { t } = useTranslation();
+  const { locale } = useLocale();
+
+  DEFAULT_HERO.badgeText = t(DEFAULT_HERO.badgeText);
+
+  DEFAULT_HERO.badgeText = t(DEFAULT_HERO.badgeText);
   const c = { ...DEFAULT_HERO, ...resolveAudienceConfig(config, user) };
+  
 
   const buttons = (c.buttons || []).filter(b => {
     if (b.loggedInOnly && !user) return false;
@@ -79,6 +89,8 @@ export default function HeroSection({ config, user, tenant, rateOverlay = null, 
   const textOnImage = hasImageBg;
   const textOnDarkColor = c.bgMode === "color" && c.bgColor && c.bgColor !== "#ffffff";
   const useWhiteText = textOnImage || textOnDarkColor;
+
+  const navigate = useNavigate();
 
   return (
     <div
@@ -119,10 +131,10 @@ export default function HeroSection({ config, user, tenant, rateOverlay = null, 
           </div>
         )}
         <h1 className={`text-2xl font-bold mb-2 ${useWhiteText ? "text-white drop-shadow" : "text-gray-900"}`}>
-          {c.title || tenant?.login_title || "同一物流 · Tongyi Express"}
+          {c.title || tenant?.login_title || t("同一物流 · Tongyi Express")}
         </h1>
         <p className={`mb-6 max-w-md mx-auto text-sm ${useWhiteText ? "text-white/75 drop-shadow" : "text-gray-500"}`}>
-          {c.subtitle || tenant?.login_subtitle || "专业代购日本商品，安心付款，全程追踪，极速发货至全球各地"}
+          {c.subtitle || tenant?.login_subtitle || t("专业代购日本商品，安心付款，全程追踪，极速发货至全球各地")}
         </p>
         <div className="flex gap-3 justify-center flex-wrap">
           {buttons.map((btn, i) => {
@@ -154,10 +166,10 @@ export default function HeroSection({ config, user, tenant, rateOverlay = null, 
                 variant={isOutline ? "outline" : "default"}
                 style={btnStyle}
                 className={!isOutline && !btn.color ? "bg-red-600 hover:bg-red-700" : ""}
-                onClick={!btn.page && !user ? () => base44.auth.redirectToLogin() : undefined}
+                onClick={!btn.page && !user ? () => base44.auth.redirectToLogin(locale) : undefined}
               >
                 {btn.icon === "ShoppingBag" && <ShoppingBag className="w-4 h-4 mr-2" />}
-                {btn.label}
+                {t(btn.label)}
               </Button>
             );
           })}

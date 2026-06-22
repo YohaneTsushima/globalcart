@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { t, getLocale } from '@/lib/i18n';
 
 const LocaleContext = createContext(null);
 
@@ -85,4 +86,9 @@ export function useLocale() {
     throw new Error('useLocale must be used within a LocaleProvider');
   }
   return context;
+}
+
+export function useTranslation() {
+  const { locale } = useContext(LocaleContext);
+  return { t: (key) => t(key, locale), locale };
 }

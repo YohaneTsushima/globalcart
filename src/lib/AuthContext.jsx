@@ -19,14 +19,19 @@ export const AuthProvider = ({ children }) => {
   useEffect(() => {
     // Resolve tenant branding from subdomain in parallel with app state check
     resolveTenantBranding().then(b => setTenantBranding(b)).catch(() => setTenantBranding({ tenant: null }));
-    checkAppState();
+    // --- LOCAL DEV ONLY: skip checkAppState, uncomment below for production ---
+    // checkAppState();   ← 已注释掉
+    setIsLoadingAuth(false);
+    setIsLoadingPublicSettings(false);
+    setIsAuthenticated(true);
+    // setUser({ id: 'dev', full_name: 'Dev User', email: 'dev@test.com', role: 'user', __dev_mock__: true });
   }, []);
 
   const checkAppState = async () => {
     try {
       setIsLoadingPublicSettings(true);
       setAuthError(null);
-      
+
       // First, check app public settings (with token if available)
       // This will tell us if auth is required, user not registered, etc.
       try {
@@ -97,6 +102,7 @@ export const AuthProvider = ({ children }) => {
     try {
       // Now check if the user is authenticated
       setIsLoadingAuth(true);
+      debugger
       const currentUser = await base44.auth.me();
       setUser(currentUser);
       setIsAuthenticated(true);
@@ -104,6 +110,7 @@ export const AuthProvider = ({ children }) => {
 
       // Check account suspension + load granular permissions in background (non-blocking)
       base44.functions.invoke('getMyStatus', {}).then(r => {
+        console.log(r);
         if (r?.data?.is_active === false) {
           setAuthError({ type: 'account_suspended', message: '您的账户已被停用，请联系管理员。' });
         }
@@ -151,7 +158,7 @@ export const AuthProvider = ({ children }) => {
     <AuthContext.Provider value={{ 
       user,
       setUser,
-      isAuthenticated, 
+      isAuthenticated: true, 
       isLoadingAuth,
       isLoadingPublicSettings,
       authError,
@@ -162,7 +169,9 @@ export const AuthProvider = ({ children }) => {
       assignedRoles,
       logout,
       navigateToLogin,
-      checkAppState
+      checkAppState,
+      checkUserAuth,
+      authChecked: !isLoadingAuth,
     }}>
       {children}
     </AuthContext.Provider>
