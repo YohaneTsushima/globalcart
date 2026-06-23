@@ -288,16 +288,16 @@ export default function Layout({ children, currentPageName }) {
             )}
             {user ? (
               <div className="flex items-center gap-2">
-                <span className="text-sm text-gray-600 hidden sm:inline">{user.full_name || user.email}</span>
+                <span className="text-sm text-gray-600 hidden sm:inline">{user.displayName || user.userEmail}</span>
                 <Button variant="ghost" size="sm" className="text-gray-500 h-7 px-2"
                   onClick={() => base44.auth.logout()}>
                   <LogOut className="w-3.5 h-3.5" />
                 </Button>
               </div>
             ) : (
-              <Button size="sm" className="h-7 text-xs" onClick={() => base44.auth.redirectToLogin(locale)}>
-                {t("登录", locale)}
-              </Button>
+              <Badge className="bg-gray-100 text-gray-500 border-gray-200 text-xs">
+                {t("游客", locale)}
+              </Badge>
             )}
           </div>
         </div>

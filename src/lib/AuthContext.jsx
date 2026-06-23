@@ -1,176 +1,172 @@
 import React, { createContext, useState, useContext, useEffect } from 'react';
 import { base44 } from '@/api/base44Client';
-import { appParams } from '@/lib/app-params';
 import { resolveTenantBranding } from '@/lib/tenantBranding';
 
 const AuthContext = createContext();
+
+const AUTH_CACHE_KEY = 'auth_cache';
+
+const readAuthCache = () => {
+  try {
+    const raw = localStorage.getItem(AUTH_CACHE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+};
+
+const writeAuthCache = (data) => {
+  try {
+    localStorage.setItem(AUTH_CACHE_KEY, JSON.stringify(data));
+  } catch {}
+};
+
+const clearAuthCache = () => {
+  localStorage.removeItem('token');
+  localStorage.removeItem(AUTH_CACHE_KEY);
+};
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isLoadingAuth, setIsLoadingAuth] = useState(true);
-  const [isLoadingPublicSettings, setIsLoadingPublicSettings] = useState(true);
   const [authError, setAuthError] = useState(null);
-  const [appPublicSettings, setAppPublicSettings] = useState(null);
-  const [tenantBranding, setTenantBranding] = useState(null); // { tenant: {...} | null }
-  const [permissions, setPermissions] = useState([]); // effective granular permissions for current user
-  const [assignedRoles, setAssignedRoles] = useState([]); // custom role labels assigned to user
+  const [tenantBranding, setTenantBranding] = useState(null);
+  const [permissions, setPermissions] = useState([]);
+  const [assignedRoles, setAssignedRoles] = useState([]);
 
   useEffect(() => {
-    // Resolve tenant branding from subdomain in parallel with app state check
     resolveTenantBranding().then(b => setTenantBranding(b)).catch(() => setTenantBranding({ tenant: null }));
-    // --- LOCAL DEV ONLY: skip checkAppState, uncomment below for production ---
-    // checkAppState();   ← 已注释掉
+
+    const token = localStorage.getItem('token');
+    
+    if (token) {
+      const cache = readAuthCache();
+      if (cache) {
+        setUser(cache.user || null);
+        setPermissions(Array.isArray(cache.permissions) ? cache.permissions : []);
+        setAssignedRoles(Array.isArray(cache.assigned_roles) ? cache.assigned_roles : []);
+        if (cache.is_active === false) {
+          setAuthError({ type: 'account_suspended', message: '您的账户已被停用，请联系管理员。' });
+        }
+        setIsAuthenticated(true);
+      }
+    }
     setIsLoadingAuth(false);
-    setIsLoadingPublicSettings(false);
-    setIsAuthenticated(true);
-    // setUser({ id: 'dev', full_name: 'Dev User', email: 'dev@test.com', role: 'user', __dev_mock__: true });
   }, []);
 
-  const checkAppState = async () => {
+  const login = async (username, verifyCode) => {
+    setAuthError(null);
     try {
-      setIsLoadingPublicSettings(true);
-      setAuthError(null);
-
-      // First, check app public settings (with token if available)
-      // This will tell us if auth is required, user not registered, etc.
-      try {
-        const headers = { 'X-App-Id': appParams.appId };
-        if (appParams.token) headers['Authorization'] = `Bearer ${appParams.token}`;
-        const resp = await fetch(`/api/apps/public/prod/public-settings/by-id/${appParams.appId}`, { headers });
-        if (!resp.ok) {
-          const data = await resp.json().catch(() => ({}));
-          const err = new Error(data?.message || 'Failed to load app');
-          err.status = resp.status;
-          err.data = data;
-          throw err;
-        }
-        const publicSettings = await resp.json();
-        setAppPublicSettings(publicSettings);
-        
-        // If we got the app public settings successfully, check if user is authenticated
-        if (appParams.token) {
-          await checkUserAuth();
-        } else {
-          setIsLoadingAuth(false);
-          setIsAuthenticated(false);
-        }
-        setIsLoadingPublicSettings(false);
-      } catch (appError) {
-        console.error('App state check failed:', appError);
-        
-        // Handle app-level errors
-        if (appError.status === 403 && appError.data?.extra_data?.reason) {
-          const reason = appError.data.extra_data.reason;
-          if (reason === 'auth_required') {
-            setAuthError({
-              type: 'auth_required',
-              message: 'Authentication required'
-            });
-          } else if (reason === 'user_not_registered') {
-            setAuthError({
-              type: 'user_not_registered',
-              message: 'User not registered for this app'
-            });
-          } else {
-            setAuthError({
-              type: reason,
-              message: appError.message
-            });
-          }
-        } else {
-          setAuthError({
-            type: 'unknown',
-            message: appError.message || 'Failed to load app'
-          });
-        }
-        setIsLoadingPublicSettings(false);
-        setIsLoadingAuth(false);
-      }
-    } catch (error) {
-      console.error('Unexpected error:', error);
-      setAuthError({
-        type: 'unknown',
-        message: error.message || 'An unexpected error occurred'
+      const r = await base44.functions.invoke('user/preference/loginOrRegister', {
+        username,
+        verifyCode
       });
-      setIsLoadingPublicSettings(false);
-      setIsLoadingAuth(false);
+
+      const token = r?.token || r?.access_token || r?.data?.token || r?.data?.access_token;
+      if (!token) {
+        setAuthError({ type: 'login_failed', message: '登录失败，未收到 token' });
+        return { ok: false, error: 'no_token' };
+      }
+      localStorage.setItem('token', token);
+
+      const u = r?.user || r?.data?.user || null;
+      const perms = Array.isArray(r?.permissions) ? r.permissions : (Array.isArray(r?.data?.permissions) ? r.data.permissions : []);
+      const roles = Array.isArray(r?.assigned_roles) ? r.assigned_roles : (Array.isArray(r?.data?.assigned_roles) ? r.data.assigned_roles : []);
+      const isActive = r?.is_active ?? r?.data?.is_active ?? true;
+
+      setUser(u);
+      setPermissions(perms);
+      setAssignedRoles(roles);
+      setIsAuthenticated(true);
+
+      writeAuthCache({ user: u, permissions: perms, assigned_roles: roles, is_active: isActive });
+
+      if (isActive === false) {
+        setAuthError({ type: 'account_suspended', message: '您的账户已被停用，请联系管理员。' });
+        return { ok: false, error: 'account_suspended' };
+      }
+      return { ok: true };
+    } catch (error) {
+      console.error('login failed:', error);
+      setIsAuthenticated(false);
+      setUser(null);
+      const msg = error?.response?.data?.message || error?.message || '登录失败，请检查验证码';
+      setAuthError({ type: 'login_failed', message: msg });
+      return { ok: false, error: msg };
     }
   };
 
-  const checkUserAuth = async () => {
+  // OAuth2 登录：后端回调带 token + userId，前端存 token 后调 /auth/me 拿用户全量数据
+  const loginWithToken = async (token, userId) => {
+    setAuthError(null);
+    if (!token) {
+      setAuthError({ type: 'login_failed', message: '登录失败，未收到 token' });
+      return { ok: false, error: 'no_token' };
+    }
+    localStorage.setItem('token', token);
     try {
-      // Now check if the user is authenticated
-      setIsLoadingAuth(true);
-      debugger
-      const currentUser = await base44.auth.me();
-      setUser(currentUser);
-      setIsAuthenticated(true);
-      setIsLoadingAuth(false);
+      const me = await base44.auth.me(userId);
+      const u = me?.user || me?.data || me || null;
+      const perms = Array.isArray(me?.permissions) ? me.permissions : (Array.isArray(me?.data?.permissions) ? me.data.permissions : []);
+      const roles = Array.isArray(u?.role) ? u.role : (Array.isArray(u?.data?.role) ? u.data.role : []);
+      const isActive = me?.is_active ?? me?.data?.is_active ?? true;
 
-      // Check account suspension + load granular permissions in background (non-blocking)
-      base44.functions.invoke('getMyStatus', {}).then(r => {
-        console.log(r);
-        if (r?.data?.is_active === false) {
-          setAuthError({ type: 'account_suspended', message: '您的账户已被停用，请联系管理员。' });
-        }
-        if (Array.isArray(r?.data?.permissions)) {
-          setPermissions(r.data.permissions);
-        }
-        if (Array.isArray(r?.data?.assigned_roles)) {
-          setAssignedRoles(r.data.assigned_roles);
-        }
-      }).catch(() => {});
-    } catch (error) {
-      console.error('User auth check failed:', error);
-      setIsLoadingAuth(false);
-      setIsAuthenticated(false);
-      
-      // If user auth fails, it might be an expired token
-      if (error.status === 401 || error.status === 403) {
-        setAuthError({
-          type: 'auth_required',
-          message: 'Authentication required'
-        });
+      setUser(u);
+      setPermissions(perms);
+      setAssignedRoles(roles);
+      setIsAuthenticated(true);
+
+      writeAuthCache({ user: u, permissions: perms, assigned_roles: roles, is_active: isActive });
+
+      if (isActive === false) {
+        setAuthError({ type: 'account_suspended', message: '您的账户已被停用，请联系管理员。' });
+        return { ok: false, error: 'account_suspended' };
       }
+      return { ok: true };
+    } catch (error) {
+      console.error('oauth2 login failed:', error);
+      clearAuthCache();
+      setIsAuthenticated(false);
+      setUser(null);
+      const msg = error?.response?.data?.message || error?.message || '获取用户信息失败';
+      setAuthError({ type: 'login_failed', message: msg });
+      return { ok: false, error: msg };
     }
   };
 
   const logout = (shouldRedirect = true) => {
     setUser(null);
     setIsAuthenticated(false);
-    
+    setPermissions([]);
+    setAssignedRoles([]);
+    setAuthError(null);
+    clearAuthCache();
     if (shouldRedirect) {
-      // Use the SDK's logout method which handles token cleanup and redirect
-      base44.auth.logout(window.location.href);
-    } else {
-      // Just remove the token without redirect
-      base44.auth.logout();
+      const lang = (navigator.language || '').toLowerCase().includes('ja') ? 'ja' : 'zhcn';
+      window.location.href = `/${lang}/Login`;
     }
   };
 
   const navigateToLogin = () => {
-    // Use the SDK's redirectToLogin method
     base44.auth.redirectToLogin(window.location.href);
   };
 
   return (
-    <AuthContext.Provider value={{ 
+    <AuthContext.Provider value={{
       user,
       setUser,
-      isAuthenticated: true, 
+      isAuthenticated,
       isLoadingAuth,
-      isLoadingPublicSettings,
       authError,
-      appPublicSettings,
       tenantBranding,
       permissions,
       setPermissions,
       assignedRoles,
+      login,
+      loginWithToken,
       logout,
       navigateToLogin,
-      checkAppState,
-      checkUserAuth,
       authChecked: !isLoadingAuth,
     }}>
       {children}

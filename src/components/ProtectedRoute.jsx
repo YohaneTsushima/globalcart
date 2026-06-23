@@ -1,7 +1,5 @@
-import { useEffect } from 'react';
 import { Outlet, useLocation, useParams, Navigate } from 'react-router-dom';
 import { useAuth } from '@/lib/AuthContext';
-import { base44 } from '@/api/base44Client';
 import UserNotRegisteredError from '@/components/UserNotRegisteredError';
 
 const DefaultFallback = () => (
@@ -23,28 +21,31 @@ const DefaultFallback = () => (
  * 未登录用户访问以上路由时，自动跳转登录页，登录成功后回到原页面。
  */
 export default function ProtectedRoute({ fallback = <DefaultFallback />, unauthenticatedElement }) {
-  const { isAuthenticated, isLoadingAuth, authChecked, authError, checkUserAuth } = useAuth();
+  const { isAuthenticated, isLoadingAuth, authError } = useAuth();
   const location = useLocation();
   const { locale = 'zhcn' } = useParams();
 
-  useEffect(() => {
-    if (!authChecked && !isLoadingAuth) {
-      checkUserAuth();
-    }
-  }, [authChecked, isLoadingAuth, checkUserAuth]);
-
-  if (isLoadingAuth || !authChecked) {
+  if (isLoadingAuth) {
     return fallback;
   }
 
-  // if (authError) {
-  //   if (authError.type === 'user_not_registered') {
-  //     return <UserNotRegisteredError />;
-  //   }
-  //   // 未登录：跳转到站内登录页，登录后返回当前页
-  //   const next = encodeURIComponent(location.pathname + location.search);
-  //   return <Navigate to={`/${locale}/Login?next=${next}`} replace />;
-  // }
+  if (authError) {
+    if (authError.type === 'user_not_registered') {
+      return <UserNotRegisteredError />;
+    }
+    if (authError.type === 'account_suspended') {
+      return (
+        <div className="fixed inset-0 flex items-center justify-center p-6">
+          <div className="text-center">
+            <p className="text-gray-800 font-medium">{authError.message}</p>
+          </div>
+        </div>
+      );
+    }
+    // 未登录：跳转到站内登录页，登录后返回当前页
+    const next = encodeURIComponent(location.pathname + location.search);
+    return <Navigate to={`/${locale}/Login?next=${next}`} replace />;
+  }
 
   if (!isAuthenticated) {
     if (unauthenticatedElement) return unauthenticatedElement;

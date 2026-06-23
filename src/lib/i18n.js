@@ -408,6 +408,11 @@ export const translations = {
     "发送验证码": "发送验证码",
     "验证码": "验证码",
     "登录 / 注册": "登录 / 注册",
+    "使用 Google 登录": "使用 Google 登录",
+    "登录中...": "登录中...",
+    "登录中，请稍候...": "登录中，请稍候...",
+    "或": "或",
+    "Google 登录失败": "Google 登录失败",
 
     // HeroSection defaults
     "日本 → 全球": "日本 → 全球",
@@ -612,6 +617,11 @@ export const translations = {
     "发送验证码": "認証コード送信",
     "验证码": "認証コード",
     "登录 / 注册": "ログイン / 登録",
+    "使用 Google 登录": "Google でログイン",
+    "登录中...": "ログイン中...",
+    "登录中，请稍候...": "ログイン中です。お待ちください...",
+    "或": "または",
+    "Google 登录失败": "Google ログイン失敗",
 
     // HeroSection defaults
     "日本 → 全球": "日本 → 全世界",
@@ -1067,6 +1077,11 @@ export const translations = {
     "发送验证码": "Send Code",
     "验证码": "Verification Code",
     "登录 / 注册": "Login / Register",
+    "使用 Google 登录": "Sign in with Google",
+    "登录中...": "Logging in...",
+    "登录中，请稍候...": "Logging in, please wait...",
+    "或": "or",
+    "Google 登录失败": "Google login failed",
 
     // HeroSection defaults
     "日本 → 全球": "Japan → Global",

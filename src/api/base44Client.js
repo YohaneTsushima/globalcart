@@ -25,6 +25,24 @@ api.interceptors.request.use(cfg => {
   return cfg
 })
 
+// 响应拦截：401 清 token + 跳登录（登录页本身不跳，避免循环）
+api.interceptors.response.use(
+  res => res,
+  err => {
+    const status = err?.response?.status;
+    if (status === 401) {
+      const path = window.location.pathname;
+      localStorage.removeItem('token');
+      localStorage.removeItem('auth_cache');
+      if (!path.includes('/Login')) {
+        const next = encodeURIComponent(path + window.location.search);
+        window.location.href = `/${path.split('/')[1] || 'zhcn'}/Login?next=${next}`;
+      }
+    }
+    return Promise.reject(err);
+  }
+);
+
 // 同名导出base44，所有页面导入不用改
 export const base44 = {
   // 替代原来的表CRUD
@@ -40,15 +58,22 @@ export const base44 = {
   // 替代原来调用后端定时任务/函数
   functions: {
     invoke: (funcName, payload) => {
-      api.post(`/globalcart/${funcName}`, payload).then(r=>r.data);
+      return api.post(`/globalcart/${funcName}`, payload).then(r => r.data);
     }
   },
   // 替代原来获取当前登录用户、角色鉴权
   auth: {
-    me: () => api.get('/auth/me').then(r=>r.data),
+    me: (userId) => api.get('/globalcart/user/preference/me', { params: userId ? { userId } : {} }).then(r => r.data),
     redirectToLogin: (locale) => {
       const currentLang = locale || 'zhcn';
       window.location.href = `/${currentLang}/Login`;
+    },
+    logout: (redirectUrl) => {
+      localStorage.removeItem('token');
+      localStorage.removeItem('auth_cache');
+      const path = window.location.pathname;
+      const lang = path.split('/')[1] || 'zhcn';
+      window.location.href = redirectUrl || `/${lang}/home`;
     }
   }
 }

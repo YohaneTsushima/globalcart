@@ -91,7 +91,7 @@ const HelpCenterFaqOldRedirect = () => {
 };
 
 const AuthenticatedApp = () => {
-  const { isLoadingAuth, isLoadingPublicSettings, authError, navigateToLogin } = useAuth();
+  const { isLoadingAuth, authError, navigateToLogin } = useAuth();
   const location = useLocation();
 
   // 旧链接兼容：首段不是合法语言代码时，自动加上用户偏好语言前缀
@@ -106,7 +106,7 @@ const AuthenticatedApp = () => {
     location.pathname.endsWith(p) || location.pathname.includes('/helpcenter')
   );
 
-  if ((isLoadingPublicSettings || isLoadingAuth) && !isPublicPage) {
+  if (isLoadingAuth && !isPublicPage) {
     return (
       <div className="fixed inset-0 flex items-center justify-center">
         <div className="w-8 h-8 border-4 border-slate-200 border-t-slate-800 rounded-full animate-spin"></div>
