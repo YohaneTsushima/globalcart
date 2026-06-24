@@ -26,6 +26,17 @@ const clearAuthCache = () => {
   localStorage.removeItem(AUTH_CACHE_KEY);
 };
 
+// 后端驼峰 → 前端期望的字段名（全局统一适配）
+const normalizeUser = (raw) => {
+  if (!raw) return null;
+  if (Array.isArray(raw)) return raw;
+  return {
+    ...raw,
+    email: raw.userEmail ?? raw.email ?? raw.user_email ?? undefined,
+    full_name: raw.displayName ?? raw.full_name ?? raw.fullName ?? raw.user_name ?? undefined,
+  };
+};
+
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -36,7 +47,29 @@ export const AuthProvider = ({ children }) => {
   const [assignedRoles, setAssignedRoles] = useState([]);
 
   useEffect(() => {
-    resolveTenantBranding().then(b => setTenantBranding(b)).catch(() => setTenantBranding({ tenant: null }));
+    // Resolve tenant branding from subdomain in parallel with app state check
+    // Skip in dev mock mode (will be set below)
+    const isDev = !window.location.hostname.includes('.') || window.location.hostname === 'localhost';
+    if (!isDev) {
+      resolveTenantBranding().then(b => setTenantBranding(b)).catch(() => setTenantBranding({ tenant: null }));
+    } else {
+      setTenantBranding({
+        tenant: {
+          id: 'dev-tenant',
+          name: '同一物流（开发）',
+          branding_name: '同一物流',
+          theme_color: '#dc2626',
+          logo_url: '',
+          favicon_url: '',
+          login_title: '欢迎登录',
+          login_subtitle: '日本代购 · 国际物流',
+          contact_info: '联系客服：service@example.com',
+          timezone: 'Asia/Tokyo',
+          is_active: true,
+          allowed_features: ['credit_module', 'consolidation', 'transit_shipping', 'ticket_orders', 'group_buy'],
+        }
+      });
+    }
 
     const token = localStorage.getItem('token');
     
@@ -58,7 +91,7 @@ export const AuthProvider = ({ children }) => {
   const login = async (username, verifyCode) => {
     setAuthError(null);
     try {
-      const r = await base44.functions.invoke('user/preference/loginOrRegister', {
+      const r = await base44.functions.invoke('user/stats/loginOrRegister', {
         username,
         verifyCode
       });
@@ -70,7 +103,7 @@ export const AuthProvider = ({ children }) => {
       }
       localStorage.setItem('token', token);
 
-      const u = r?.user || r?.data?.user || null;
+      const u = normalizeUser(r?.user || r?.data?.user || null);
       const perms = Array.isArray(r?.permissions) ? r.permissions : (Array.isArray(r?.data?.permissions) ? r.data.permissions : []);
       const roles = Array.isArray(r?.assigned_roles) ? r.assigned_roles : (Array.isArray(r?.data?.assigned_roles) ? r.data.assigned_roles : []);
       const isActive = r?.is_active ?? r?.data?.is_active ?? true;
@@ -107,10 +140,11 @@ export const AuthProvider = ({ children }) => {
     localStorage.setItem('token', token);
     try {
       const me = await base44.auth.me(userId);
-      const u = me?.user || me?.data || me || null;
-      const perms = Array.isArray(me?.permissions) ? me.permissions : (Array.isArray(me?.data?.permissions) ? me.data.permissions : []);
-      const roles = Array.isArray(u?.role) ? u.role : (Array.isArray(u?.data?.role) ? u.data.role : []);
-      const isActive = me?.is_active ?? me?.data?.is_active ?? true;
+      const d = me?.data ?? me ?? {};
+      const u = normalizeUser(d);
+      const perms = Array.isArray(d.permissions) ? d.permissions : [];
+      const roles = Array.isArray(d.assigned_roles) ? d.assigned_roles : [];
+      const isActive = d.isActive ?? d.is_active ?? true;
 
       setUser(u);
       setPermissions(perms);

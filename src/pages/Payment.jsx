@@ -55,14 +55,15 @@ export default function Payment() {
       setOrder(null); // Force render error state
     }, 10000); // 10-second timeout
 
-    base44.functions.invoke('getPaymentPageData', { order_id: orderId, ...(payMethodKey ? { payment_method_key: payMethodKey } : {}) })
+    base44.functions.invoke('payment/getPaymentPageData', { order_id: orderId, ...(payMethodKey ? { payment_method_key: payMethodKey } : {}) })
       .then(r => {
+        debugger
         clearTimeout(timeoutId);
         const data = r.data || {};
-        if (!data.order) {
+        if (!data) {
           setOrder(null); 
         } else {
-          setOrder(data.order);
+          setOrder(data);
           setSettings(data.settings || {});
           if (data.settings?.payment_pending_reminder) {
             setPaymentPendingReminder(data.settings.payment_pending_reminder);

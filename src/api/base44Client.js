@@ -63,7 +63,7 @@ export const base44 = {
   },
   // 替代原来获取当前登录用户、角色鉴权
   auth: {
-    me: (userId) => api.get('/globalcart/user/preference/me', { params: userId ? { userId } : {} }).then(r => r.data),
+    me: (userId) => api.get('/globalcart/user/stats/me', { params: userId ? { userId } : {} }).then(r => r.data),
     redirectToLogin: (locale) => {
       const currentLang = locale || 'zhcn';
       window.location.href = `/${currentLang}/Login`;

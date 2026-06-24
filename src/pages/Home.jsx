@@ -87,7 +87,7 @@ export default function Home() {
     // Only fetch orders for logged-in users
     const loadOrders = () => {
       if (!user) return Promise.resolve([]);
-      return base44.functions.invoke('getTenantOrders', {})
+      return base44.functions.invoke('order/info/list/me', {})
         .then(r => (r.data?.orders || []).slice(0, 5))
         .catch(() => []);
     };

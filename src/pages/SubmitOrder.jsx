@@ -16,12 +16,60 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogAction,
+  AlertDialogCancel,
+} from "@/components/ui/alert-dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
 import { t, getLocale } from "@/lib/i18n";
 
 // Default prepay rate fallback
 const DEFAULT_PREPAY_RATE = 0.80;
+
+// ─── DEV MOCK ───────────────────────────────────────────────────────────────
+const IS_DEV_MOCK = import.meta.env.VITE_DEV_MOCK === 'true';
+
+const MOCK_PAGE_DATA = {
+  addons: [
+    { id: 'addon-1', name: '商品拍照', fee: 300, feeCurrency: 'JPY', description: '入库时拍摄商品实物照片', isUserCustomizable: false },
+    { id: 'addon-2', name: '代缴消费税', fee: 0, feeCurrency: 'JPY', description: '代垫消费税金额（自定义）', isUserCustomizable: true, min_fee: 100, max_fee: 50000 },
+    { id: 'addon-3', name: '逗你玩的', fee: 111110, feeCurrency: 'JPY', description: '我也不知道（自定义）', isUserCustomizable: true, min_fee: 100, max_fee: 50000 }
+  ],
+  rates: { jpy_cny: 0.049, jpy_usd: 0.0067, jpy_twd: 0.21 },
+  activeRule: {
+    id: 'rule-dev', name: '标准服务费 8%', mode: 'simple', simple_rate: 8, simple_fixed_fee: 0,
+    min_fee: 0, max_fee: 0, round_mode: 'round', round_unit: 1, version: 1,
+  },
+  settings: {
+    prepay_enabled: 'false',
+    prepay_rate: '80',
+    service_fee_rate: '8',
+    pre_shipment_enabled: 'true',
+    product_url_tips: '输入日本商城的商品链接，支持多个链接',
+  }
+};
+
+const MOCK_PAYMENT_METHODS = {
+  methods: [
+    { id: 'pm-1', name: '支付宝', provider_key: 'alipay', payment_currency: 'CNY', icon: '💰', color: 'bg-blue-100 text-blue-700', is_active: true, sort_order: 0, surcharge_rate: 0, surcharge_fixed_jpy: 0 },
+    { id: 'pm-2', name: '银行转账', provider_key: '', payment_currency: 'JPY', icon: '🏦', color: 'bg-gray-100 text-gray-700', is_active: true, sort_order: 1, surcharge_rate: 0, surcharge_fixed_jpy: 0 },
+  ],
+};
+
+const MOCK_SHIPPING_METHODS = {
+  methods: [
+    { id: 'sm-1', name: 'EMS', code: 'EMS', transit_days: '5-10个工作日', is_active: true },
+    { id: 'sm-2', name: 'SAL', code: 'SAL', transit_days: '2-3个月', is_active: true },
+  ],
+};
+// ────────────────────────────────────────────────────────────────────────────
 
 export default function SubmitOrder() {
   const navigate = useNavigate();
@@ -45,12 +93,14 @@ export default function SubmitOrder() {
   const [addonCustomFees, setAddonCustomFees] = useState({});
   const [addonFeeErrors, setAddonFeeErrors] = useState({});
   const [form, setForm] = useState({
-    product_name: "", product_description: "",
+    order_name: "", product_description: "",
     estimated_jpy: "", prepayment_currency: "JPY",
     user_note: "", product_image_url: "", note_image_url: "", online_store_tag: "其它"
   });
   const [calculated, setCalculated] = useState(null);
   const [submitting, setSubmitting] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [pendingForm, setPendingForm] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState("");
   const [paymentMethods, setPaymentMethods] = useState([]);
@@ -60,11 +110,24 @@ export default function SubmitOrder() {
   const [shippingMethods, setShippingMethods] = useState([]);
 
   useEffect(() => {
-    const t = timePage('SubmitOrder');
+    
+    if (IS_DEV_MOCK) {
+      const data = MOCK_PAGE_DATA;
+      setAddonOptions(data.addons);
+      setRates(data.rates);
+      setActiveRule(data.activeRule);
+      setSettings(data.settings);
+      setPaymentMode(data.settings.prepay_enabled !== 'false' ? "prepay" : "fullpay");
+      setUserCredit(null);
+      setPaymentMethods(MOCK_PAYMENT_METHODS.methods);
+      setShippingMethods(MOCK_SHIPPING_METHODS.methods);
+      return;
+    }
+
+    const timer = timePage('SubmitOrder');
     Promise.all([
-      t.timeCall('getSubmitOrderPageData', () => base44.functions.invoke('getSubmitOrderPageData', {})),
-      base44.functions.invoke('manageCreditApplication', { action: 'get_user_credit' })
-    ]).then(([r, creditR]) => {
+      timer.timeCall('getSubmitOrderPageData', () => base44.functions.invoke('config/page/getSubmitOrderPageData', {}))
+    ]).then(([r]) => {
       const data = r.data || {};
       setAddonOptions(data.addons || []);
       setRates(data.rates || null);
@@ -74,26 +137,26 @@ export default function SubmitOrder() {
       setSettings(parsed);
       const prepayOn = parsed.prepay_enabled !== 'false';
       setPaymentMode(prepayOn ? "prepay" : "fullpay");
-      setUserCredit(creditR.data || null);
-      t.done('data ready');
-    }).catch(() => {});
+      setUserCredit(null);
+      timer.done('data ready');
+    }).catch((err) => { console.error('SubmitOrder data load failed:', err); });
     
-    // base44.functions.invoke('managePaymentMethod', { action: 'list' })
-    //   .then((r) => { setPaymentMethods(r.data?.methods || []); })
-    //   .catch(() => {});
+    base44.functions.invoke('config/page/getPaymentMethod', {})
+      .then((r) => { setPaymentMethods(r?.data?.paymentMethods || []); })
+      .catch(() => {});
     
-    // base44.functions.invoke('getTenantShippingPools', { action: 'list_shipping_methods' })
-    //   .then((r) => { setShippingMethods(r.data?.methods || []); })
-    //   .catch(() => {});
+    base44.functions.invoke('config/shipping/getTenantShippingPools', { action: 'list_shipping_methods' })
+      .then((r) => { setShippingMethods(r.data?.methods || []); })
+      .catch(() => {});
   }, []);
 
   const getAddonTotal = () => selectedAddons.reduce((sum, id) => {
     const opt = addonOptions.find((a) => a.id === id);
     if (!opt) return sum;
     const customFee = addonCustomFees[id];
-    const isCustomizable = opt.is_user_customizable;
+    const isCustomizable = opt.isUserCustomizable;
     const effectiveFee = isCustomizable && customFee !== undefined ? customFee : parseFloat(opt.fee) || 0;
-    const feeCur = opt.fee_currency || "JPY";
+    const feeCur = opt.feeCurrency || "JPY";
     if (feeCur === "JPY") return sum + effectiveFee;
     const rateKey = `jpy_${feeCur.toLowerCase()}`;
     const rate = rates?.[rateKey] || 1;
@@ -105,7 +168,6 @@ export default function SubmitOrder() {
     if (!jpy || jpy <= 0) { setCalculated(null); return; }
     
     const prepayEnabled = settings.prepay_enabled !== 'false';
-    // Valid range (0, 100]; invalid values (incl. 0/negative/>100) fall back to default
     let prepayRatePct = parseFloat(settings.prepay_rate);
     if (isNaN(prepayRatePct) || prepayRatePct <= 0 || prepayRatePct > 100) prepayRatePct = DEFAULT_PREPAY_RATE * 100;
     const prepayRate = prepayEnabled ? prepayRatePct / 100 : 1.0;
@@ -115,25 +177,37 @@ export default function SubmitOrder() {
     let feeRateDisplay = null;
     let feeSteps = null;
 
-    if (activeRule) {
-      const urlsForTag = urlMode === "textarea"
-        ? (productUrls[0] || "").split("\n").map(s => s.trim()).filter(Boolean).join("\n")
-        : productUrls.filter(u => u.trim()).join("\n");
-      const previewTagResult = await detectPrimaryStoreTagResult(urlsForTag);
-      const variables = {
-        goodsAmount: jpy,
-        orderAmount: jpy,
-        itemCount: 1,
-        sourceSite: previewTagResult.tag_label || '其它',
-        customerLevel: '',
-        valueAddedServiceAmount: addonTotalJpy,
-        paymentSurcharge: 0,
-      };
-      const res = await base44.functions.invoke('serviceFeeRuleEngine', { action: 'evaluate', variables, rule: activeRule });
-      serviceFeeJpy = res.data?.fee ?? 0;
-      feeRateDisplay = activeRule.name;
-      feeSteps = res.data?.steps || null;
-    } else {
+    try {
+      
+      if (activeRule) {
+        const urlsForTag = urlMode === "textarea"
+          ? (productUrls[0] || "").split("\n").map(s => s.trim()).filter(Boolean).join("\n")
+          : productUrls.filter(u => u.trim()).join("\n");
+        const previewTagResult = await detectPrimaryStoreTagResult(urlsForTag);
+        const variables = {
+          goodsAmount: jpy,
+          orderAmount: jpy,
+          itemCount: 1,
+          sourceSite: previewTagResult.tag_label || '其它',
+          customerLevel: '',
+          valueAddedServiceAmount: addonTotalJpy,
+          paymentSurcharge: 0,
+        };
+        // const res = IS_DEV_MOCK
+        //   ? { data: { fee: Math.round(variables.goodsAmount * (activeRule.simple_rate / 100)), steps: null } }
+        //   : await base44.functions.invoke('serviceFeeRuleEngine', { action: 'evaluate', variables, rule: activeRule });
+        const res = { data: { fee: Math.round(variables.goodsAmount * (activeRule.simpleRate / 100)), steps: null } };
+        
+        serviceFeeJpy = res.data?.fee ?? 0;
+        feeRateDisplay = activeRule.name;
+        feeSteps = res.data?.steps || null;
+      } else {
+        const fallbackRate = (parseFloat(settings.service_fee_rate) || 10) / 100;
+        serviceFeeJpy = jpy * fallbackRate;
+        feeRateDisplay = `${(parseFloat(settings.service_fee_rate) || 10).toFixed(0)}%`;
+      }
+    } catch (err) {
+      console.error('calculate serviceFee failed:', err);
       const fallbackRate = (parseFloat(settings.service_fee_rate) || 10) / 100;
       serviceFeeJpy = jpy * fallbackRate;
       feeRateDisplay = `${(parseFloat(settings.service_fee_rate) || 10).toFixed(0)}%`;
@@ -194,13 +268,13 @@ export default function SubmitOrder() {
 
   const validateAddonFee = (addonId, fee) => {
     const addon = addonOptions.find(a => a.id === addonId);
-    if (!addon || !addon.is_user_customizable) return null;
+    if (!addon || !addon.isUserCustomizable) return null;
     
-    const minFee = parseFloat(addon.min_fee) || 0;
-    const maxFee = parseFloat(addon.max_fee) || Infinity;
+    const minFee = parseFloat(addon.feeMin) || 0;
+    const maxFee = parseFloat(addon.feeMax) || Infinity;
     
-    if (fee < minFee) return `${t("金额不能低于", locale)} ${minFee} ${addon.fee_currency || 'JPY'}`;
-    if (maxFee > 0 && fee > maxFee) return `${t("金额不能高于", locale)} ${maxFee} ${addon.fee_currency || 'JPY'}`;
+    if (fee < minFee) return `${t("金额不能低于", locale)} ${minFee} ${addon.feeCurrency || 'JPY'}`;
+    if (maxFee > 0 && fee > maxFee) return `${t("金额不能高于", locale)} ${maxFee} ${addon.feeCurrency || 'JPY'}`;
     return null;
   };
 
@@ -227,7 +301,7 @@ export default function SubmitOrder() {
     
     selectedAddons.forEach(addonId => {
       const addon = addonOptions.find(a => a.id === addonId);
-      if (addon && addon.is_user_customizable) {
+      if (addon && addon.isUserCustomizable) {
         const fee = addonCustomFees[addonId] || 0;
         const error = validateAddonFee(addonId, fee);
         if (error) {
@@ -244,17 +318,16 @@ export default function SubmitOrder() {
       return;
     }
 
-    setSubmitting(true);
     const selectedAddonObjects = selectedAddons.map((id) => {
       const addon = addonOptions.find((a) => a.id === id);
       if (!addon) return null;
       const customFee = addonCustomFees[id];
-      const isCustomizable = addon.is_user_customizable;
+      const isCustomizable = addon.isUserCustomizable;
       return {
         id: addon.id,
-        name: addon.name,
+        serviceName: addon.serviceName,
         fee: isCustomizable && customFee !== undefined ? customFee : parseFloat(addon.fee) || 0,
-        fee_currency: addon.fee_currency || "JPY"
+        feeCurrency: addon.feeCurrency || "JPY"
       };
     }).filter(Boolean);
     
@@ -268,47 +341,69 @@ export default function SubmitOrder() {
     const prepaymentAmount = calculated ? parseFloat(calculated.prepayJpy) : 0;
     
     // 获取用户选择的付款方式和对应货币
-    const selectedMethodObj = paymentMethods.find((m) => (m.provider_key || m.name) === paymentMethod);
-    const selectedCurrency = selectedMethodObj?.payment_currency || "JPY";
+    const selectedMethodObj = paymentMethods.find((m) => (m.providerKey || m.id) === paymentMethod);
+    const selectedCurrency = selectedMethodObj?.paymentCurrency || "JPY";
     
     try {
-      const res = await base44.functions.invoke('createTenantOrder', {
-        ...form,
-        product_url: urlsText,
-        user_email: user.email,
-        user_name: user.full_name || user.email,
-        quantity: 1,
-        estimated_jpy: parseFloat(form.estimated_jpy) || 0,
-        service_fee_rate: parseFloat(settings.service_fee_rate) || 10,
-        service_fee_amount: calculated ? calculated.serviceFeeJpy : null,
-        service_fee_rule_id: activeRule?.id || null,
-        service_fee_rule_name: activeRule?.name || null,
-        service_fee_rule_version: activeRule?.version || null,
-        prepayment_amount: prepaymentAmount,
-        prepayment_currency: selectedCurrency, // 使用支付方式对应的货币
-        online_store_tag: tagResult.tag_label,
-        online_store_tag_color: tagResult.tag_color,
-        payment_method: paymentMethod, // 记录付款方式
-        payment_mode: isCredit ? "credit" : isDeferred ? "deferred" : (settings.prepay_enabled === 'false' ? "fullpay_once" : "prepay"),
-        credit_cycle: isCredit ? (paymentMode === "credit_weekly" ? "weekly" : "monthly") : null,
-        order_status: isCredit ? "paid" : "payment_pending",
-        payment_status: isCredit ? "paid" : "awaiting_payment",
-        user_note: form.user_note || "",
-        selected_addon_ids: selectedAddons,
-        selected_addons: selectedAddonObjects.map((a) => ({ id: a.id, name: a.name, fee: parseFloat(a.fee) || 0, fee_currency: a.fee_currency || "JPY" }))
-      });
-      
-      const order = res.data?.order;
+      const submitForm = {
+            ...form,
+            productLink: urlsText,
+            user_email: user.email,
+            user_name: user.full_name || user.email,
+            userId: user.id,
+            quantity: 1,
+            estimated_jpy: parseFloat(form.estimated_jpy) || 0,
+            service_fee_rate: parseFloat(settings.service_fee_rate) || 10,
+            service_fee_amount: calculated ? calculated.serviceFeeJpy : null,
+            service_fee_rule_id: activeRule?.id || null,
+            service_fee_rule_name: activeRule?.name || null,
+            service_fee_rule_version: activeRule?.version || null,
+            prepayment_amount: prepaymentAmount,
+            prepayment_currency: selectedCurrency,
+            online_store_tag: tagResult.tag_label,
+            online_store_tag_color: tagResult.tag_color,
+            payment_method: paymentMethod,
+            payment_mode: isCredit ? "credit" : isDeferred ? "deferred" : (settings.prepay_enabled === 'false' ? "fullpay_once" : "prepay"),
+            credit_cycle: isCredit ? (paymentMode === "credit_weekly" ? "weekly" : "monthly") : null,
+            order_status: isCredit ? "paid" : "payment_pending",
+            payment_status: isCredit ? "paid" : "awaiting_payment",
+            user_note: form.user_note || "",
+            selected_addon_ids: selectedAddons,
+            selected_addons: selectedAddonObjects.map((a) => ({ id: a.id, serviceName: a.serviceName, fee: parseFloat(a.fee) || 0, feeCurrency: a.feeCurrency || "JPY" }))
+      };
+
+      console.log(submitForm);
+      console.log(user);
+
+      // 弹窗确认，确认后才调后端
+      setPendingForm(submitForm);
+      setConfirmOpen(true);
+    } catch (error) {
+      toast.error(t('提交失败：', locale) + error.message);
+      setSubmitting(false);
+    }
+  };
+
+  // 确认提交订单（弹窗点"是"后执行）
+  const confirmSubmitOrder = async () => {
+    if (!pendingForm) return;
+    setConfirmOpen(false);
+    setSubmitting(true);
+    try {
+      const res = await base44.functions.invoke('order/info/createTenantOrder', pendingForm);
+
+      const order = res?.data;
+      console.log(res)
 
       if (res.data?.credit_downgraded) {
-        setCreditDowngradeMsg(res.data.credit_downgrade_reason);
+        setCreditDowngradeMsg(res.data.credit_downgraded_reason);
         setSubmitting(false);
         setTimeout(() => navigate(createPageUrl("MyOrders")), 4000);
         return;
       }
 
       // 记账订单：账目已直接记入记账系统，无需前往付款页
-      if (isCredit) {
+      if (pendingForm.payment_mode === "credit") {
         setSubmitting(false);
         toast.success(t("提交成功，本单已记账，无需付款", locale));
         navigate(createPageUrl("MyOrders"));
@@ -316,7 +411,7 @@ export default function SubmitOrder() {
       }
 
       // 后付款订单：下单阶段无需付款，货款将在支付运费时一并收取
-      if (isDeferred) {
+      if (pendingForm.payment_mode === "deferred") {
         setSubmitting(false);
         toast.success(t("提交成功，货款将在支付运费时一并支付", locale));
         navigate(createPageUrl("MyOrders"));
@@ -329,10 +424,16 @@ export default function SubmitOrder() {
         return;
       }
 
-      navigate(`/Payment?order_id=${order.id}&method=${paymentMethod || "other"}&pay_currency=${selectedCurrency}`);
+      console.log(pendingForm);
+      let paymentUrl = `/Payment?order_id=${order.id}&method=${pendingForm.payment_method || "other"}&pay_currency=${pendingForm.prepayment_currency}`;
+      console.log(paymentUrl);
+
+      navigate(paymentUrl);
     } catch (error) {
       toast.error(t('提交失败：', locale) + error.message);
       setSubmitting(false);
+    } finally {
+      setPendingForm(null);
     }
   };
 
@@ -343,7 +444,7 @@ export default function SubmitOrder() {
     
     selectedAddons.forEach(addonId => {
       const addon = addonOptions.find(a => a.id === addonId);
-      if (addon && addon.is_user_customizable) {
+      if (addon && addon.isUserCustomizable) {
         const fee = addonCustomFees[addonId] || 0;
         const error = validateAddonFee(addonId, fee);
         if (error) {
@@ -368,42 +469,44 @@ export default function SubmitOrder() {
     const prepaymentAmount = calculated ? parseFloat(calculated.prepayJpy) : 0;
     
     // 获取用户选择的付款方式和对应货币
-    const selectedMethodObjForPre = paymentMethods.find((m) => (m.provider_key || m.name) === paymentMethod);
-    const selectedCurrencyForPre = selectedMethodObjForPre?.payment_currency || "JPY";
+    const selectedMethodObjForPre = paymentMethods.find((m) => (m.providerKey || m.methodName) === paymentMethod);
+    const selectedCurrencyForPre = selectedMethodObjForPre?.paymentCurrency || "JPY";
     
     try {
-      const res = await base44.functions.invoke('createTenantOrder', {
-        ...form,
-        product_url: urlsText,
-        user_email: user.email,
-        user_name: user.full_name || user.email,
-        quantity: 1,
-        estimated_jpy: parseFloat(form.estimated_jpy) || 0,
-        service_fee_rate: parseFloat(settings.service_fee_rate) || 10,
-        service_fee_amount: calculated ? calculated.serviceFeeJpy : null,
-        service_fee_rule_id: activeRule?.id || null,
-        service_fee_rule_name: activeRule?.name || null,
-        service_fee_rule_version: activeRule?.version || null,
-        prepayment_amount: prepaymentAmount,
-        prepayment_currency: selectedCurrencyForPre, // 使用支付方式对应的货币
-        payment_method: paymentMethod, // 记录付款方式
-        online_store_tag: tagResult.tag_label,
-        online_store_tag_color: tagResult.tag_color,
-        payment_mode: settings.prepay_enabled === 'false' ? "fullpay_once" : "prepay",
-        order_status: "payment_pending",
-        payment_status: "awaiting_payment",
-        user_note: form.user_note || "",
-        note_image_url: form.note_image_url || "",
-        selected_addon_ids: selectedAddons,
-        selected_addons: selectedAddons.map(id => {
-          const addon = addonOptions.find(a => a.id === id);
-          if (!addon) return null;
-          const customFee = addonCustomFees[id];
-          const isCustomizable = addon.is_user_customizable;
-          const fee = isCustomizable && customFee !== undefined ? customFee : parseFloat(addon.fee) || 0;
-          return { id: addon.id, name: addon.name, fee, fee_currency: addon.fee_currency || "JPY" };
-        }).filter(Boolean)
-      });
+      const res = IS_DEV_MOCK
+        ? { data: { order: { id: 'dev-order-pre-' + Date.now() } } }
+        : await base44.functions.invoke('createTenantOrder', {
+            ...form,
+            product_url: urlsText,
+            user_email: user.email,
+            user_name: user.full_name || user.email,
+            quantity: 1,
+            estimated_jpy: parseFloat(form.estimated_jpy) || 0,
+            service_fee_rate: parseFloat(settings.service_fee_rate) || 10,
+            service_fee_amount: calculated ? calculated.serviceFeeJpy : null,
+            service_fee_rule_id: activeRule?.id || null,
+            service_fee_rule_name: activeRule?.name || null,
+            service_fee_rule_version: activeRule?.version || null,
+            prepayment_amount: prepaymentAmount,
+            prepayment_currency: selectedCurrencyForPre,
+            payment_method: paymentMethod,
+            online_store_tag: tagResult.tag_label,
+            online_store_tag_color: tagResult.tag_color,
+            payment_mode: settings.prepay_enabled === 'false' ? "fullpay_once" : "prepay",
+            order_status: "payment_pending",
+            payment_status: "awaiting_payment",
+            user_note: form.user_note || "",
+            note_image_url: form.note_image_url || "",
+            selected_addon_ids: selectedAddons,
+            selected_addons: selectedAddons.map(id => {
+              const addon = addonOptions.find(a => a.id === id);
+              if (!addon) return null;
+              const customFee = addonCustomFees[id];
+              const isCustomizable = addon.isUserCustomizable;
+              const fee = isCustomizable && customFee !== undefined ? customFee : parseFloat(addon.fee) || 0;
+              return { id: addon.id, name: addon.name, fee, feeCurrency: addon.feeCurrency || "JPY" };
+            }).filter(Boolean)
+          });
       setSubmitting(false);
       
       if (res.data?.error) {
@@ -459,7 +562,9 @@ export default function SubmitOrder() {
             <div>
               <div className="flex items-center justify-between mb-1">
                 <div className="flex items-center gap-1.5">
-                  <Label className="text-sm font-medium">{t("商品链接", locale)}</Label>
+                  <Label className="text-sm font-medium">
+                    <span className="text-red-500">*</span> {t("商品链接", locale)}
+                  </Label>
                   <div className="group relative">
                     <HelpCircle className="w-3.5 h-3.5 text-gray-400 hover:text-gray-600 cursor-help" />
                     <div className="invisible group-hover:visible absolute left-0 top-full mt-1 bg-gray-800 text-white text-xs rounded-lg px-3 py-2 w-56 z-10 pointer-events-none whitespace-normal">
@@ -467,8 +572,8 @@ export default function SubmitOrder() {
                     </div>
                   </div>
                 </div>
-                <button 
-                  type="button" 
+                <button
+                  type="button"
                   onClick={() => {
                     if (urlMode === "multi") {
                       setUrlMode("textarea");
@@ -478,19 +583,19 @@ export default function SubmitOrder() {
                       const lines = (productUrls[0] || "").split("\n").map((s) => s.trim()).filter(Boolean);
                       setProductUrls(lines.length > 0 ? lines : [""]);
                     }
-                  }} 
+                  }}
                   className="text-xs text-blue-500 hover:text-blue-700 font-medium"
                 >
                   {urlMode === "multi" ? t("切换文本框", locale) : t("切换分行", locale)}
                 </button>
               </div>
-              
+
               {urlMode === "textarea" ? (
                 <Textarea
-                  placeholder="https://www.amazon.co.jp/..."
+                  placeholder={t("https://www.amazon.co.jp/...（必填）", locale)}
                   value={productUrls[0] || ""}
                   onChange={(e) => setProductUrls([e.target.value])}
-                  className="mt-1 text-sm font-mono"
+                  className={`mt-1 text-sm font-mono ${!(productUrls[0] || "").trim() ? "border-red-400 placeholder:text-red-400 focus-visible:ring-red-300" : ""}`}
                   rows={3}
                 />
               ) : (
@@ -498,11 +603,11 @@ export default function SubmitOrder() {
                   {productUrls.map((url, idx) => (
                     <div key={idx} className="flex items-center gap-2">
                       <Input
-                        placeholder="https://www.amazon.co.jp/..."
+                        placeholder={t("https://www.amazon.co.jp/...（必填）", locale)}
                         value={url}
                         onChange={(e) => handleUrlChange(idx, e.target.value)}
                         onKeyDown={(e) => handleUrlKeyDown(e, idx)}
-                        className="flex-1 text-sm"
+                        className={`flex-1 text-sm ${idx === 0 && !url.trim() ? "border-red-400 placeholder:text-red-400 focus-visible:ring-red-300" : ""}`}
                       />
                       {productUrls.length > 1 && (
                         <button type="button" onClick={() => removeUrl(idx)} className="text-gray-400 hover:text-red-500">
@@ -524,25 +629,32 @@ export default function SubmitOrder() {
             {/* 订单名称和价格 - 并排显示 */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <div>
-                <Label className="text-sm font-medium">{t("订单名称", locale)}</Label>
-                <Input 
-                  placeholder={t("方便辨认的名字", locale)} 
-                  required 
-                  value={form.product_name}
-                  onChange={(e) => setForm((f) => ({ ...f, product_name: e.target.value }))} 
-                  className="mt-1 text-sm" 
+                <Label className="text-sm font-medium">
+                  <span className="text-red-500">*</span> {t("订单名称", locale)}
+                </Label>
+                <Input
+                  placeholder={t("方便辨认的名字（必填）", locale)}
+                  required
+                  value={form.order_name}
+                  onChange={(e) => setForm((f) => ({ ...f, order_name: e.target.value }))}
+                  className={`mt-1 text-sm ${!form.order_name ? "border-red-400 placeholder:text-red-400 focus-visible:ring-red-300" : ""}`}
                 />
               </div>
               <div>
-                <Label className="text-sm font-medium">{t("日元货款 (¥)", locale)}</Label>
+                <Label className="text-sm font-medium">
+                  <span className="text-red-500">*</span> {t("日元货款 (¥)", locale)}
+                </Label>
                 <Input
                   type="text"
-                  inputMode="decimal"
-                  placeholder="15000"
+                  inputMode="numeric"
+                  placeholder={t("15000（必填）", locale)}
                   required
                   value={form.estimated_jpy}
-                  onChange={(e) => setForm((f) => ({ ...f, estimated_jpy: e.target.value }))}
-                  className="mt-1 text-sm"
+                  onChange={(e) => {
+                    const val = e.target.value.replace(/[^\d]/g, '');
+                    setForm((f) => ({ ...f, estimated_jpy: val }));
+                  }}
+                  className={`mt-1 text-sm ${!form.estimated_jpy ? "border-red-400 placeholder:text-red-400 focus-visible:ring-red-300" : ""}`}
                 />
               </div>
             </div>
@@ -565,10 +677,10 @@ export default function SubmitOrder() {
                 <div className="space-y-2">
                   {addonOptions.map((opt) => {
                     const isSelected = selectedAddons.includes(opt.id);
-                    const isCustomizable = opt.is_user_customizable;
+                    const isCustomizable = opt.isUserCustomizable;
                     const customFee = addonCustomFees[opt.id];
                     const effectiveFee = isCustomizable && customFee !== undefined ? customFee : parseFloat(opt.fee) || 0;
-                    const feeCur = opt.fee_currency || "JPY";
+                    const feeCur = opt.feeCurrency || "JPY";
                     return (
                       <div key={opt.id} className={`rounded-lg border p-2.5 transition-colors ${isSelected ? "border-yellow-400 bg-yellow-50" : "border-gray-200"}`}>
                         <label className="flex items-start gap-3 cursor-pointer">
@@ -579,22 +691,22 @@ export default function SubmitOrder() {
                           />
                           <div className="flex-1">
                             <div className="flex items-center justify-between gap-2 flex-wrap mb-1">
-                              <span className="text-sm font-medium text-gray-800">{opt.name}</span>
+                              <span className="text-sm font-medium text-gray-800">{opt.serviceName}</span>
                               <span className="text-sm text-red-600 font-semibold">
                                 +{feeCur} {feeCur === "JPY" ? Math.round(effectiveFee) : effectiveFee}
                               </span>
                             </div>
-                            {opt.description && <p className="text-xs text-gray-500 mt-0.5">{t(opt.description, locale)}</p>}
+                            {opt.userDescription && <p className="text-xs text-gray-500 mt-0.5">{t(opt.userDescription, locale)}</p>}
                             {isCustomizable && isSelected && (
                               <div className="mt-2 space-y-1.5">
                                 <div className="flex items-center gap-2">
-                                  <Label className="text-xs text-gray-600">{t("自定义金额", locale)} ({opt.min_fee || 0} - {opt.max_fee || '∞'} {feeCur})</Label>
+                                  <Label className="text-xs text-gray-600">{t("自定义金额", locale)} ({opt.feeMin || 0} - {opt.feeMax || '∞'} {feeCur})</Label>
                                   <Input
                                     type="number"
-                                    min={opt.min_fee || 0}
-                                    max={opt.max_fee || undefined}
+                                    min={opt.feeMin || 0}
+                                    max={opt.feeMax || undefined}
                                     step="1"
-                                    placeholder={opt.fee || "0"}
+                                    placeholder={opt.feeMin || "0"}
                                     value={customFee !== undefined ? customFee : ""}
                                     onChange={(e) => handleAddonFeeChange(opt.id, e.target.value)}
                                     className={`h-7 text-xs w-32 ${
@@ -726,7 +838,7 @@ export default function SubmitOrder() {
               type="button"
               variant="outline"
               className="w-full border-purple-300 text-purple-700 hover:bg-purple-50"
-              disabled={submitting || !form.product_name || !form.estimated_jpy}
+              disabled={submitting || !form.order_name || !form.estimated_jpy || !(productUrls.some(u => u.trim()))}
               onClick={handlePreShipmentSubmit}
             >
               <Truck className="w-4 h-4 mr-2" />
@@ -735,7 +847,7 @@ export default function SubmitOrder() {
             )}
             <Button
               type="submit"
-              disabled={submitting || !form.product_name || !form.estimated_jpy}
+              disabled={submitting || !form.order_name || !form.estimated_jpy || !(productUrls.some(u => u.trim()))}
               className="w-full bg-red-600 hover:bg-red-700"
             >
               <ShoppingBag className="w-4 h-4 mr-2" />
@@ -752,6 +864,28 @@ export default function SubmitOrder() {
             {t("您没有权限提交购买需求", locale)}
           </Button>
         )}
+
+        {/* 确认提交订单弹窗 */}
+        <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>{t("是否提交订单？", locale)}</AlertDialogTitle>
+              <AlertDialogDescription>
+                {t("请确认商品信息无误，提交后将进入付款流程。", locale)}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={submitting}>{t("否", locale)}</AlertDialogCancel>
+              <AlertDialogAction
+                disabled={submitting}
+                onClick={(e) => { e.preventDefault(); confirmSubmitOrder(); }}
+                className="bg-red-600 hover:bg-red-700 text-white"
+              >
+                {submitting ? t("提交中...", locale) : t("是", locale)}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </form>
     </div>
   );

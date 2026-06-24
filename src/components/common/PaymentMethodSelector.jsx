@@ -10,8 +10,8 @@ import { base44 } from "@/api/base44Client";
 // No hardcoded fallbacks — only show what the tenant has configured
 
 /**
- * @param {string}   value       - currently selected method value (provider_key or name)
- * @param {function} onChange    - called with (method) where method = { value, label, payment_note, image_url }
+ * @param {string}   value       - currently selected method value (providerKey or methodName)
+ * @param {function} onChange    - called with (method) where method = { value, label, paymentDescription, paymentQrCode }
  * @param {string}   className   - extra class for the grid wrapper
  * @param {Array}    prefetched  - optional pre-fetched methods list (skip fetching)
  * @param {string}   activeColor - tailwind classes for active border, e.g. "border-blue-500 bg-blue-50 text-blue-700"
@@ -51,24 +51,24 @@ export default function PaymentMethodSelector({ value, onChange, className = "",
     return <p className="text-xs text-gray-400 py-2">暂无可用支付方式，请联系管理员配置。</p>;
   }
 
-  const autoMethods = displayMethods.filter(m => !!m.provider_key);
-  const manualMethods = displayMethods.filter(m => !m.provider_key);
+  const autoMethods = displayMethods.filter(m => !!m.providerKey);
+  const manualMethods = displayMethods.filter(m => !m.providerKey);
   const hasBothTypes = autoMethods.length > 0 && manualMethods.length > 0;
 
   const renderButton = (m) => {
-    const methodValue = m.provider_key || m.name;
+    const methodValue = m.providerKey || m.methodName;
     const isActive = value === methodValue;
     return (
       <button
         key={m.id || methodValue}
         type="button"
-        onClick={() => onChange({ value: methodValue, label: m.name, payment_note: m.payment_note || "", image_url: m.image_url || "", icon: m.icon || "", color: m.color || "", payment_currency: m.payment_currency || null, surcharge_rate: m.surcharge_rate || 0, surcharge_fixed_jpy: m.surcharge_fixed_jpy || 0 })}
+        onClick={() => onChange({ value: methodValue, label: m.methodName, paymentDescription: m.paymentDescription || "", paymentQrCode: m.paymentQrCode || "", icon: m.icon || "", color: m.color || "", paymentCurrency: m.paymentCurrency || null, paymentMethodFeeRate: m.paymentMethodFeeRate || 0, paymentMethodFeeFlat: m.paymentMethodFeeFlat || 0 })}
         className={`p-3 rounded-lg border-2 text-sm font-medium transition-all flex items-center gap-2 ${
           isActive ? activeColor : "border-gray-200 text-gray-500 hover:border-gray-300"
         }`}
       >
         {m.icon && <span className="text-base leading-none">{m.icon}</span>}
-        <span>{m.name}</span>
+        <span>{m.methodName}</span>
       </button>
     );
   };
