@@ -155,15 +155,15 @@ export default function BulkPaymentModal({ orders, onClose, onSuccess }) {
           {/* Other methods: single proof upload */}
           {method && method !== "alipay" && (
             <div className="space-y-3">
-              {(selectedMethodMeta?.payment_note || selectedMethodMeta?.image_url) ? (
+              {(selectedMethodMeta?.paymentDescription || selectedMethodMeta?.payment_note || selectedMethodMeta?.paymentQrCode || selectedMethodMeta?.image_url) ? (
                 <div className="p-3 bg-gray-50 border border-gray-200 rounded-lg space-y-2">
-                  {selectedMethodMeta.image_url && (
+                  {(selectedMethodMeta.paymentQrCode || selectedMethodMeta.image_url) && (
                     <div className="text-center">
-                      <img src={selectedMethodMeta.image_url} alt="收款码" className="h-40 mx-auto rounded object-contain border border-gray-200" />
+                      <img src={selectedMethodMeta.paymentQrCode || selectedMethodMeta.image_url} alt="收款码" className="h-40 mx-auto rounded object-contain border border-gray-200" />
                     </div>
                   )}
-                  {selectedMethodMeta.payment_note && (
-                    <p className="text-sm text-gray-700 whitespace-pre-wrap text-center">{selectedMethodMeta.payment_note}</p>
+                  {(selectedMethodMeta.paymentDescription || selectedMethodMeta.payment_note) && (
+                    <p className="text-sm text-gray-700 whitespace-pre-wrap text-center">{selectedMethodMeta.paymentDescription || selectedMethodMeta.payment_note}</p>
                   )}
                 </div>
               ) : (

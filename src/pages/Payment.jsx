@@ -11,6 +11,44 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 
+const IS_DEV_MOCK = import.meta.env.VITE_DEV_MOCK === 'true';
+
+const MOCK_PAYMENT_DATA = {
+  // order: {
+  //   id: 'mock-order-001',
+  //   order_number: 'GC-20260625-001',
+  //   product_name: 'Sony WH-1000XM5 降噪耳机',
+  //   product_image_url: 'https://www.amazon.co.jp/dp/B0BX2L8PBT',
+  //   estimated_jpy: 35000,
+  //   service_fee_amount: 2800,
+  //   prepayment_amount: 15000,
+  //   paid_amount: 0,
+  //   payment_method: 'alipay',
+  //   order_status: 'pending_payment',
+  //   user_note: '请尽快发货',
+  // },
+  // settings: {
+  //   alipay_account: 'globalcart@alipay.com',
+  //   alipay_account_name: '张三',
+  //   alipay_qr_url: '',
+  //   payment_pending_reminder: '请在30分钟内完成支付，超时订单将自动取消。',
+  // },
+  // paymentMethods: [
+  //   { id: 1, name: '支付宝', provider_key: 'alipay', payment_currency: 'CNY', icon: '💰', color: 'bg-blue-100 text-blue-700', is_active: true, sort_order: 0, surcharge_rate: 0, surcharge_fixed_jpy: 0, image_url: '', payment_note: '' },
+  //   { id: 2, name: '微信支付', provider_key: 'wechat', payment_currency: 'CNY', icon: '💚', color: 'bg-green-100 text-green-700', is_active: true, sort_order: 1, surcharge_rate: 0, surcharge_fixed_jpy: 0, image_url: '', payment_note: '' },
+  //   { id: 3, name: '银行转账', provider_key: '', payment_currency: 'JPY', icon: '🏦', color: 'bg-gray-100 text-gray-700', is_active: true, sort_order: 2, surcharge_rate: 0, surcharge_fixed_jpy: 0, image_url: '', payment_note: '请在备注中填写订单号\n到账后1个工作日内确认' },
+  //   { id: 4, name: 'USDT', provider_key: '', payment_currency: 'USD', icon: '💵', color: 'bg-teal-100 text-teal-700', is_active: true, sort_order: 3, surcharge_rate: 1.5, surcharge_fixed_jpy: 0, image_url: '', payment_note: 'TRC20 地址：TXXX...XXX\n请转账后上传凭证' },
+  //   { id: 5, name: 'PayPal', provider_key: 'paypal', payment_currency: 'USD', icon: '🅿️', color: 'bg-blue-100 text-blue-800', is_active: true, sort_order: 4, surcharge_rate: 3.5, surcharge_fixed_jpy: 100, image_url: '', payment_note: '' },
+  // ],
+  // rates: { CNY: 0.049, USD: 0.0067, TWD: 0.21 },
+  // isFullPayOnce: false,
+  // estimatedShippingFee: 2500,
+  // paymentAmountJpy: 15000,
+  // surchargeJpy: 0,
+  // paymentAmountWithSurcharge: 15000,
+  // paymentBreakdown: null,
+  // isSupplement: false,
+};
 
 export default function Payment() {
   const navigate = useNavigate();
@@ -50,6 +88,29 @@ export default function Payment() {
       return;
     }
 
+    if (IS_DEV_MOCK) {
+      const data = MOCK_PAYMENT_DATA;
+      setOrder(data.order);
+      setSettings(data.settings);
+      setPaymentMethods(data.paymentMethods);
+      setRates(data.rates);
+      setOtherPaymentConfig(null);
+      setServerPaymentData({
+        isFullPayOnce: data.isFullPayOnce,
+        estimatedShippingFee: data.estimatedShippingFee,
+        paymentAmountJpy: data.paymentAmountJpy,
+        surchargeJpy: data.surchargeJpy,
+        paymentAmountWithSurcharge: data.paymentAmountWithSurcharge,
+        paymentBreakdown: data.paymentBreakdown,
+        isSupplement: data.isSupplement,
+      });
+      if (data.settings?.payment_pending_reminder) {
+        setPaymentPendingReminder(data.settings.payment_pending_reminder);
+      }
+      setLoading(false);
+      return;
+    }
+
     const timeoutId = setTimeout(() => {
       setLoading(false);
       setOrder(null); // Force render error state
@@ -57,18 +118,23 @@ export default function Payment() {
 
     base44.functions.invoke('payment/getPaymentPageData', { order_id: orderId, ...(payMethodKey ? { payment_method_key: payMethodKey } : {}) })
       .then(r => {
-        debugger
+        
         clearTimeout(timeoutId);
         const data = r.data || {};
+
+        console.log(data)
         if (!data) {
           setOrder(null); 
         } else {
-          setOrder(data);
+          setOrder(data.order || data);
           setSettings(data.settings || {});
           if (data.settings?.payment_pending_reminder) {
             setPaymentPendingReminder(data.settings.payment_pending_reminder);
           }
-          setPaymentMethods(data.paymentMethods || []);
+          const methodsList = Array.isArray(data.paymentMethods)
+            ? data.paymentMethods
+            : data.paymentMethods?.paymentMethods || [];
+          setPaymentMethods(methodsList);
           setRates(data.rates || null);
           setOtherPaymentConfig(data.otherPaymentConfig || null);
           setServerPaymentData({

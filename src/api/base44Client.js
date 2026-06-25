@@ -75,5 +75,35 @@ export const base44 = {
       const lang = path.split('/')[1] || 'zhcn';
       window.location.href = redirectUrl || `/${lang}/home`;
     }
+  },
+  // 文件上传和删除
+  integrations: {
+    Core: {
+      UploadFile: async ({ file }) => {
+        const formData = new FormData();
+        formData.append('file', file);
+        const token = localStorage.getItem('token');
+        const res = await axios.post('/globalcart/order/info/uploadImage', formData, {
+          headers: { 'Content-Type': 'multipart/form-data', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        });
+        const fileName = res.data?.data || res.data;
+        const cleanPath = typeof fileName === 'string' ? fileName.replace(/\\/g, '/') : fileName;
+        let userId = '';
+        try {
+          const cache = JSON.parse(localStorage.getItem('auth_cache') || '{}');
+          userId = cache.user?.id || '';
+        } catch (_) {}
+        const fileUrl = typeof cleanPath === 'string'
+          ? `${window.location.origin}/globalcart/order/info/image/${userId}/${cleanPath}`
+          : cleanPath;
+        return { file_url: fileUrl };
+      },
+      DeleteFile: async (imageUrl) => {
+        const match = imageUrl.match(/\/globalcart\/order\/info\/image\/(\d+)\/(.+)$/);
+        if (!match) return;
+        const [, userId, path] = match;
+        return api.post(`/globalcart/order/info/deleteImage?userId=${userId}&path=${encodeURIComponent(path)}`).then(r => r.data);
+      }
+    }
   }
 }

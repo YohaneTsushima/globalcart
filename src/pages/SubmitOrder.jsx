@@ -38,35 +38,37 @@ const IS_DEV_MOCK = import.meta.env.VITE_DEV_MOCK === 'true';
 
 const MOCK_PAGE_DATA = {
   addons: [
-    { id: 'addon-1', name: '商品拍照', fee: 300, feeCurrency: 'JPY', description: '入库时拍摄商品实物照片', isUserCustomizable: false },
-    { id: 'addon-2', name: '代缴消费税', fee: 0, feeCurrency: 'JPY', description: '代垫消费税金额（自定义）', isUserCustomizable: true, min_fee: 100, max_fee: 50000 },
-    { id: 'addon-3', name: '逗你玩的', fee: 111110, feeCurrency: 'JPY', description: '我也不知道（自定义）', isUserCustomizable: true, min_fee: 100, max_fee: 50000 }
+    // { id: 'addon-1', name: '商品拍照', fee: 300, feeCurrency: 'JPY', description: '入库时拍摄商品实物照片', isUserCustomizable: false },
+    // { id: 'addon-2', name: '代缴消费税', fee: 0, feeCurrency: 'JPY', description: '代垫消费税金额（自定义）', isUserCustomizable: true, min_fee: 100, max_fee: 50000 },
+    // { id: 'addon-3', name: '逗你玩的', fee: 111110, feeCurrency: 'JPY', description: '我也不知道（自定义）', isUserCustomizable: true, min_fee: 100, max_fee: 50000 }
   ],
-  rates: { jpy_cny: 0.049, jpy_usd: 0.0067, jpy_twd: 0.21 },
+  rates: { 
+    //jpy_cny: 0.049, jpy_usd: 0.0067, jpy_twd: 0.21 
+  },
   activeRule: {
-    id: 'rule-dev', name: '标准服务费 8%', mode: 'simple', simple_rate: 8, simple_fixed_fee: 0,
-    min_fee: 0, max_fee: 0, round_mode: 'round', round_unit: 1, version: 1,
+    // id: 'rule-dev', name: '标准服务费 8%', mode: 'simple', simple_rate: 8, simple_fixed_fee: 0,
+    // min_fee: 0, max_fee: 0, round_mode: 'round', round_unit: 1, version: 1,
   },
   settings: {
-    prepay_enabled: 'false',
-    prepay_rate: '80',
-    service_fee_rate: '8',
-    pre_shipment_enabled: 'true',
-    product_url_tips: '输入日本商城的商品链接，支持多个链接',
+    // prepay_enabled: 'false',
+    // prepay_rate: '80',
+    // service_fee_rate: '8',
+    // pre_shipment_enabled: 'true',
+    // product_url_tips: '输入日本商城的商品链接，支持多个链接',
   }
 };
 
 const MOCK_PAYMENT_METHODS = {
   methods: [
-    { id: 'pm-1', name: '支付宝', provider_key: 'alipay', payment_currency: 'CNY', icon: '💰', color: 'bg-blue-100 text-blue-700', is_active: true, sort_order: 0, surcharge_rate: 0, surcharge_fixed_jpy: 0 },
-    { id: 'pm-2', name: '银行转账', provider_key: '', payment_currency: 'JPY', icon: '🏦', color: 'bg-gray-100 text-gray-700', is_active: true, sort_order: 1, surcharge_rate: 0, surcharge_fixed_jpy: 0 },
+    // { id: 'pm-1', name: '支付宝', provider_key: 'alipay', payment_currency: 'CNY', icon: '💰', color: 'bg-blue-100 text-blue-700', is_active: true, sort_order: 0, surcharge_rate: 0, surcharge_fixed_jpy: 0 },
+    // { id: 'pm-2', name: '银行转账', provider_key: '', payment_currency: 'JPY', icon: '🏦', color: 'bg-gray-100 text-gray-700', is_active: true, sort_order: 1, surcharge_rate: 0, surcharge_fixed_jpy: 0 },
   ],
 };
 
 const MOCK_SHIPPING_METHODS = {
   methods: [
-    { id: 'sm-1', name: 'EMS', code: 'EMS', transit_days: '5-10个工作日', is_active: true },
-    { id: 'sm-2', name: 'SAL', code: 'SAL', transit_days: '2-3个月', is_active: true },
+    // { id: 'sm-1', name: 'EMS', code: 'EMS', transit_days: '5-10个工作日', is_active: true },
+    // { id: 'sm-2', name: 'SAL', code: 'SAL', transit_days: '2-3个月', is_active: true },
   ],
 };
 // ────────────────────────────────────────────────────────────────────────────
@@ -229,8 +231,25 @@ export default function SubmitOrder() {
 
   useEffect(() => { if (form.estimated_jpy) calculate(); }, [form.estimated_jpy, selectedAddons, addonCustomFees, settings, activeRule]);
 
+  const deleteImageByUrl = async (imageUrl) => {
+    if (!imageUrl) return;
+    try {
+      await base44.integrations.Core.DeleteFile(imageUrl);
+    } catch (_) {}
+  };
+
+  const deleteProductImage = async () => {
+    const url = form.product_image_url;
+    if (!url) return;
+    setForm((f) => ({ ...f, product_image_url: "" }));
+    await deleteImageByUrl(url);
+  };
+
   const handleProductImageUpload = async (file) => {
     if (!file) return;
+    if (form.product_image_url) {
+      await deleteImageByUrl(form.product_image_url);
+    }
     setUploading(true);
     const { file_url } = await base44.integrations.Core.UploadFile({ file });
     setForm((f) => ({ ...f, product_image_url: file_url }));
@@ -372,9 +391,6 @@ export default function SubmitOrder() {
             selected_addons: selectedAddonObjects.map((a) => ({ id: a.id, serviceName: a.serviceName, fee: parseFloat(a.fee) || 0, feeCurrency: a.feeCurrency || "JPY" }))
       };
 
-      console.log(submitForm);
-      console.log(user);
-
       // 弹窗确认，确认后才调后端
       setPendingForm(submitForm);
       setConfirmOpen(true);
@@ -393,8 +409,7 @@ export default function SubmitOrder() {
       const res = await base44.functions.invoke('order/info/createTenantOrder', pendingForm);
 
       const order = res?.data;
-      console.log(res)
-
+      
       if (res.data?.credit_downgraded) {
         setCreditDowngradeMsg(res.data.credit_downgraded_reason);
         setSubmitting(false);
@@ -753,39 +768,60 @@ export default function SubmitOrder() {
                     if (it.type.startsWith("image/")) {
                       e.preventDefault();
                       handleProductImageUpload(it.getAsFile());
-                      break;
+                      return;
                     }
+                  }
+                  const text = e.clipboardData?.getData("text") || "";
+                  if (text && /^https?:\/\/.+\.(jpg|jpeg|png|gif|webp|bmp|svg)(\?.*)?$/i.test(text)) {
+                    e.preventDefault();
+                    setForm((f) => ({ ...f, product_image_url: text }));
                   }
                 }}
               >
-                <div
-                  className="p-3 cursor-text"
-                  tabIndex={0}
-                  onClick={() => document.getElementById("product-image-input")?.click()}
-                >
-                  {form.product_image_url ? (
-                    <div className="flex items-center gap-3">
-                      <img src={form.product_image_url} alt="" className="h-12 rounded object-cover" />
-                      <div className="text-sm text-green-700">✓ {t("已上传，点击更换", locale)}</div>
+                {form.product_image_url ? (
+                  <div className="p-3 flex items-center gap-3 cursor-pointer" onClick={() => document.getElementById("product-image-input")?.click()}>
+                    <img src={form.product_image_url} alt="" className="h-16 w-16 rounded object-cover border border-green-200" />
+                    <div className="flex-1 min-w-0">
+                      <div className="text-xs text-gray-400">{t("点击更换或拖拽新图片", locale)}</div>
                     </div>
-                  ) : uploading ? (
-                    <div className="flex items-center gap-2 text-blue-500 text-sm">
-                      <Upload className="w-4 h-4 animate-pulse" />
-                      <span>{t("上传中...", locale)}</span>
+                    <button
+                      type="button"
+                      className="p-1 rounded-full hover:bg-red-100 text-gray-400 hover:text-red-500 transition-colors flex-shrink-0"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        deleteProductImage();
+                      }}
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    <div
+                      className="p-3 cursor-text"
+                      tabIndex={0}
+                      onClick={() => document.getElementById("product-image-input")?.click()}
+                    >
+                      {uploading ? (
+                        <div className="flex items-center gap-2 text-blue-500 text-sm">
+                          <Upload className="w-4 h-4 animate-pulse" />
+                          <span>{t("上传中...", locale)}</span>
+                        </div>
+                      ) : (
+                        <div className="text-sm text-gray-500">{t("点击上传、拖拽图片到此 或 Ctrl+V 粘贴剪切板图片", locale)}</div>
+                      )}
                     </div>
-                  ) : (
-                    <div className="text-sm text-gray-500">{t("点击上传、拖拽图片到此 或 Ctrl+V 粘贴剪切板图片", locale)}</div>
-                  )}
-                </div>
-                <div className="border-t border-dashed border-gray-200 px-3 py-2">
-                  <Input
-                    type="text"
-                    placeholder={t("或输入图片 URL", locale)}
-                    value={form.product_image_url || ""}
-                    onChange={(e) => setForm((f) => ({ ...f, product_image_url: e.target.value }))}
-                    className="text-sm border-0 shadow-none bg-transparent px-0 h-7 focus-visible:ring-0"
-                  />
-                </div>
+                    <div className="border-t border-dashed border-gray-200 px-3 py-2">
+                      <Input
+                        type="text"
+                        placeholder={t("或输入图片 URL", locale)}
+                        value={form.product_image_url || ""}
+                        onChange={(e) => setForm((f) => ({ ...f, product_image_url: e.target.value }))}
+                        className="text-sm border-0 shadow-none bg-transparent px-0 h-7 focus-visible:ring-0"
+                      />
+                    </div>
+                  </>
+                )}
               </div>
               <input
                 id="product-image-input"

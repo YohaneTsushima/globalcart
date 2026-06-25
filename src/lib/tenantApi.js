@@ -43,7 +43,8 @@ export async function fetchTenantConfig({ force = false } = {}) {
     const cached = getTenantConfigCache();
     if (cached) return cached;
   }
-  const res = await base44.functions.invoke('getTenantConfigData', {});
+  // const res = await base44.functions.invoke('getTenantConfigData', {});
+  const res = {};
   const data = res.data || {};
   setTenantConfigCache(data);
   return data;

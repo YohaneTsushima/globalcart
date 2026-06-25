@@ -38,9 +38,9 @@ export default function PaymentModal({ order, mode = "prepay", onClose, onSucces
     ? order.supplement_amount
     : isShipping
     ? order.shipping_fee_amount
-    : order.prepayment_amount;
+    : order.prepayment_amount_jpy || order.prepayment_amount;
 
-  const cur = isShipping ? (order.shipping_fee_currency || "CNY") : (order.prepayment_currency || "CNY");
+  const cur = isShipping ? (order.shipping_fee_currency || "CNY") : (order.prepayment_currency || order.payment_currency || "JPY");
 
   // For shipping: combine shipping fee + item size fee
   const itemSizeFee = isShipping && order.item_size_extra_fee > 0 ? order.item_size_extra_fee : 0;
@@ -71,28 +71,30 @@ export default function PaymentModal({ order, mode = "prepay", onClose, onSucces
   const [surchargeJpy, setSurchargeJpy] = useState(0);
   const [finalAmountJpy, setFinalAmountJpy] = useState(defaultAmount);
 
-  // Fetch exchange rates once on mount (via backend, includes tenant increments)
+  // Fetch exchange rates once on mount
   useEffect(() => {
-    base44.functions.invoke('fetchExchangeRates', {})
-      .then(r => {
-        const d = r.data;
-        if (d && d.jpy_usd) {
-          // Build a conversion_rates-style map for display (1 JPY → X foreign)
-          // rates returned are already increment-adjusted
+    const DEFAULT_RATES = { JPY: 1, CNY: 0.049, USD: 0.0067, TWD: 0.21, HKD: 0.052, EUR: 0.0061, GBP: 0.0053, AUD: 0.01, SGD: 0.009 };
+    fetch('https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies/jpy.json')
+      .then(r => r.json())
+      .then(data => {
+        console.log(data)
+        if (data && data.jpy) {
           setRates({
             JPY: 1,
-            CNY: d.jpy_cny,
-            USD: d.jpy_usd,
-            EUR: d.jpy_eur,
-            GBP: d.jpy_gbp,
-            AUD: d.jpy_aud,
-            SGD: d.jpy_sgd,
-            HKD: d.jpy_hkd,
-            TWD: d.jpy_twd,
+            CNY: data.jpy.cny || DEFAULT_RATES.CNY,
+            USD: data.jpy.usd || DEFAULT_RATES.USD,
+            EUR: data.jpy.eur || DEFAULT_RATES.EUR,
+            GBP: data.jpy.gbp || DEFAULT_RATES.GBP,
+            AUD: data.jpy.aud || DEFAULT_RATES.AUD,
+            SGD: data.jpy.sgd || DEFAULT_RATES.SGD,
+            HKD: data.jpy.hkd || DEFAULT_RATES.HKD,
+            TWD: data.jpy.twd || DEFAULT_RATES.TWD,
           });
+        } else {
+          setRates(DEFAULT_RATES);
         }
       })
-      .catch(() => {});
+      .catch(() => { setRates(DEFAULT_RATES); });
   }, []);
 
   // When method changes (for prepay mode), reload surcharge from backend
@@ -115,9 +117,21 @@ export default function PaymentModal({ order, mode = "prepay", onClose, onSucces
     }
   }, [method]);
 
+  // 监听支付宝付款完成的 postMessage
+  useEffect(() => {
+    const handleMessage = (e) => {
+      if (e.data?.type === "alipay_payment_done") {
+        setSubmitting(false);
+        onSuccess?.();
+      }
+    };
+    window.addEventListener("message", handleMessage);
+    return () => window.removeEventListener("message", handleMessage);
+  }, [onSuccess]);
+
   // Currency conversion helpers
   const CURRENCY_SYMBOLS = { JPY: "¥", CNY: "¥", USD: "$", TWD: "NT$", HKD: "HK$", EUR: "€", SGD: "S$" };
-  const payCurrency = selectedMethodMeta?.payment_currency || cur;
+  const payCurrency = selectedMethodMeta?.paymentCurrency || selectedMethodMeta?.payment_currency || cur;
 
   // Compute converted amount from JPY base → payCurrency
   // defaultAmount is in `cur`; rates are relative to JPY
@@ -142,7 +156,6 @@ export default function PaymentModal({ order, mode = "prepay", onClose, onSucces
   }, [convertedRate, payCurrency, selectedMethodMeta]);
 
   // Alipay
-  const [alipayUrl, setAlipayUrl] = useState(null);
   const [generating, setGenerating] = useState(false);
 
   // Manual
@@ -157,20 +170,41 @@ export default function PaymentModal({ order, mode = "prepay", onClose, onSucces
       : `同一物流代购 - ${order.product_name}`;
 
     // For prepay, use finalAmountJpy (includes surcharge); for shipping/supplement use paidAmount as-is
-    const amountToCharge = (!isShipping && !isSupp && surchargeJpy > 0) ? finalAmountJpy : parseFloat(paidAmount);
+    const amountJpy = (!isShipping && !isSupp && surchargeJpy > 0) ? finalAmountJpy : parseFloat(paidAmount);
 
-    const res = await base44.functions.invoke("generateAlipayPaymentLink", {
+    // 如果选了非 JPY 的支付方式，转成对应货币金额
+    let amountToCharge = amountJpy;
+    let currencyToSend = "JPY";
+    if (payCurrency !== "JPY" && rates && rates[payCurrency]) {
+      amountToCharge = Math.round(amountJpy * rates[payCurrency] * 100) / 100;
+      currencyToSend = payCurrency;
+    }
+
+    const payParam = {
       orderId: order.id,
       amount: amountToCharge,
-      currency: cur,
+      currency: currencyToSend,
       subject,
-      paymentType: isShipping ? "shipping" : "order",
-    });
-    const url = res.data?.paymentUrl;
-    setAlipayUrl(url);
+      paymentType: isShipping ? "shipping" : "order"
+    };
+
+    console.log(payParam);
+
+    const res = await base44.functions.invoke("alipay/pay", payParam);
+    const formData = res?.data;
+
     setGenerating(false);
-    // Open Alipay in a new tab; after payment, that tab auto-closes and notifies this page via postMessage
-    if (url) window.open(url, "_blank");
+    document.open();
+    document.write(formData);
+    document.close();
+    // 后端返回的是 HTML 表单，在新窗口渲染并自动提交到支付宝
+    // if (formData && typeof formData === 'string') {
+    //   const newWindow = window.open('', '_blank');
+    //   if (newWindow) {
+    //     newWindow.document.write(formData);
+    //     newWindow.document.close();
+    //   }
+    // }
   };
 
   // Build actual-currency fields when paying in a non-JPY currency.
@@ -287,7 +321,7 @@ export default function PaymentModal({ order, mode = "prepay", onClose, onSucces
                  <span>¥{defaultAmount.toLocaleString()} JPY</span>
                </div>
                <div className="flex justify-between text-yellow-700">
-                 <span>支付手续费（{selectedMethodMeta?.surcharge_rate > 0 ? `${selectedMethodMeta.surcharge_rate}%` : ''}{selectedMethodMeta?.surcharge_rate > 0 && selectedMethodMeta?.surcharge_fixed_jpy > 0 ? ' + ' : ''}{selectedMethodMeta?.surcharge_fixed_jpy > 0 ? `¥${selectedMethodMeta.surcharge_fixed_jpy}` : ''}）</span>
+                  <span>支付手续费（{(selectedMethodMeta?.paymentMethodFeeRate || selectedMethodMeta?.surcharge_rate) > 0 ? `${selectedMethodMeta.paymentMethodFeeRate || selectedMethodMeta.surcharge_rate}%` : ''}{(selectedMethodMeta?.paymentMethodFeeRate || selectedMethodMeta?.surcharge_rate) > 0 && (selectedMethodMeta?.paymentMethodFeeFlat || selectedMethodMeta?.surcharge_fixed_jpy) > 0 ? ' + ' : ''}{(selectedMethodMeta?.paymentMethodFeeFlat || selectedMethodMeta?.surcharge_fixed_jpy) > 0 ? `¥${selectedMethodMeta.paymentMethodFeeFlat || selectedMethodMeta.surcharge_fixed_jpy}` : ''}）</span>
                  <span>+¥{Math.round(surchargeJpy).toLocaleString()} JPY</span>
                </div>
                <div className="flex justify-between font-semibold text-yellow-800 border-t border-yellow-200 pt-1">
@@ -351,7 +385,7 @@ export default function PaymentModal({ order, mode = "prepay", onClose, onSucces
             <Label className="text-sm mb-2 block">选择支付方式</Label>
             <PaymentMethodSelector
               value={method}
-              onChange={m => { setMethod(m.value); setSelectedMethodMeta(m); setAlipayUrl(null); setProofUrl(""); }}
+              onChange={m => { setMethod(m.value); setSelectedMethodMeta(m); setProofUrl(""); }}
               disabled={!canPayment}
             />
           </div>
@@ -363,18 +397,11 @@ export default function PaymentModal({ order, mode = "prepay", onClose, onSucces
                 onClick={handleGenerateAlipay} disabled={generating || !paidAmount || !canPayment}>
                 {generating
                   ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />生成链接中...</>
-                  : <><ExternalLink className="w-4 h-4 mr-2" />{alipayUrl ? "重新打开支付宝付款" : "打开支付宝付款"}</>}
+                  : <><ExternalLink className="w-4 h-4 mr-2" />打开支付宝付款</>}
               </Button>
-              {alipayUrl && (
-                <p className="text-xs text-green-600 text-center bg-green-50 border border-green-100 rounded-lg px-3 py-2">
-                  ✓ 支付宝已在新标签打开，付款完成后该标签将自动关闭并刷新此页面
-                </p>
-              )}
-              {!alipayUrl && (
-                <p className="text-xs text-gray-400 text-center">
-                  点击后将在新标签打开支付宝，付款成功后自动关闭并返回
-                </p>
-              )}
+              <p className="text-xs text-gray-400 text-center">
+                点击后将在新标签打开支付宝，付款成功后自动返回
+              </p>
             </div>
           )}
 
@@ -382,15 +409,15 @@ export default function PaymentModal({ order, mode = "prepay", onClose, onSucces
           {method && method !== "alipay" && canPayment && (
             <div className="space-y-3">
               {/* Show payment note + QR from admin config if available */}
-              {(selectedMethodMeta?.payment_note || selectedMethodMeta?.image_url) ? (
+              {(selectedMethodMeta?.paymentDescription || selectedMethodMeta?.payment_note || selectedMethodMeta?.paymentQrCode || selectedMethodMeta?.image_url) ? (
                 <div className="p-3 bg-gray-50 border border-gray-200 rounded-lg space-y-2">
-                  {selectedMethodMeta.image_url && (
+                  {(selectedMethodMeta.paymentQrCode || selectedMethodMeta.image_url) && (
                     <div className="text-center">
-                      <img src={selectedMethodMeta.image_url} alt="收款码" className="h-40 mx-auto rounded object-contain border border-gray-200" />
+                      <img src={selectedMethodMeta.paymentQrCode || selectedMethodMeta.image_url} alt="收款码" className="h-40 mx-auto rounded object-contain border border-gray-200" />
                     </div>
                   )}
-                  {selectedMethodMeta.payment_note && (
-                    <p className="text-sm text-gray-700 whitespace-pre-wrap text-center">{selectedMethodMeta.payment_note}</p>
+                  {(selectedMethodMeta.paymentDescription || selectedMethodMeta.payment_note) && (
+                    <p className="text-sm text-gray-700 whitespace-pre-wrap text-center">{selectedMethodMeta.paymentDescription || selectedMethodMeta.payment_note}</p>
                   )}
                 </div>
               ) : (

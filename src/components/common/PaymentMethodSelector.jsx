@@ -27,9 +27,9 @@ export default function PaymentMethodSelector({ value, onChange, className = "",
       return;
     }
     setLoading(true);
-    base44.functions.invoke('managePaymentMethod', { action: 'list' })
+    base44.functions.invoke('config/page/getPaymentMethod', { action: 'list' })
       .then(r => {
-        setMethods(r.data?.methods || []);
+        setMethods(r.data?.paymentMethods || []);
       })
       .catch(() => setMethods([]))
       .finally(() => setLoading(false));

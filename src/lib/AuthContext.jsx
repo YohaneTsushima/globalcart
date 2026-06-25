@@ -50,8 +50,9 @@ export const AuthProvider = ({ children }) => {
     // Resolve tenant branding from subdomain in parallel with app state check
     // Skip in dev mock mode (will be set below)
     const isDev = !window.location.hostname.includes('.') || window.location.hostname === 'localhost';
+    resolveTenantBranding().then(b => setTenantBranding(b)).catch(() => setTenantBranding({ tenant: null }));
     if (!isDev) {
-      resolveTenantBranding().then(b => setTenantBranding(b)).catch(() => setTenantBranding({ tenant: null }));
+      console.log(isDev);
     } else {
       setTenantBranding({
         tenant: {
