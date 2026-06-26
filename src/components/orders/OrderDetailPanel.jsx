@@ -81,7 +81,8 @@ export default function OrderDetailPanel({ order, onClose, onRefresh, userProfil
     if (currency === "JPY") {
       return `${Math.round(amount).toLocaleString()} JPY`;
     }
-    return `${currency} ${Math.round(amount)}`;
+    // CNY 等货币显示两位小数，去掉末尾多余的 0
+    return `${currency} ${parseFloat(amount.toFixed(2))}`;
   };
 
   const formatDate = (dateStr) => {
@@ -191,7 +192,7 @@ export default function OrderDetailPanel({ order, onClose, onRefresh, userProfil
                 <div className="bg-green-50 border border-green-100 rounded-lg p-3">
                   <div className="text-xs text-green-600 mb-1">已付金额</div>
                   <div className="text-lg font-bold text-green-700">
-                    {order.paid_amount ? formatCurrency(order.paid_amount, order.prepayment_currency) : "-"}
+                    {order.paid_amount ? formatCurrency(order.paid_amount, order.payment_currency || order.prepayment_currency) : "-"}
                   </div>
                 </div>
                 <div className="bg-purple-50 border border-purple-100 rounded-lg p-3">
@@ -578,12 +579,19 @@ export default function OrderDetailPanel({ order, onClose, onRefresh, userProfil
                   </div>
 
                   {/* Paid amount */}
-                  {(order.paid_amount || 0) > 0 && (
-                    <div className="flex justify-between items-center py-1 text-blue-700">
-                      <span>已付金额</span>
-                      <span className="font-medium">-{formatCurrency(order.paid_amount, order.prepayment_currency)}</span>
-                    </div>
-                  )}
+                  {(order.paid_amount || 0) > 0 && (() => {
+                    const paidCurrency = order.payment_currency || order.prepayment_currency;
+                    const paidAmountJpy = order.paid_amount_jpy
+                      || (paidCurrency === 'CNY' && order.prepayment_rate_jpy_cny
+                        ? Math.round(order.paid_amount / order.prepayment_rate_jpy_cny)
+                        : order.paid_amount);
+                    return (
+                      <div className="flex justify-between items-center py-1 text-blue-700">
+                        <span>已付金额</span>
+                        <span className="font-medium">-{formatCurrency(order.paid_amount, paidCurrency)}{paidCurrency !== 'JPY' ? ` (≈${paidAmountJpy} JPY)` : ''}</span>
+                      </div>
+                    );
+                  })()}
 
                   {/* Balance credit */}
                   {(order.balance_credit || 0) > 0 && (
@@ -598,8 +606,8 @@ export default function OrderDetailPanel({ order, onClose, onRefresh, userProfil
                     <span className="font-bold text-green-900">待付金额</span>
                     <span className="font-bold text-green-900">
                       {formatCurrency(
-                        (order.prepayment_amount || 0) - (order.paid_amount || 0) - (order.balance_credit || 0),
-                        order.prepayment_currency
+                        (order.estimated_jpy || 0) - (order.prepayment_amount || 0) - (order.balance_credit || 0),
+                        "JPY"
                       )}
                     </span>
                   </div>

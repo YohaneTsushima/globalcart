@@ -444,7 +444,7 @@ export default function MyOrders() {
 
   useEffect(() => {
     if (alipayTradeNo) {
-      setAlipayReturnMsg(`支付宝付款已提交（单号: ${alipayTradeNo}），系统将在数分钟内自动确认订单状态。`);
+      setAlipayReturnMsg(`支付宝付款已提交${alipayTradeNo ? `（单号: ${alipayTradeNo}）` : ''}，系统将在数分钟内自动确认订单状态。`);
       window.history.replaceState({}, "", window.location.pathname);
       // If this tab was opened as a popup by the payment flow, close it and let the opener refresh
       if (window.opener && !window.opener.closed) {
@@ -510,9 +510,11 @@ export default function MyOrders() {
     // 后端 camelCase → 前端 snake_case 字段统一
     const freshOrders = rawOrders.map(o => ({
       ...o,
+      quantity: o.quantity ?? 1,
       prepayment_amount: o.prepayment_amount ?? o.prepayment_amount_jpy ?? 0,
       prepayment_currency: o.prepayment_currency || "JPY",
       paid_amount: o.paid_amount ?? 0,
+      paid_amount_jpy: o.paid_amount_jpy ?? null,
       order_stage_payment_jpy: o.order_stage_payment_jpy ?? o.prepayment_amount_jpy ?? null,
     }));
     setOrders(freshOrders);
@@ -551,10 +553,12 @@ export default function MyOrders() {
   useEffect(() => {
     const handleMessage = (e) => {
       if (e.data?.type === "alipay_payment_done" && user) {
-        setAlipayReturnMsg(`支付宝付款已提交（单号: ${e.data.tradeNo}），系统将在数分钟内自动确认订单状态。`);
+        setAlipayReturnMsg(`支付宝付款已提交${e.data.tradeNo ? `（单号: ${e.data.tradeNo}）` : ''}，系统将在数分钟内自动确认订单状态。`);
         fetchOrders(user);
-        // Retry after 3s for callback to settle
         setTimeout(() => fetchOrders(user), 3000);
+      }
+      if (e.data?.type === "alipay_payment_navigate" && e.data.url) {
+        window.location.href = e.data.url;
       }
     };
     window.addEventListener("message", handleMessage);
@@ -696,6 +700,15 @@ export default function MyOrders() {
           </Button>
         </div>
       </div>
+
+      <PaginationBar
+        total={filtered.length}
+        pageSize={pageSize}
+        currentPage={currentPage}
+        onPageChange={setCurrentPage}
+        onPageSizeChange={(s) => { setPageSize(s); resetPage(); }}
+        className="mt-1"
+      />
 
       {/* Filters */}
       <div className="flex flex-wrap gap-2 items-center">

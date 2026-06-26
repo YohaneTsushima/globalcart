@@ -49,6 +49,9 @@ import AdminUsers from '@/pages/AdminUsers';
 import AdminAnnouncements from '@/pages/AdminAnnouncements';
 import AdminSettings from '@/pages/AdminSettings';
 import Payment from '@/pages/Payment';
+import PaymentReturn from '@/pages/PaymentReturn';
+import TermsOfService from '@/pages/TermsOfService';
+import PrivacyPolicy from '@/pages/PrivacyPolicy';
 import ConsolidationPool from '@/pages/ConsolidationPool';
 import ShippingPool from '@/pages/ShippingPool.jsx';
 import AdminShippingPool from '@/pages/AdminShippingPool.jsx';
@@ -171,6 +174,9 @@ const AuthenticatedApp = () => {
         <Route path="/:locale/AdminAnnouncements" element={<LayoutWrapper currentPageName="AdminAnnouncements"><AdminAnnouncements /></LayoutWrapper>} />
         <Route path="/:locale/AdminSettings" element={<LayoutWrapper currentPageName="AdminSettings"><AdminSettings /></LayoutWrapper>} />
         <Route path="/:locale/Payment" element={<LayoutWrapper currentPageName="Payment"><Payment /></LayoutWrapper>} />
+        <Route path="/:locale/PaymentReturn" element={<PaymentReturn />} />
+        <Route path="/:locale/TermsOfService" element={<LayoutWrapper currentPageName="TermsOfService"><TermsOfService /></LayoutWrapper>} />
+        <Route path="/:locale/PrivacyPolicy" element={<LayoutWrapper currentPageName="PrivacyPolicy"><PrivacyPolicy /></LayoutWrapper>} />
         <Route path="/:locale/ConsolidationPool" element={<LayoutWrapper currentPageName="ConsolidationPool"><ConsolidationPool /></LayoutWrapper>} />
         <Route path="/:locale/ShippingPool" element={<LayoutWrapper currentPageName="ShippingPool"><ShippingPool /></LayoutWrapper>} />
         <Route path="/:locale/AdminShippingPool" element={<LayoutWrapper currentPageName="AdminShippingPool"><AdminShippingPool /></LayoutWrapper>} />

@@ -17,11 +17,15 @@ import {initTheme} from './lib/theme'
       'auth_app_id', 'fund_bill_list', 'gmt_create', 'gmt_payment', 'buyer_logon_id',
       'buyer_pay_amount', 'buyer_id', 'invoice_amount', 'point_amount', 'receipt_amount',
       'seller_email', 'subject', 'body'];
-    let cleaned = false;
-    alipayKeys.forEach(k => { if (params.has(k)) { params.delete(k); cleaned = true; } });
-    if (cleaned) {
-      const newUrl = window.location.pathname + (params.toString() ? `?${params.toString()}` : '') + window.location.hash;
-      window.history.replaceState({}, document.title, newUrl);
+    // PaymentReturn 页面需要这些参数，跳过清理
+    const isPaymentReturn = window.location.pathname.includes('PaymentReturn');
+    if (!isPaymentReturn) {
+      let cleaned = false;
+      alipayKeys.forEach(k => { if (params.has(k)) { params.delete(k); cleaned = true; } });
+      if (cleaned) {
+        const newUrl = window.location.pathname + (params.toString() ? `?${params.toString()}` : '') + window.location.hash;
+        window.history.replaceState({}, document.title, newUrl);
+      }
     }
   } catch (_) {}
 })();

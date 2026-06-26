@@ -10,6 +10,9 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { useLocale } from "@/lib/LocaleContext";
+import { t } from "@/lib/i18n";
+import PaymentMethodSelector from "@/components/common/PaymentMethodSelector";
 
 const IS_DEV_MOCK = import.meta.env.VITE_DEV_MOCK === 'true';
 
@@ -51,6 +54,8 @@ const MOCK_PAYMENT_DATA = {
 };
 
 export default function Payment() {
+
+  const { locale } = useLocale();
   const navigate = useNavigate();
   const { can } = usePermissions();
   const canSkipProof = can("payment:skip_proof_upload");
@@ -58,7 +63,7 @@ export default function Payment() {
   const canManualPay = can("payment:manual_pay");
   const urlParams = new URLSearchParams(window.location.search);
   const orderId = urlParams.get("order_id");
-  const method = urlParams.get("method") || "alipay";
+  const [selectedMethod, setSelectedMethod] = useState(urlParams.get("method") || "");
   const urlPayCurrency = urlParams.get("pay_currency") || null;
   // Ticket fee breakdown passed from SubmitTicketOrder
   const ticketBreakdown = (() => {
@@ -77,6 +82,8 @@ export default function Payment() {
   const [copied, setCopied] = useState(false);
   const [loading, setLoading] = useState(true);
   const [generatingLink, setGeneratingLink] = useState(false);
+
+  const method = selectedMethod || order?.payment_method || "alipay";
   // Server-computed payment data (avoids client-side re-derivation bugs)
   const [serverPaymentData, setServerPaymentData] = useState(null);
   const [paymentPendingReminder, setPaymentPendingReminder] = useState("");
@@ -158,15 +165,62 @@ export default function Payment() {
 
   useEffect(() => { loadPaymentData(); }, [orderId]);
 
+  // 监听支付宝付款完成的 postMessage
+  useEffect(() => {
+    const handleMessage = (e) => {
+      if (e.data?.type === "alipay_payment_done") {
+        loadPaymentData();
+      }
+    };
+    window.addEventListener("message", handleMessage);
+    return () => window.removeEventListener("message", handleMessage);
+  }, [orderId]);
+
   const handleGenerateAlipayLink = async () => {
     setGeneratingLink(true);
-    const res = await base44.functions.invoke('generateAlipayPaymentLink', {
+    const subject = `同一物流代购 - ${order.product_name}`;
+
+    // CNY 转换 — 优先用下单时的汇率
+    const payCurrency = activeMethod?.paymentCurrency || urlPayCurrency || "JPY";
+    let amountToCharge = amountJpy;
+    let currencyToSend = "JPY";
+    if (payCurrency !== "JPY") {
+      const orderRate = order?.prepaymentRateJpyCny || order?.prepayment_rate_jpy_cny;
+      const rate = (payCurrency === "CNY" && orderRate) ? orderRate : (rates && rates[payCurrency]);
+      if (rate) {
+        amountToCharge = Math.round(amountJpy * rate * 100) / 100;
+        currencyToSend = payCurrency;
+      }
+    }
+
+    const res = await base44.functions.invoke('alipay/pay', {
       orderId: order.id,
-      amount: amountJpy, // already includes surcharge
-      subject: `同一物流代购 - ${order.product_name}`,
+      amount: amountToCharge,
+      currency: currencyToSend,
+      subject,
+      paymentType: "order",
     });
+    const formData = res?.data?.form;
     setGeneratingLink(false);
-    window.open(res.data.paymentUrl, '_blank');
+
+    // 后端返回 HTML 表单，在新窗口渲染并自动提交到支付宝
+    if (formData && typeof formData === 'string') {
+      const newWindow = window.open('', '_blank');
+      if (newWindow) {
+        newWindow.document.write(formData);
+        newWindow.document.close();
+      }
+    }
+
+    // 同时开始轮询（在另一个页面或定时器）
+    const timer = setInterval(async () => {
+      const queryRes = await base44.functions.invoke('alipay/query', { outTradeNo: res?.data?.outTradeNo });
+      if (queryRes.data === 'TRADE_SUCCESS') {
+        clearInterval(timer);
+        localStorage.removeItem('pendingOrder');
+        navigate(`/${locale}/MyOrders`);
+      }
+    }, 2000);
   };
 
   const handleCopy = (text) => {
@@ -227,7 +281,7 @@ export default function Payment() {
   const newPaidAmount = (isShippingOnlyPayment || isSupplement) ? (order?.paid_amount || 0) + baseAmountJpy : baseAmountJpy;
 
   // Find the configured payment method for current selection
-  const activeMethod = paymentMethods.find(m => (m.provider_key || m.name) === method);
+  const activeMethod = paymentMethods.find(m => (m.providerKey || m.name) === method);
   // Automatic callback methods (e.g. alipay) should not show QR / upload proof UI
   const isAutoCallback = !!activeMethod?.provider_key;
   // Alipay gateway info: prefer PaymentMethod entity, fall back to SiteSettings
@@ -247,17 +301,26 @@ export default function Payment() {
     : canSkipProof;
 
   // Currency conversion — prefer activeMethod config, fallback to URL param passed from SubmitOrder
-  const payCurrency = activeMethod?.payment_currency || urlPayCurrency || "JPY";
+  const payCurrency = activeMethod?.paymentCurrency || activeMethod?.payment_currency || urlPayCurrency || "JPY";
   const isJpy = payCurrency === "JPY";
   let convertedAmount = null;
   let convertedDisplay = null;
   let rateValue = null;
-  if (!isJpy && rates && rates[payCurrency]) {
-    rateValue = rates[payCurrency];
-    const converted = amountJpy * rateValue;
-    const decimals = ["TWD", "HKD", "CNY"].includes(payCurrency) ? 1 : 2;
-    convertedAmount = converted.toFixed(decimals);
-    convertedDisplay = `${payCurrency} ${parseFloat(convertedAmount).toLocaleString(undefined, { minimumFractionDigits: decimals, maximumFractionDigits: decimals })}`;
+  
+  if (!isJpy) {
+    // 优先用下单时的汇率，fallback 到实时汇率
+    const orderRate = order?.prepaymentRateJpyCny || order?.prepayment_rate_jpy_cny;
+    if (payCurrency === "CNY" && orderRate) {
+      rateValue = orderRate;
+    } else if (rates && rates[payCurrency]) {
+      rateValue = rates[payCurrency];
+    }
+    if (rateValue) {
+      const converted = amountJpy * rateValue;
+      const decimals = ["TWD", "HKD", "CNY"].includes(payCurrency) ? 1 : 2;
+      convertedAmount = converted.toFixed(decimals);
+      convertedDisplay = `${payCurrency} ${parseFloat(convertedAmount).toLocaleString(undefined, { minimumFractionDigits: decimals, maximumFractionDigits: decimals })}`;
+    }
   }
 
   // Currency symbols map
@@ -402,6 +465,23 @@ export default function Payment() {
         </CardContent>
       </Card>
 
+      {/* 支付方式选择 */}
+      {paymentMethods.length > 0 && (
+        <Card className="border-gray-200">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm font-semibold text-gray-700">选择支付方式</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <PaymentMethodSelector
+              value={method}
+              onChange={(m) => setSelectedMethod(m.value)}
+              prefetched={paymentMethods}
+              activeColor="border-red-500 bg-red-50 text-red-700"
+            />
+          </CardContent>
+        </Card>
+      )}
+
       {/* Payment Method: Alipay */}
       {method === "alipay" && canSelfPay && (
         <Card className="border-blue-200">
@@ -421,9 +501,12 @@ export default function Payment() {
               disabled={generatingLink}
             >
               {generatingLink
-                ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />生成链接并前往支付中...</>
-                : <><ExternalLink className="w-4 h-4 mr-2" />前往支付宝完成付款</>}
+                ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />生成链接中...</>
+                : <><ExternalLink className="w-4 h-4 mr-2" />打开支付宝付款</>}
             </Button>
+            <p className="text-xs text-gray-400 text-center">
+              点击后将在新标签打开支付宝，付款成功后自动返回
+            </p>
 
             {alipayAccount && (
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 space-y-2">

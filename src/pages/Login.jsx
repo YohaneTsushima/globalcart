@@ -4,10 +4,12 @@ import { useTenantBranding } from "@/hooks/useTenantBranding";
 import { Package, Truck, Shield } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
 import { useLocale, useTranslation } from '@/lib/LocaleContext';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { toast } from "sonner";
 import { useAuth } from "@/lib/AuthContext";
+import { createPageUrl } from "@/utils";
 
 export default function Login() {
 	const { t } = useTranslation();
@@ -21,6 +23,7 @@ export default function Login() {
   const [phoneError, setPhoneError] = useState(false);
   const [codeError, setCodeError] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [agreed, setAgreed] = useState(false);
 
    // 从 localStorage 恢复倒计时
   const getInitialCountdown = () => {
@@ -219,11 +222,27 @@ export default function Login() {
           onChange={e => { setCode(e.target.value); setCodeError(false); }}
           className={codeError ? "border-red-500 placeholder:text-red-400 focus-visible:ring-red-300" : ""}
         />
+        {/* 登录协议 */}
+        <div className="flex items-start gap-2 py-1">
+          <Checkbox
+            id="agree-terms"
+            checked={agreed}
+            onCheckedChange={setAgreed}
+            className="mt-0.5"
+          />
+          <label htmlFor="agree-terms" className="text-xs text-gray-500 leading-relaxed cursor-pointer">
+            {t("登录即表示同意", locale)}
+            <a href={createPageUrl("TermsOfService")} target="_blank" className="text-red-600 hover:underline">{t("《用户协议》", locale)}</a>
+            {t("和", locale)}
+            <a href={createPageUrl("PrivacyPolicy")} target="_blank" className="text-red-600 hover:underline">{t("《隐私政策》", locale)}</a>
+          </label>
+        </div>
+
         {/* Login Button */}
         <Button
           className="w-full bg-red-600 hover:bg-red-700 text-white h-10"
           onClick={handleLogin}
-          disabled={submitting}
+          disabled={submitting || !agreed}
         >
           {submitting ? t("登录中...", locale) : t("登录 / 注册")}
         </Button>
@@ -239,13 +258,15 @@ export default function Login() {
         <button
           type="button"
           onClick={() => {
-            if (submitting) return;
+            if (submitting || !agreed) return;
             const next = searchParams.get('next');
             const redirect = next ? `?next=${encodeURIComponent(next)}` : '';
             window.location.href = `/oauth2/authorization/google${redirect}`;
           }}
-          disabled={submitting}
-          className="w-full flex items-center justify-center gap-2 h-10 rounded-md border border-gray-300 bg-white hover:bg-gray-50 transition-colors text-sm font-medium text-gray-700"
+          disabled={submitting || !agreed}
+          className={`w-full flex items-center justify-center gap-2 h-10 rounded-md border transition-colors text-sm font-medium ${
+            agreed ? "border-gray-300 bg-white hover:bg-gray-50 text-gray-700" : "border-gray-200 bg-gray-50 text-gray-400 cursor-not-allowed"
+          }`}
         >
           <svg className="w-4 h-4" viewBox="0 0 24 24">
             <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>

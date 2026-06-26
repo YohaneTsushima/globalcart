@@ -7,6 +7,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { createPageUrl } from "@/utils";
+import QRCode from 'qrcode';
 import { X, CreditCard, ExternalLink, CheckCircle, Loader2, Lock } from "lucide-react";
 import FileDropzone from "@/components/common/FileDropzone";
 import { base44 } from "@/api/base44Client";
@@ -124,6 +125,9 @@ export default function PaymentModal({ order, mode = "prepay", onClose, onSucces
         setSubmitting(false);
         onSuccess?.();
       }
+      if (e.data?.type === "alipay_payment_navigate" && e.data.url) {
+        window.location.href = e.data.url;
+      }
     };
     window.addEventListener("message", handleMessage);
     return () => window.removeEventListener("message", handleMessage);
@@ -194,17 +198,14 @@ export default function PaymentModal({ order, mode = "prepay", onClose, onSucces
     const formData = res?.data;
 
     setGenerating(false);
-    document.open();
-    document.write(formData);
-    document.close();
     // 后端返回的是 HTML 表单，在新窗口渲染并自动提交到支付宝
-    // if (formData && typeof formData === 'string') {
-    //   const newWindow = window.open('', '_blank');
-    //   if (newWindow) {
-    //     newWindow.document.write(formData);
-    //     newWindow.document.close();
-    //   }
-    // }
+    if (formData && typeof formData === 'string') {
+      const newWindow = window.open('', '_blank');
+      if (newWindow) {
+        newWindow.document.write(formData);
+        newWindow.document.close();
+      }
+    }
   };
 
   // Build actual-currency fields when paying in a non-JPY currency.

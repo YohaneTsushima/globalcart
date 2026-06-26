@@ -119,7 +119,7 @@ export default function SubmitOrder() {
       setRates(data.rates);
       setActiveRule(data.activeRule);
       setSettings(data.settings);
-      setPaymentMode(data.settings.prepay_enabled !== 'false' ? "prepay" : "fullpay");
+      setPaymentMode(data.settings.prepayEnabled !== 'false' ? "prepay" : "fullpay");
       setUserCredit(null);
       setPaymentMethods(MOCK_PAYMENT_METHODS.methods);
       setShippingMethods(MOCK_SHIPPING_METHODS.methods);
@@ -137,7 +137,7 @@ export default function SubmitOrder() {
       const parsed = {};
       Object.entries(data.settings || {}).forEach(([k, v]) => { parsed[k] = v; });
       setSettings(parsed);
-      const prepayOn = parsed.prepay_enabled !== 'false';
+      const prepayOn = parsed.prepayEnabled !== 'false';
       setPaymentMode(prepayOn ? "prepay" : "fullpay");
       setUserCredit(null);
       timer.done('data ready');
@@ -169,7 +169,7 @@ export default function SubmitOrder() {
     const jpy = parseFloat(form.estimated_jpy);
     if (!jpy || jpy <= 0) { setCalculated(null); return; }
     
-    const prepayEnabled = settings.prepay_enabled !== 'false';
+    const prepayEnabled = settings.prepayEnabled !== 'false';
     let prepayRatePct = parseFloat(settings.prepay_rate);
     if (isNaN(prepayRatePct) || prepayRatePct <= 0 || prepayRatePct > 100) prepayRatePct = DEFAULT_PREPAY_RATE * 100;
     const prepayRate = prepayEnabled ? prepayRatePct / 100 : 1.0;
@@ -180,7 +180,7 @@ export default function SubmitOrder() {
     let feeSteps = null;
 
     try {
-      
+
       if (activeRule) {
         const urlsForTag = urlMode === "textarea"
           ? (productUrls[0] || "").split("\n").map(s => s.trim()).filter(Boolean).join("\n")
@@ -357,7 +357,18 @@ export default function SubmitOrder() {
     const isCredit = paymentMode === "credit_weekly" || paymentMode === "credit_monthly";
     const isDeferred = paymentMode === "deferred";
     const tagResult = await detectPrimaryStoreTagResult(urlsText);
-    const prepaymentAmount = calculated ? parseFloat(calculated.prepayJpy) : 0;
+
+    // 根据付款模式决定预付金额
+    let prepaymentAmount = 0;
+    if (paymentMode === "prepay") {
+      prepaymentAmount = calculated ? parseFloat(calculated.prepayJpy) : 0;
+    } else if (paymentMode === "fullpay") {
+      prepaymentAmount = calculated ? parseFloat(calculated.totalJpy) : 0;
+    }
+    // deferred / credit → 0
+
+    // paymentMode → payment_mode 映射
+    const paymentModeMap = { prepay: "prepay", fullpay: "fullpay_once", deferred: "deferred", credit_weekly: "credit", credit_monthly: "credit" };
     
     // 获取用户选择的付款方式和对应货币
     const selectedMethodObj = paymentMethods.find((m) => (m.providerKey || m.id) === paymentMethod);
@@ -369,10 +380,11 @@ export default function SubmitOrder() {
             productLink: urlsText,
             user_email: user.email,
             user_name: user.full_name || user.email,
-            userId: user.id,
+            // userId: user.id,
             quantity: 1,
+            provider_key: selectedMethodObj?.providerKey,
             estimated_jpy: parseFloat(form.estimated_jpy) || 0,
-            service_fee_rate: parseFloat(settings.service_fee_rate) || 10,
+            service_fee_rate: (parseFloat(settings.serviceFeeRate) || 10),
             service_fee_amount: calculated ? calculated.serviceFeeJpy : null,
             service_fee_rule_id: activeRule?.id || null,
             service_fee_rule_name: activeRule?.name || null,
@@ -382,17 +394,19 @@ export default function SubmitOrder() {
             online_store_tag: tagResult.tag_label,
             online_store_tag_color: tagResult.tag_color,
             payment_method: paymentMethod,
-            payment_mode: isCredit ? "credit" : isDeferred ? "deferred" : (settings.prepay_enabled === 'false' ? "fullpay_once" : "prepay"),
+            payment_mode: paymentModeMap[paymentMode] || "prepay",
             credit_cycle: isCredit ? (paymentMode === "credit_weekly" ? "weekly" : "monthly") : null,
             order_status: isCredit ? "paid" : "payment_pending",
             payment_status: isCredit ? "paid" : "awaiting_payment",
             user_note: form.user_note || "",
+            prepayment_rate_jpy_cny: selectedCurrency === 'CNY' ? (rates?.jpyCny || null) : null,
             selected_addon_ids: selectedAddons,
             selected_addons: selectedAddonObjects.map((a) => ({ id: a.id, serviceName: a.serviceName, fee: parseFloat(a.fee) || 0, feeCurrency: a.feeCurrency || "JPY" }))
       };
 
       // 弹窗确认，确认后才调后端
       setPendingForm(submitForm);
+      console.log(submitForm)
       setConfirmOpen(true);
     } catch (error) {
       toast.error(t('提交失败：', locale) + error.message);
@@ -486,7 +500,7 @@ export default function SubmitOrder() {
     // 获取用户选择的付款方式和对应货币
     const selectedMethodObjForPre = paymentMethods.find((m) => (m.providerKey || m.methodName) === paymentMethod);
     const selectedCurrencyForPre = selectedMethodObjForPre?.paymentCurrency || "JPY";
-    
+    debugger
     try {
       const res = IS_DEV_MOCK
         ? { data: { order: { id: 'dev-order-pre-' + Date.now() } } }
@@ -503,11 +517,11 @@ export default function SubmitOrder() {
             service_fee_rule_name: activeRule?.name || null,
             service_fee_rule_version: activeRule?.version || null,
             prepayment_amount: prepaymentAmount,
-            prepayment_currency: selectedCurrencyForPre,
+            prepayment_currency: "JPY",
             payment_method: paymentMethod,
             online_store_tag: tagResult.tag_label,
             online_store_tag_color: tagResult.tag_color,
-            payment_mode: settings.prepay_enabled === 'false' ? "fullpay_once" : "prepay",
+            payment_mode: paymentMode || "prepay",
             order_status: "payment_pending",
             payment_status: "awaiting_payment",
             user_note: form.user_note || "",
@@ -536,12 +550,13 @@ export default function SubmitOrder() {
       }
     } catch (error) {
       toast.error(t('提交失败：', locale) + error.message);
+      console.error(error)
       setSubmitting(false);
     }
   };
 
   return (
-    <div className="max-w-3xl mx-auto space-y-6">
+    <div className="max-w-8xl mx-auto space-y-6">
       <div>
         <h1 className="text-xl font-bold text-gray-900">{t("提交购买需求", locale)}</h1>
         <p className="text-sm text-gray-500 mt-1">{t("填写您想购买的日本商品信息，我们将为您代购", locale)}</p>
@@ -557,7 +572,7 @@ export default function SubmitOrder() {
         </Alert>
       )}
 
-      {settings.prepay_enabled !== 'false' && (
+      {settings.prepayEnabled !== 'false' && (
         <Alert className="border-blue-200 bg-blue-50">
           <Info className="w-4 h-4 text-blue-600" />
           <AlertDescription className="text-blue-800 text-sm">
@@ -566,9 +581,10 @@ export default function SubmitOrder() {
         </Alert>
       )}
 
-      <form onSubmit={handleSubmit} className="space-y-5">
-        {/* 商品信息卡片 */}
-        <Card className="border-gray-200">
+      <form onSubmit={handleSubmit} className="space-y-5 lg:space-y-0 lg:grid lg:grid-cols-2 lg:gap-5">
+        {/* 商品信息卡片 - 左侧 */}
+        <div>
+        <Card className="border-gray-200 h-full">
           <CardHeader className="pb-3 border-b border-gray-100">
             <CardTitle className="text-sm font-semibold text-gray-700">{t("商品信息", locale)}</CardTitle>
           </CardHeader>
@@ -846,7 +862,14 @@ export default function SubmitOrder() {
             </div>
           </CardContent>
         </Card>
+        </div>
 
+        {/* 右侧 - 费用、付款、提交 */}
+        <Card className="border-gray-200 h-full">
+        <CardHeader className="pb-3 border-b border-gray-100">
+          <CardTitle className="text-sm font-semibold text-gray-700">{t("费用与付款", locale)}</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-5 pt-4">
         {/* 费用估算 - 智能显示 */}
         <FeeCalculator calculated={calculated} settings={settings} />
 
@@ -869,7 +892,7 @@ export default function SubmitOrder() {
         {/* 提交按钮 */}
         {canSubmitOrder && (
           <div className="space-y-2">
-            {settings.pre_shipment_enabled !== 'false' && (
+            {settings.preShipmentEnabled !== 'false' && (
             <Button
               type="button"
               variant="outline"
@@ -900,6 +923,8 @@ export default function SubmitOrder() {
             {t("您没有权限提交购买需求", locale)}
           </Button>
         )}
+        </CardContent>
+        </Card>
 
         {/* 确认提交订单弹窗 */}
         <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>

@@ -30,7 +30,8 @@ api.interceptors.response.use(
   res => res,
   err => {
     const status = err?.response?.status;
-    if (status === 401) {
+    const arr = [401, 502, 503, 504];
+    if (arr.includes(status)) {
       const path = window.location.pathname;
       localStorage.removeItem('token');
       localStorage.removeItem('auth_cache');

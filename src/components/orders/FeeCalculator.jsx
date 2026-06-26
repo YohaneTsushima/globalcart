@@ -9,7 +9,7 @@ export default function FeeCalculator({ calculated, settings }) {
       <CardHeader className="pb-2">
         <CardTitle className="text-sm font-semibold text-gray-700 flex items-center gap-2">
           <Calculator className="w-4 h-4" /> 
-          {settings.prepay_enabled !== 'false' ? '预付款估算' : '费用估算'}
+          {settings.prepayEnabled !== 'false' ? '预付款估算' : '费用估算'}
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-2">
@@ -62,7 +62,7 @@ export default function FeeCalculator({ calculated, settings }) {
         </div>
 
         {/* 应付金额高亮 */}
-        {settings.prepay_enabled !== 'false' ? (
+        {settings.prepayEnabled !== 'false' ? (
           <div className="flex items-center justify-between bg-red-50 border border-red-300 rounded-lg px-4 py-3">
             <div>
               <span className="text-sm text-gray-700 font-medium">本次应付预付款 ({calculated.prepayRate}%)</span>
