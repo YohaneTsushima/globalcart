@@ -23,6 +23,7 @@ const writeAuthCache = (data) => {
 
 const clearAuthCache = () => {
   localStorage.removeItem('token');
+  localStorage.removeItem('refresh_token');
   localStorage.removeItem(AUTH_CACHE_KEY);
 };
 
@@ -98,11 +99,13 @@ export const AuthProvider = ({ children }) => {
       });
 
       const token = r?.token || r?.access_token || r?.data?.token || r?.data?.access_token;
+      const refreshToken = r?.refreshToken || r?.refresh_token || r?.data?.refreshToken || r?.data?.refresh_token;
       if (!token) {
         setAuthError({ type: 'login_failed', message: '登录失败，未收到 token' });
         return { ok: false, error: 'no_token' };
       }
       localStorage.setItem('token', token);
+      if (refreshToken) localStorage.setItem('refresh_token', refreshToken);
 
       const u = normalizeUser(r?.user || r?.data?.user || null);
       const perms = Array.isArray(r?.permissions) ? r.permissions : (Array.isArray(r?.data?.permissions) ? r.data.permissions : []);
@@ -131,14 +134,15 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  // OAuth2 登录：后端回调带 token + userId，前端存 token 后调 /auth/me 拿用户全量数据
-  const loginWithToken = async (token, userId) => {
+  // 通用 OAuth 登录（Google / 支付宝 / QQ / 微信等）
+  const loginWithOAuth = async ({ token, refreshToken, userId }) => {
     setAuthError(null);
     if (!token) {
       setAuthError({ type: 'login_failed', message: '登录失败，未收到 token' });
       return { ok: false, error: 'no_token' };
     }
     localStorage.setItem('token', token);
+    if (refreshToken) localStorage.setItem('refresh_token', refreshToken);
     try {
       const me = await base44.auth.me(userId);
       const d = me?.data ?? me ?? {};
@@ -160,7 +164,7 @@ export const AuthProvider = ({ children }) => {
       }
       return { ok: true };
     } catch (error) {
-      console.error('oauth2 login failed:', error);
+      console.error('oauth login failed:', error);
       clearAuthCache();
       setIsAuthenticated(false);
       setUser(null);
@@ -171,6 +175,11 @@ export const AuthProvider = ({ children }) => {
   };
 
   const logout = (shouldRedirect = true) => {
+    // 先调后端把 refresh_token 加入黑名单
+    const refreshToken = localStorage.getItem('refresh_token');
+    if (refreshToken) {
+      base44.functions.invoke('auth/logout', { refresh_token: refreshToken }).catch(() => {});
+    }
     setUser(null);
     setIsAuthenticated(false);
     setPermissions([]);
@@ -199,7 +208,7 @@ export const AuthProvider = ({ children }) => {
       setPermissions,
       assignedRoles,
       login,
-      loginWithToken,
+      loginWithOAuth,
       logout,
       navigateToLogin,
       authChecked: !isLoadingAuth,

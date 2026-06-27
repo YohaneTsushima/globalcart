@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { usePageSize } from "@/hooks/usePageSize";
 import PaginationBar from "@/components/common/PaginationBar";
 import { base44 } from "@/api/base44Client";
@@ -429,6 +429,7 @@ export default function MyOrders() {
   const [activeTab, setActiveTab] = useState(initialTab);
   
   const [orders, setOrders] = useState([]);
+  const [total, setTotal] = useState(0);
   const [ticketOrders, setTicketOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [alipayReturnMsg, setAlipayReturnMsg] = useState(null);
@@ -485,8 +486,10 @@ export default function MyOrders() {
   const [pageData, setPageData] = useState({});
   const [pendingEditRequests, setPendingEditRequests] = useState([]);
 
+  const fetchingRef = useRef(false);
   const fetchOrders = async (u) => {
-    if (!u) return;
+    if (!u || fetchingRef.current) return;
+    fetchingRef.current = true;
     setLoading(true);
 
     if (IS_DEV_MOCK) {
@@ -499,11 +502,20 @@ export default function MyOrders() {
       setStoreTagRules(data.storeTagRules || []);
       setPageData(data);
       setPendingEditRequests(data.pendingEditRequests || []);
+      fetchingRef.current = false;
       setLoading(false);
       return;
     }
 
-    const r = await base44.functions.invoke('order/info/getMyOrdersPageData', {});
+    const r = await base44.functions.invoke('order/info/getMyOrdersPageData', {
+      page: currentPage,
+      pageSize,
+      status: statusFilter,
+      search,
+      sortKey: sortKey || undefined,
+      sortDir: sortDir || undefined,
+      showArchived,
+    });
     
     const data = r.data || {};
     const rawOrders = data.orders || [];
@@ -518,25 +530,48 @@ export default function MyOrders() {
       order_stage_payment_jpy: o.order_stage_payment_jpy ?? o.prepayment_amount_jpy ?? null,
     }));
     setOrders(freshOrders);
+    setTotal(data.total || 0);
     setTicketOrders(data.ticketOrders || []);
     setShippingPools(data.pools || []);
     setAllowUserRewarehouse(data.allowUserRewarehouse || false);
     setAllowSplitAfterWarehouse(data.allowSplitAfterWarehouse || false);
     setStoreTagRules(data.storeTagRules || []);
-    setPageData(data); // includes userProfileMap, otherPaymentName
+    setPageData(data);
     setPendingEditRequests(data.pendingEditRequests || []);
-    // Keep selectedOrder in sync with latest data after refresh
-    setSelectedOrder(prev => prev ? (freshOrders.find(o => o.id === prev.id) || prev) : null);
+    fetchingRef.current = false;
     setLoading(false);
   };
 
+  // ── 数据加载 ────────────────────────────────────────────────────────────────
+  const searchTimerRef = useRef(null);
+  const isInitialized = useRef(false);
+
+  // 首次加载
   useEffect(() => {
-    if (user) {
-      fetchOrders(user);
-    } else if (!authLoading) {
-      setLoading(false);
-    }
+    if (!user) { if (!authLoading) setLoading(false); return; }
+    fetchOrders(user);
+    isInitialized.current = true;
   }, [user, authLoading]);
+
+  // 筛选/排序变化 → 直接拉取（后端会收到新参数）
+  useEffect(() => {
+    if (!isInitialized.current) return;
+    fetchOrders(user);
+  }, [statusFilter, showArchived, sortKey, sortDir]);
+
+  // 搜索防抖 → 400ms 后拉取
+  useEffect(() => {
+    if (!isInitialized.current) return;
+    clearTimeout(searchTimerRef.current);
+    searchTimerRef.current = setTimeout(() => fetchOrders(user), 400);
+    return () => clearTimeout(searchTimerRef.current);
+  }, [search]);
+
+  // 分页变化 → 拉取
+  useEffect(() => {
+    if (!isInitialized.current) return;
+    fetchOrders(user);
+  }, [currentPage, pageSize]);
 
   // On Alipay return: the page was fully reloaded, so auth may not be ready on first render.
   // We wait for user to be ready, then fetch. Also retry once after 3s for the callback to settle.
@@ -581,7 +616,7 @@ export default function MyOrders() {
     else { setSortKey(key); setSortDir("asc"); }
   };
 
-  const handleConfirmDelivered = async (order) => {
+  const handleConfirmDelivered = async (order) => {;
     await base44.functions.invoke('updateTenantOrder', { order_id: order.id, order_status: "delivered" });
     // Also mark the associated shipping pool as delivered
     const pool = shippingPools.find(p => (p.order_ids || []).includes(order.id));
@@ -605,32 +640,12 @@ export default function MyOrders() {
     fetchOrders(user);
   };
 
-  const filtered = orders.filter(o => {
-    if (!showArchived && o.is_archived) return false;
-    if (showArchived && !o.is_archived) return false;
-    // Hide split-parent placeholder orders (split_index === -1 means already split into children)
-    if (o.split_index === -1) return false;
-    const matchStatus = statusFilter === "all" || o.order_status === statusFilter;
-    const q = search.toLowerCase();
-    const matchSearch = !q ||
-      (o.product_name || "").toLowerCase().includes(q) ||
-      (o.order_number || "").toLowerCase().includes(q);
-    return matchStatus && matchSearch;
-  }).sort((a, b) => {
-    if (!sortKey) return 0;
-    const rk = sortKey === "submit_date" ? "created_date" : sortKey;
-    let va = a[rk], vb = b[rk];
-    if (typeof va === "string" && typeof vb === "string") { va = va.toLowerCase(); vb = vb.toLowerCase(); }
-    if (va == null) va = ""; if (vb == null) vb = "";
-    if (va < vb) return sortDir === "asc" ? -1 : 1;
-    if (va > vb) return sortDir === "asc" ? 1 : -1;
-    return 0;
-  });
-
+  // 后端已分页，orders 就是当前页数据
+  const filtered = orders;
   const visibleCols = columns.filter(c => c.visible);
 
-  // Pagination slice
-  const pagedFiltered = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+  // Pagination — 后端已分页，直接用 orders
+  const pagedFiltered = orders;
 
   // Orders eligible for bulk notify (in_warehouse only) — operate on full filtered, not paged
   const inWarehouseOrders = filtered.filter(o => o.order_status === "in_warehouse");
@@ -702,7 +717,7 @@ export default function MyOrders() {
       </div>
 
       <PaginationBar
-        total={filtered.length}
+        total={total}
         pageSize={pageSize}
         currentPage={currentPage}
         onPageChange={setCurrentPage}
@@ -1045,7 +1060,7 @@ export default function MyOrders() {
       </div>
 
       <PaginationBar
-        total={filtered.length}
+        total={total}
         pageSize={pageSize}
         currentPage={currentPage}
         onPageChange={setCurrentPage}

@@ -161,6 +161,7 @@ export default function UserTodo() {
       base44.functions.invoke("getMyOrdersPageData", {}).catch(() => ({ data: {} })),
       base44.auth.me().catch(() => null),
     ]).then(([todoRes, pageRes, me]) => {
+      debugger
       setData(todoRes.data || {});
       setCurrentUser(me);
       // Extract initialData needed by UserNotifyShipmentModal

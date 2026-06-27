@@ -10,6 +10,7 @@ import { ShoppingBag, Info, Upload, Plus, X, HelpCircle, AlertTriangle, Lock, Tr
 import { usePermissions } from "@/hooks/usePermissions";
 import FeeCalculator from "@/components/orders/FeeCalculator";
 import PaymentSection from "@/components/orders/PaymentSection";
+import ImageUploader from "@/components/common/ImageUploader";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -362,10 +363,10 @@ export default function SubmitOrder() {
     let prepaymentAmount = 0;
     if (paymentMode === "prepay") {
       prepaymentAmount = calculated ? parseFloat(calculated.prepayJpy) : 0;
-    } else if (paymentMode === "fullpay") {
+    } else if (paymentMode === "fullpay" || paymentMode === "deferred") {
       prepaymentAmount = calculated ? parseFloat(calculated.totalJpy) : 0;
     }
-    // deferred / credit → 0
+    // credit → 0
 
     // paymentMode → payment_mode 映射
     const paymentModeMap = { prepay: "prepay", fullpay: "fullpay_once", deferred: "deferred", credit_weekly: "credit", credit_monthly: "credit" };
@@ -764,88 +765,19 @@ export default function SubmitOrder() {
 
             {/* 图片上传 */}
             <div className="border-t border-gray-100 pt-3">
-              <Label className="text-sm font-medium mb-2 block">{t("商品图片（可选）", locale)}</Label>
-              <div
-                className={`border-2 rounded-lg transition-colors ${
-                form.product_image_url ? "border-green-300 bg-green-50" :
-                uploading ? "border-blue-200 bg-blue-50" :
-                "border-gray-200 hover:border-blue-300"
-              }`}
-                onDragOver={(e) => e.preventDefault()}
-                onDrop={(e) => {
-                  e.preventDefault();
-                  const f = e.dataTransfer.files?.[0];
-                  if (f && f.type.startsWith("image/")) handleProductImageUpload(f);
-                }}
-                onPaste={(e) => {
-                  const items = e.clipboardData?.items;
-                  if (!items) return;
-                  for (const it of items) {
-                    if (it.type.startsWith("image/")) {
-                      e.preventDefault();
-                      handleProductImageUpload(it.getAsFile());
-                      return;
-                    }
-                  }
-                  const text = e.clipboardData?.getData("text") || "";
-                  if (text && /^https?:\/\/.+\.(jpg|jpeg|png|gif|webp|bmp|svg)(\?.*)?$/i.test(text)) {
-                    e.preventDefault();
-                    setForm((f) => ({ ...f, product_image_url: text }));
+              <ImageUploader
+                value={form.product_image_url}
+                onChange={(fileOrUrl) => {
+                  if (typeof fileOrUrl === "string") {
+                    setForm((f) => ({ ...f, product_image_url: fileOrUrl }));
+                  } else {
+                    handleProductImageUpload(fileOrUrl);
                   }
                 }}
-              >
-                {form.product_image_url ? (
-                  <div className="p-3 flex items-center gap-3 cursor-pointer" onClick={() => document.getElementById("product-image-input")?.click()}>
-                    <img src={form.product_image_url} alt="" className="h-16 w-16 rounded object-cover border border-green-200" />
-                    <div className="flex-1 min-w-0">
-                      <div className="text-xs text-gray-400">{t("点击更换或拖拽新图片", locale)}</div>
-                    </div>
-                    <button
-                      type="button"
-                      className="p-1 rounded-full hover:bg-red-100 text-gray-400 hover:text-red-500 transition-colors flex-shrink-0"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        deleteProductImage();
-                      }}
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
-                  </div>
-                ) : (
-                  <>
-                    <div
-                      className="p-3 cursor-text"
-                      tabIndex={0}
-                      onClick={() => document.getElementById("product-image-input")?.click()}
-                    >
-                      {uploading ? (
-                        <div className="flex items-center gap-2 text-blue-500 text-sm">
-                          <Upload className="w-4 h-4 animate-pulse" />
-                          <span>{t("上传中...", locale)}</span>
-                        </div>
-                      ) : (
-                        <div className="text-sm text-gray-500">{t("点击上传、拖拽图片到此 或 Ctrl+V 粘贴剪切板图片", locale)}</div>
-                      )}
-                    </div>
-                    <div className="border-t border-dashed border-gray-200 px-3 py-2">
-                      <Input
-                        type="text"
-                        placeholder={t("或输入图片 URL", locale)}
-                        value={form.product_image_url || ""}
-                        onChange={(e) => setForm((f) => ({ ...f, product_image_url: e.target.value }))}
-                        className="text-sm border-0 shadow-none bg-transparent px-0 h-7 focus-visible:ring-0"
-                      />
-                    </div>
-                  </>
-                )}
-              </div>
-              <input
+                onDelete={deleteProductImage}
+                uploading={uploading}
+                label={t("商品图片（可选）", locale)}
                 id="product-image-input"
-                type="file"
-                accept="image/*"
-                className="hidden"
-                onChange={(e) => { const f = e.target.files[0]; if (f) handleProductImageUpload(f); }}
-                disabled={uploading}
               />
             </div>
 

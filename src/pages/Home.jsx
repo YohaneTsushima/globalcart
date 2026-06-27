@@ -84,19 +84,16 @@ export default function Home() {
       return values;
     };
 
-    // Only fetch orders for logged-in users
-    const loadOrders = () => {
-      if (!user) return Promise.resolve([]);
+    // Only fetch orders for logged-in users when status board is enabled
+    const loadOrders = (faqEnabled) => {
+      if (!user || !faqEnabled) return Promise.resolve([]);
       return base44.functions.invoke('order/info/list/me', {})
         .then(r => (r.data?.orders || []).slice(0, 5))
         .catch(() => []);
     };
 
-    Promise.all([
-      t.timeCall('loadOrders', loadOrders),
-      t.timeCall('loadSettings', loadSettings),
-    ]).then(([orders, { quickActions, boardConfig, heroConfig, stepsConfig, faqConfig, rateConfig, faqCategories }]) => {
-      setRecentOrders(orders);
+    // 先加载 settings，再根据 faq_enabled 决定是否加载 orders
+    t.timeCall('loadSettings', loadSettings).then(({ quickActions, boardConfig, heroConfig, stepsConfig, faqConfig, rateConfig, faqCategories }) => {
       setQuickActions(quickActions);
       setBoardConfig(boardConfig);
       setHeroConfig(heroConfig);
@@ -104,6 +101,11 @@ export default function Home() {
       setFaqConfig(faqConfig);
       setRateConfig(rateConfig);
       setFaqCategories(faqCategories);
+
+      // faq_enabled 为 true 时才加载订单数据
+      return t.timeCall('loadOrders', () => loadOrders(boardConfig.faq_enabled));
+    }).then(orders => {
+      if (orders) setRecentOrders(orders);
       t.done('data ready');
     });
   }, [user?.email]); // re-run when auth state changes (guest → logged-in)
