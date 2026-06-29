@@ -62,7 +62,7 @@ export default function AdminOrderEditModal({ order, initialItemSizeTemplates, o
     prepayment_amount: order.prepayment_amount || "",
     prepayment_currency: order.prepayment_currency || "JPY",
     prepayment_amount_jpy: order.prepayment_amount_jpy || "",
-    payment_due_date: order.payment_due_date || "",
+    payment_deadline: order.payment_deadline || "",
     estimated_jpy: order.estimated_jpy || "",
     balance_credit: order.balance_credit || 0,
     cancel_reason: order.cancel_reason || "",
@@ -193,7 +193,7 @@ export default function AdminOrderEditModal({ order, initialItemSizeTemplates, o
     await updateOrder(order.id, {
       order_status: "payment_pending",
       prepayment_amount: finalAmt,
-      payment_due_date: form.payment_due_date || null,
+      payment_deadline: form.payment_deadline || null,
       admin_note: form.admin_note,
     });
     onSaved();
@@ -240,10 +240,10 @@ export default function AdminOrderEditModal({ order, initialItemSizeTemplates, o
     setSaving(true);
     const updates = {
       order_status: "in_warehouse",
-      in_warehouse_date: new Date().toISOString().split("T")[0],
+      storage_time: new Date().toISOString().split("T")[0],
       admin_note: form.admin_note,
     };
-    if (arrivalPhoto) updates.arrival_photo_url = arrivalPhoto;
+    if (arrivalPhoto) updates.storage_image = arrivalPhoto;
     if (form.weight_g) updates.weight_g = parseFloat(form.weight_g);
     if (selectedSizeId) {
       const selectedTemplate = itemSizeTemplates.find(t => t.id === selectedSizeId);
@@ -295,7 +295,7 @@ export default function AdminOrderEditModal({ order, initialItemSizeTemplates, o
     setSaving(true);
     await updateOrder(order.id, {
       order_status: "shipped",
-      shipped_date: new Date().toISOString().split("T")[0],
+      outbound_time: new Date().toISOString().split("T")[0],
       tracking_number: trackingNumber,
       admin_note: form.admin_note,
     });
@@ -318,7 +318,7 @@ export default function AdminOrderEditModal({ order, initialItemSizeTemplates, o
       prepayment_amount: newAmt,
       prepayment_currency: newCur,
       prepayment_amount_jpy: jpyRef,
-      payment_due_date: form.payment_due_date || null,
+      payment_deadline: form.payment_deadline || null,
       estimated_jpy: parseFloat(form.estimated_jpy) || 0,
       balance_credit: parseFloat(form.balance_credit) || 0,
       cancel_reason: form.cancel_reason,
@@ -416,7 +416,7 @@ export default function AdminOrderEditModal({ order, initialItemSizeTemplates, o
               )}
 
               {/* All uploaded images */}
-              {(order.product_image_url || order.payment_proof_url || order.purchase_screenshot_url || order.arrival_photo_url) && (
+              {(order.product_image_url || order.payment_proof_url || order.purchase_screenshot_url || order.storage_image) && (
                 <div className="space-y-1.5">
                   <div className="text-xs text-gray-400 font-medium">图片</div>
                   <div className="flex flex-wrap gap-2">
@@ -444,10 +444,10 @@ export default function AdminOrderEditModal({ order, initialItemSizeTemplates, o
                         <span className="text-[10px] text-gray-400">购买截图</span>
                       </div>
                     )}
-                    {order.arrival_photo_url && (
+                    {order.storage_image && (
                       <div className="flex flex-col items-center gap-1">
-                        <ImageWithViewer src={order.arrival_photo_url} alt="入库图片">
-                          <img src={order.arrival_photo_url} alt="入库图片" className="h-20 w-20 rounded-lg border object-cover cursor-pointer hover:opacity-80 transition-opacity" />
+                        <ImageWithViewer src={order.storage_image} alt="入库图片">
+                          <img src={order.storage_image} alt="入库图片" className="h-20 w-20 rounded-lg border object-cover cursor-pointer hover:opacity-80 transition-opacity" />
                         </ImageWithViewer>
                         <span className="text-[10px] text-gray-400">入库图片</span>
                       </div>
@@ -540,8 +540,8 @@ export default function AdminOrderEditModal({ order, initialItemSizeTemplates, o
                       <Input type="number" step={cur === "JPY" ? "1" : "0.01"} placeholder="0" value={form.prepayment_amount}
                         onChange={e => f("prepayment_amount", cur === "JPY" ? Math.round(parseFloat(e.target.value) || 0) || "" : e.target.value)} />
                       <Label className="text-xs">付款截止日期（可选）</Label>
-                      <Input type="date" value={form.payment_due_date}
-                        onChange={e => f("payment_due_date", e.target.value)} />
+                      <Input type="date" value={form.payment_deadline}
+                        onChange={e => f("payment_deadline", e.target.value)} />
                       <div className="flex gap-2 pt-1">
                         <Button size="sm" className="flex-1 bg-green-600 hover:bg-green-700 text-xs"
                           onClick={handleConfirmOrder} disabled={!form.prepayment_amount || saving}>
@@ -1067,7 +1067,7 @@ export default function AdminOrderEditModal({ order, initialItemSizeTemplates, o
                                         user_note: req.note || "",
                                         quantity: 1,
                                         order_status: "in_warehouse",
-                                        in_warehouse_date: new Date().toISOString().split("T")[0],
+                                        storage_time: new Date().toISOString().split("T")[0],
                                         payment_mode: order.payment_mode || "prepay",
                                         parent_order_id: order.id,
                                       }
@@ -1323,8 +1323,8 @@ export default function AdminOrderEditModal({ order, initialItemSizeTemplates, o
               )}
               <div>
                 <Label className="text-sm">付款截止日期</Label>
-                <Input type="date" className="mt-1" value={form.payment_due_date}
-                  onChange={e => f("payment_due_date", e.target.value)} />
+                <Input type="date" className="mt-1" value={form.payment_deadline}
+                  onChange={e => f("payment_deadline", e.target.value)} />
               </div>
               <div>
                 <Label className="text-sm">取消理由</Label>

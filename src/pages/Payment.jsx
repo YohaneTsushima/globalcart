@@ -13,6 +13,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { useLocale } from "@/lib/LocaleContext";
 import { t } from "@/lib/i18n";
 import PaymentMethodSelector from "@/components/common/PaymentMethodSelector";
+import { useCurrentUser } from "@/hooks/useCurrentUser";
 
 const IS_DEV_MOCK = import.meta.env.VITE_DEV_MOCK === 'true';
 
@@ -88,6 +89,10 @@ export default function Payment() {
   const [serverPaymentData, setServerPaymentData] = useState(null);
   const [paymentPendingReminder, setPaymentPendingReminder] = useState("");
   const [otherPaymentConfig, setOtherPaymentConfig] = useState(null);
+  const { user } = useCurrentUser();
+
+  const subject = `${user?.displayName} - ${order?.product_name}`;
+  console.log(subject)
 
   const loadPaymentData = (payMethodKey = null) => {
     if (!orderId) {

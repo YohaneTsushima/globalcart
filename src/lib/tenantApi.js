@@ -25,14 +25,16 @@ export async function createOrder(data) {
 }
 
 export async function updateOrder(order_id, data) {
-  const res = await base44.functions.invoke('updateTenantOrder', { order_id, ...data });
+  // const res = await base44.functions.invoke('updateTenantOrder', { order_id, ...data });
+  const res = {};
   return res.data?.order;
 }
 
 // ─── Shipping Pools ───────────────────────────────────────────────────────────
 
 export async function fetchShippingPools() {
-  const res = await base44.functions.invoke('getTenantShippingPools', {});
+  // const res = await base44.functions.invoke('getTenantShippingPools', {});
+  const res = {};
   return res.data?.pools || [];
 }
 
@@ -100,16 +102,19 @@ export const userPrefApi = {
 // ─── Page-level aggregated APIs ───────────────────────────────────────────────
 
 export async function fetchMyOrdersPageData() {
-  const res = await base44.functions.invoke('getMyOrdersPageData', {});
+  // const res = await base44.functions.invoke('getMyOrdersPageData', {});
+  const res = {data: {orders: [], pools: [], storeTagRules: []}};
   return res.data || { orders: [], pools: [], storeTagRules: [] };
 }
 
 export async function fetchAdminShippingPoolPageData() {
-  const res = await base44.functions.invoke('getAdminShippingPoolPageData', {});
+  // const res = await base44.functions.invoke('getAdminShippingPoolPageData', {});
+  const res = {data: {pools: [], locations: [], users: [], transitMethods: [], addonOptions: []}}
   return res.data || { pools: [], locations: [], users: [], transitMethods: [], addonOptions: [] };
 }
 
 export async function fetchSubmitOrderPageData() {
-  const res = await base44.functions.invoke('getSubmitOrderPageData', {});
+  // const res = await base44.functions.invoke('getSubmitOrderPageData', {});
+  const res = {data: { addons: [], settings: {}, rates: null }}
   return res.data || { addons: [], settings: {}, rates: null };
 }

@@ -32,7 +32,8 @@ export default function ItemSizeTemplateManager({ initialData = null }) {
 
   const loadTemplates = async () => {
     setLoading(true);
-    const data = await tenantEntity.list('ItemSizeTemplate');
+    // const data = await tenantEntity.list('ItemSizeTemplate');
+    const data = [];
     setTemplates(data || []);
     setLoading(false);
   };

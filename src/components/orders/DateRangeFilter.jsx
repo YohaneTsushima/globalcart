@@ -4,11 +4,11 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 const DATE_FIELDS = [
-  { key: "created_date", label: "订单提交日" },
+  { key: "created_at", label: "订单提交日" },
   { key: "purchased_date", label: "下单日" },
-  { key: "in_warehouse_date", label: "入库日" },
-  { key: "shipped_date", label: "发货日" },
-  { key: "payment_due_date", label: "付款截止日" },
+  { key: "storage_time", label: "入库日" },
+  { key: "outbound_time", label: "发货日" },
+  { key: "payment_deadline", label: "付款截止日" },
 ];
 
 /**

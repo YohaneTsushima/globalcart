@@ -21,6 +21,7 @@ import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { usePermissions } from "@/hooks/usePermissions";
 import { usePageSize } from "@/hooks/usePageSize";
 import PaginationBar from "@/components/common/PaginationBar";
+import { MOCK_ADMIN_ORDERS_DATA } from "@/mock/adminOrdersMock";
 
 const STORAGE_KEY = "admin_orders_columns";
 
@@ -101,21 +102,42 @@ export default function AdminOrders() {
 
   const fetchOrders = useCallback(async () => {
     setLoading(true);
-    const r = await base44.functions.invoke('getAdminOrdersPageData', {});
-    const { orders: data = [], storeTagRules: rules = [], itemSizeTemplates: templates = [], pendingEditRequests: edits = [], userProfileMap: profiles = {}, shippingPools: pools = [], shippingMethods: sMethods = [], boxTemplates: boxes = [], transitLocations: locs = [], transitShippingMethods: tMethods = [], defaultPackingFeeSingle: pfs = 0, defaultPackingFeeConsolidation: pfc = 0 } = r.data || {};
-    setOrders(data);
-    setStoreTagRules(rules);
-    setItemSizeTemplates(templates);
-    setPendingEditRequests(edits);
-    setUserProfileMap(profiles);
-    setShippingPools(pools);
-    setShippingMethods(sMethods);
-    setBoxTemplates(boxes);
-    setTransitLocations(locs);
-    setTransitShippingMethods(tMethods);
-    setDefaultPackingFeeSingle(pfs);
-    setDefaultPackingFeeConsolidation(pfc);
-    setLoading(false);
+    try {
+      const r = await base44.functions.invoke('getAdminOrdersPageData', {});
+      const { orders: data = [], storeTagRules: rules = [], itemSizeTemplates: templates = [], pendingEditRequests: edits = [], userProfileMap: profiles = {}, shippingPools: pools = [], shippingMethods: sMethods = [], boxTemplates: boxes = [], transitLocations: locs = [], transitShippingMethods: tMethods = [], defaultPackingFeeSingle: pfs = 0, defaultPackingFeeConsolidation: pfc = 0 } = r.data || {};
+      setOrders(data);
+      setStoreTagRules(rules);
+      setItemSizeTemplates(templates);
+      setPendingEditRequests(edits);
+      setUserProfileMap(profiles);
+      setShippingPools(pools);
+      setShippingMethods(sMethods);
+      setBoxTemplates(boxes);
+      setTransitLocations(locs);
+      setTransitShippingMethods(tMethods);
+      setDefaultPackingFeeSingle(pfs);
+      setDefaultPackingFeeConsolidation(pfc);
+    } catch (err) {
+      console.warn('[AdminOrders] API 请求失败，使用 Mock 数据:', err.message);
+      // Mock 模式下重置列配置，用 defaultVisible 映射为 visible
+      localStorage.removeItem(STORAGE_KEY);
+      setColumns(physicalController.getColumnConfig().map(c => ({ ...c, visible: c.defaultVisible })));
+      const mock = MOCK_ADMIN_ORDERS_DATA;
+      setOrders(mock.orders);
+      setStoreTagRules(mock.storeTagRules);
+      setItemSizeTemplates(mock.itemSizeTemplates);
+      setPendingEditRequests(mock.pendingEditRequests);
+      setUserProfileMap(mock.userProfileMap);
+      setShippingPools(mock.shippingPools);
+      setShippingMethods(mock.shippingMethods);
+      setBoxTemplates(mock.boxTemplates);
+      setTransitLocations(mock.transitLocations);
+      setTransitShippingMethods(mock.transitShippingMethods);
+      setDefaultPackingFeeSingle(mock.defaultPackingFeeSingle);
+      setDefaultPackingFeeConsolidation(mock.defaultPackingFeeConsolidation);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   useEffect(() => { fetchOrders(); }, [fetchOrders]);
@@ -180,7 +202,7 @@ export default function AdminOrders() {
 
   const filtered = physicalOrders.sort((a, b) => {
     if (!sortKey) return 0;
-    const rk = sortKey === "submit_date" ? "created_date" : sortKey;
+    const rk = sortKey === "submit_date" ? "created_at" : sortKey;
     let va = a[rk], vb = b[rk];
     if (sortKey === "reply_status") {
       // Sort by unread: unread admin first
@@ -240,7 +262,7 @@ export default function AdminOrders() {
   const handleBulkInWarehouse = async () => {
     setBulkUpdating(true);
     await Promise.all(selectedIds.map(id =>
-      base44.functions.invoke('updateTenantOrder', { order_id: id, order_status: "in_warehouse", in_warehouse_date: new Date().toISOString().split("T")[0] })
+      base44.functions.invoke('updateTenantOrder', { order_id: id, order_status: "in_warehouse", storage_time: new Date().toISOString().split("T")[0] })
     ));
     setBulkUpdating(false);
     setSelectedIds([]);

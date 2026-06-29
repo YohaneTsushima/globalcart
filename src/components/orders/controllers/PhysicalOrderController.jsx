@@ -13,6 +13,7 @@ import { getStatusLabel, getStatusColor } from "@/lib/orderStatus";
 import { ImageWithViewer } from "@/components/common/ImageViewer";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import PreShipmentBadge from "@/components/admin/PreShipmentBadge";
 import { matchStoreTagResult } from "@/lib/onlineStoreTag";
 import { t, getLocale } from "@/lib/i18n";
@@ -38,22 +39,22 @@ export const PhysicalOrderController = {
       { key: "user_name", label: t("用户名", locale), defaultVisible: true, sortable: true },
       { key: "product_name", label: t("商品名", locale), defaultVisible: true, sortable: true },
       { key: "estimated_jpy", label: t("货款", locale), defaultVisible: true, sortable: true },
-      { key: "order_stage_payment_jpy", label: t("下单实付", locale), defaultVisible: true, sortable: true },
+      { key: "payable_amount", label: t("下单实付", locale), defaultVisible: true, sortable: true },
       { key: "paid_amount", label: t("已付总额", locale), defaultVisible: true, sortable: true },
       { key: "weight_g", label: t("订单重量", locale), defaultVisible: true, sortable: true },
       { key: "order_status", label: t("订单状态", locale), defaultVisible: true, sortable: true },
       { key: "online_store_tag", label: t("商城标签", locale), defaultVisible: false, sortable: true },
       { key: "reply_status", label: t("回复状态", locale), defaultVisible: false, sortable: true },
       { key: "purchased_date", label: t("下单日", locale), defaultVisible: false, sortable: true },
-      { key: "in_warehouse_date", label: t("入库日", locale), defaultVisible: false, sortable: true },
-      { key: "shipped_date", label: t("发货日", locale), defaultVisible: false, sortable: true },
-      { key: "submit_date", label: t("订单提交日", locale), defaultVisible: false, sortable: true },
+      { key: "storage_time", label: t("入库日", locale), defaultVisible: false, sortable: true },
+      { key: "outbound_time", label: t("发货日", locale), defaultVisible: false, sortable: true },
+      { key: "created_at", label: t("订单提交日", locale), defaultVisible: false, sortable: true },
       { key: "product_image_url", label: t("商品图片", locale), defaultVisible: false, sortable: false, isImage: true },
-      { key: "arrival_photo_url", label: t("入库图片", locale), defaultVisible: false, sortable: false, isImage: true },
+      { key: "storage_image", label: t("入库图片", locale), defaultVisible: false, sortable: false, isImage: true },
       { key: "product_description", label: t("商品描述", locale), defaultVisible: false, sortable: true },
       { key: "admin_note", label: t("管理员备注", locale), defaultVisible: false, sortable: true },
       { key: "user_note", label: t("用户订单备注", locale), defaultVisible: false, sortable: true },
-      { key: "payment_due_date", label: t("付款截止日期", locale), defaultVisible: false, sortable: true },
+      { key: "payment_deadline", label: t("付款截止日期", locale), defaultVisible: false, sortable: true },
       { key: "fullpay_once", label: t("一次付款", locale), defaultVisible: false, sortable: false, isFullPayOnce: true },
     ];
   },
@@ -93,13 +94,24 @@ export const PhysicalOrderController = {
         );
       }
       case "product_name":
-        return <span className="text-sm font-medium text-gray-900 truncate">{order.product_name}</span>;
+        return (
+          <TooltipProvider delayDuration={1000}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="text-sm font-medium text-gray-900 line-clamp-2 break-all cursor-default">{order.product_name}</span>
+              </TooltipTrigger>
+              <TooltipContent side="top" className="max-w-xs">
+                <p>{order.product_name}</p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        );
       
       case "estimated_jpy":
         return <span className="text-sm text-gray-700">{order.estimated_jpy ? `${Math.round(order.estimated_jpy).toLocaleString()} yen` : "-"}</span>;
       
-      case "order_stage_payment_jpy": {
-        const amt = order.order_stage_payment_jpy;
+      case "payable_amount": {
+        const amt = order.payable_amount;
         if (!amt || amt <= 0) {
           // 旧订单兼容：显示 prepayment_amount_jpy
           const legacy = order.prepayment_amount_jpy || order.paid_amount;
@@ -138,11 +150,11 @@ export const PhysicalOrderController = {
           : <span className="text-xs text-gray-300">-</span>;
       }
       
-      case "arrival_photo_url": {
+      case "storage_image": {
         const imgW = col.imageWidth || 40;
-        return order.arrival_photo_url
-          ? <ImageWithViewer src={order.arrival_photo_url} alt="入库图片">
-              <img src={order.arrival_photo_url} alt="" style={{ maxWidth: imgW, maxHeight: imgW, width: "100%", height: "auto" }} className="rounded object-cover border border-gray-100 cursor-pointer" />
+        return order.storage_image
+          ? <ImageWithViewer src={order.storage_image} alt="入库图片">
+              <img src={order.storage_image} alt="" style={{ maxWidth: imgW, maxHeight: imgW, width: "100%", height: "auto" }} className="rounded object-cover border border-gray-100 cursor-pointer" />
             </ImageWithViewer>
           : <span className="text-xs text-gray-300">-</span>;
       }
@@ -156,8 +168,8 @@ export const PhysicalOrderController = {
       case "user_note":
         return <span className="text-xs text-gray-600 line-clamp-2 max-w-[200px]">{order.user_note || "-"}</span>;
       
-      case "payment_due_date":
-        return <span className="text-xs text-gray-700">{order.payment_due_date || "-"}</span>;
+      case "payment_deadline":
+        return <span className="text-xs text-gray-700">{order.payment_deadline || "-"}</span>;
       
       case "reply_status": {
         const hasUnread = (order.unread_roles || []).includes("admin");
@@ -167,18 +179,17 @@ export const PhysicalOrderController = {
         return <Badge className="text-xs bg-gray-100 text-gray-400">无留言</Badge>;
       }
       
-      case "created_date":
-      case "submit_date":
-        return <span className="text-xs text-gray-700">{order.created_date ? new Date(order.created_date).toLocaleDateString("zh-CN") : "-"}</span>;
+      case "created_at":
+        return <span className="text-xs text-gray-700">{order.created_at ? new Date(order.created_at).toLocaleDateString("zh-CN") : "-"}</span>;
       
       case "purchased_date":
         return <span className="text-xs text-gray-700">{order.purchased_date ? new Date(order.purchased_date).toLocaleDateString("zh-CN") : "-"}</span>;
       
-      case "in_warehouse_date":
-        return <span className="text-xs text-gray-700">{order.in_warehouse_date ? new Date(order.in_warehouse_date).toLocaleDateString("zh-CN") : "-"}</span>;
+      case "storage_time":
+        return <span className="text-xs text-gray-700">{order.storage_time ? new Date(order.storage_time).toLocaleDateString("zh-CN") : "-"}</span>;
       
-      case "shipped_date":
-        return <span className="text-xs text-gray-700">{order.shipped_date ? new Date(order.shipped_date).toLocaleDateString("zh-CN") : "-"}</span>;
+      case "outbound_time":
+        return <span className="text-xs text-gray-700">{order.outbound_time ? new Date(order.outbound_time).toLocaleDateString("zh-CN") : "-"}</span>;
       
       case "fullpay_once": {
         const isFullpayOnce = order.payment_mode === "fullpay_once";
@@ -327,8 +338,8 @@ export const PhysicalOrderController = {
       // 日期段过滤
       if (dateRangeFilter && (dateRangeFilter.from || dateRangeFilter.to)) {
         const { field, from, to } = dateRangeFilter;
-        // For created_date / submit_date use created_date; for date fields use the field directly
-        const raw = field === "submit_date" ? o.created_date : o[field];
+        // For created_at use created_at; for date fields use the field directly
+        const raw = o[field];
         if (!raw) return false;
         
         // Convert to Date object for proper timezone handling
@@ -363,7 +374,7 @@ export const PhysicalOrderController = {
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
       const controllerCols = PhysicalOrderController.getColumnConfig();
-      if (!saved) return controllerCols;
+      if (!saved) return controllerCols.map(c => ({ ...c, visible: c.defaultVisible }));
       const parsed = JSON.parse(saved);
       const keyOrder = parsed.map(c => c.key);
       const merged = [
@@ -376,7 +387,7 @@ export const PhysicalOrderController = {
       ];
       return merged;
     } catch {
-      return PhysicalOrderController.getColumnConfig();
+      return PhysicalOrderController.getColumnConfig().map(c => ({ ...c, visible: c.defaultVisible }));
     }
   },
 

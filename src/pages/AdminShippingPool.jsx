@@ -81,7 +81,8 @@ export default function AdminShippingPool() {
   const fetchPageData = async () => {
     setLoading(true);
     const t = timePage('AdminShippingPool');
-    const r = await t.timeCall('getAdminShippingPoolPageData', () => base44.functions.invoke('getAdminShippingPoolPageData', {}));
+    // const r = await t.timeCall('getAdminShippingPoolPageData', () => base44.functions.invoke('getAdminShippingPoolPageData', {}));
+    const r = {};
     const data = r.data || {};
     setPools(data.pools || []);
     setLocations(data.locations || []);
