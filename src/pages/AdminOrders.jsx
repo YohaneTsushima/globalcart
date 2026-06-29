@@ -123,6 +123,7 @@ export default function AdminOrders() {
       localStorage.removeItem(STORAGE_KEY);
       setColumns(physicalController.getColumnConfig().map(c => ({ ...c, visible: c.defaultVisible })));
       const mock = MOCK_ADMIN_ORDERS_DATA;
+      console.log(mock)
       setOrders(mock.orders);
       setStoreTagRules(mock.storeTagRules);
       setItemSizeTemplates(mock.itemSizeTemplates);

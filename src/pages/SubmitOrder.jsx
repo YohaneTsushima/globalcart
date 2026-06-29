@@ -382,7 +382,7 @@ export default function SubmitOrder() {
     try {
       const submitForm = {
             ...form,
-            productLink: urlsText,
+            product_link: urlsText,
             user_email: user.email,
             user_name: user.full_name || user.email,
             // userId: user.id,
@@ -511,7 +511,7 @@ export default function SubmitOrder() {
         ? { data: { order: { id: 'dev-order-pre-' + Date.now() } } }
         : await base44.functions.invoke('createTenantOrder', {
             ...form,
-            product_url: urlsText,
+            product_link: urlsText,
             user_email: user.email,
             user_name: user.full_name || user.email,
             quantity: 1,
