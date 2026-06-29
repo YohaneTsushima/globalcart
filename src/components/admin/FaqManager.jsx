@@ -139,12 +139,12 @@ function AudiencePanel({ form, onChange, categories }) {
   );
 }
 
-export default function FaqManager({ settings, onReload }) {
+export default function FaqManager({ settings, onReload, faqCategories = [] }) {
   const [form, setForm] = useState(migrateConfig(null));
   const [activeTab, setActiveTab] = useState("guest");
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
-  const [categories, setCategories] = useState([]);
+  const categories = faqCategories.filter(c => c.is_active !== false);
 
   useEffect(() => {
     const setting = (settings || []).find(s => s.key === "home_faq_config");
@@ -157,12 +157,6 @@ export default function FaqManager({ settings, onReload }) {
       setForm(migrateConfig(null));
     }
   }, [settings]);
-
-  useEffect(() => {
-    base44.functions.invoke('manageFaqCategories', { action: 'list' })
-      .then(r => setCategories((r.data?.categories || []).filter(c => c.is_active !== false)))
-      .catch(() => {});
-  }, []);
 
   const cloneAudience = (a) => ({ ...a });
 

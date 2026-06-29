@@ -4,6 +4,7 @@ import { base44 } from "@/api/base44Client";
 import { tenantEntity } from "@/lib/tenantApi";
 import { setTenantConfigCache } from "@/lib/configCache";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
+import { MOCK_ADMIN_SETTINGS_DATA } from "@/mock/adminSettingsMock";
 import { Settings, Save, Plus, Trash2, Star, Lock, Eye, EyeOff, Palette, Zap, Users, ExternalLink, Bell, Mail, AlertCircle, TrendingUp } from "lucide-react";
 import { Link } from "react-router-dom";
 import { createPageUrl } from "@/utils";
@@ -251,14 +252,23 @@ export default function AdminSettings() {
   const [memberTiers, setMemberTiers] = useState([]);
   const [paymentMethods, setPaymentMethods] = useState([]);
   const [countriesConfig, setCountriesConfig] = useState(null);
+  const [faqCategories, setFaqCategories] = useState([]);
   const [countriesConfigId, setCountriesConfigId] = useState(null);
 
   const load = useCallback(async () => {
     const t = timePage('AdminSettings');
     setLoadError(null);
     try {
-      const r = await t.timeCall('getAdminSettingsPageData', () => base44.functions.invoke('getAdminSettingsPageData', {}));
-      const data = r.data || {};
+      let r;
+      try {
+        r = await t.timeCall('getAdminSettingsPageData', () => base44.functions.invoke('admin/settings/getAdminSettingsPageData', {}));
+      } catch (err) {
+        console.warn('[AdminSettings] API 请求失败，使用 Mock 数据:', err.message);
+        r = { data: MOCK_ADMIN_SETTINGS_DATA };
+        
+      }
+
+      const data = r.data?.data || {};
       if (data.error) throw new Error(data.error);
       let settingsData = data.settings || [];
 
@@ -273,7 +283,7 @@ export default function AdminSettings() {
           settingsData = refreshed.data?.settings || [];
         }
       }
-
+      
       setSettings(settingsData);
       setAddons(data.addons || []);
       setShippingMethods(data.shippingMethods || []);
@@ -283,6 +293,7 @@ export default function AdminSettings() {
       setBoxTemplates(data.boxTemplates || []);
       setMemberTiers(data.memberTiers || []);
       setPaymentMethods(data.paymentMethods || []);
+      setFaqCategories(data.faqCategories || []);
 
       setCountriesConfig(data.countriesConfig || null);
       const ccRecord = (data.settings || []).find(s => s.key === 'tenant_countries_config');
@@ -545,9 +556,9 @@ export default function AdminSettings() {
           </div>
           {/* 右列 */}
           <div className="flex-1 min-w-0 space-y-5">
-            <StepsSectionManager settings={settings} onReload={load} />
-            <LogisticsStatusBoardManager settings={settings} onReload={load} />
-            <FaqManager settings={settings} onReload={load} />
+            <StepsSectionManager settings={settings} onReload={load} faqCategories={faqCategories} />
+            <LogisticsStatusBoardManager settings={settings} onReload={load} faqCategories={faqCategories} />
+            <FaqManager settings={settings} onReload={load} faqCategories={faqCategories} />
             <Card className="border-teal-200">
               <CardContent className="pt-4 pb-4">
                 <div className="flex items-center justify-between">
@@ -828,7 +839,7 @@ export default function AdminSettings() {
       {activeTab === "item_sizes" && (
         <Card className="border-gray-200">
           <CardContent className="pt-5">
-            <ItemSizeTemplateManager initialData={itemSizeTemplates} />
+            <ItemSizeTemplateManager initialData={itemSizeTemplates} onReload={load} />
           </CardContent>
         </Card>
       )}

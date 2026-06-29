@@ -168,13 +168,23 @@ export const base44 = {
   },
   integrations: {
     Core: {
-      UploadFile: async ({ file }) => {
+      UploadFile: async ({ file, path = "" }) => {
+        
         const formData = new FormData();
         formData.append('file', file);
+        formData.append('savePath', path);
         const token = localStorage.getItem('token');
-        const res = await axios.post('/globalcart/order/info/uploadImage', formData, {
+        const uploadUrl = path
+          ? `/globalcart/common/image/upload`
+          : '/globalcart/order/info/uploadImage';
+        const imageUrlBase = path
+          ? `/globalcart/common/image`
+          : '/globalcart/order/info/image';
+
+        const res = await axios.post(uploadUrl, formData, {
           headers: { 'Content-Type': 'multipart/form-data', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
         });
+
         const fileName = res.data?.data || res.data;
         const cleanPath = typeof fileName === 'string' ? fileName.replace(/\\/g, '/') : fileName;
         let userId = '';
@@ -183,15 +193,25 @@ export const base44 = {
           userId = cache.user?.id || '';
         } catch (_) {}
         const fileUrl = typeof cleanPath === 'string'
-          ? `${window.location.origin}/globalcart/order/info/image/${userId}/${cleanPath}`
+          ? `${window.location.origin}${imageUrlBase}/${cleanPath}`
           : cleanPath;
         return { file_url: fileUrl };
       },
-      DeleteFile: async (imageUrl) => {
-        const match = imageUrl.match(/\/globalcart\/order\/info\/image\/(\d+)\/(.+)$/);
-        if (!match) return;
-        const [, userId, path] = match;
-        return api.post(`/globalcart/order/info/deleteImage?userId=${userId}&path=${encodeURIComponent(path)}`).then(r => r.data);
+      DeleteFile: async ({ imageUrl, path = "" }) => {
+        if (!imageUrl) return;
+        let userId = "";
+        let filePath = "";
+        // 新格式: /globalcart/common/image/{type}/{userId}/{file}
+        const newMatch = imageUrl.match(/\/globalcart\/common\/image\/[^/]+\/(\d+)\/(.+)$/);
+        if (newMatch) {
+          [, userId, filePath] = newMatch;
+        } else {
+          // 旧格式: /globalcart/order/info/image/{userId}/{file}
+          const oldMatch = imageUrl.match(/\/globalcart\/order\/info\/image\/(\d+)\/(.+)$/);
+          if (oldMatch) [, userId, filePath] = oldMatch;
+        }
+        if (!userId || !filePath) return;
+        return api.post(`/globalcart/common/image/delete?userId=${userId}&deleteType=${encodeURIComponent(path)}&path=${encodeURIComponent(filePath)}`).then(r => r.data);
       }
     }
   }

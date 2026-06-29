@@ -69,15 +69,15 @@ export async function fetchAnnouncements() {
 // ─── Generic tenant-safe entity mutations ─────────────────────────────────────
 
 async function mutate(entity, action, opts = {}) {
-  const res = await base44.functions.invoke('mutateTenantEntity', { entity, action, ...opts });
+  const res = await base44.functions.invoke(`mutateTenantEntity/${entity}/${action}`, { entity, action, ...opts });
   if (res.data?.error) throw new Error(res.data.error);
   return res.data;
 }
 
 export const tenantEntity = {
-  list:   (entity, filter = {}) => mutate(entity, 'list', { filter }).then(r => r.results || []),
-  create: (entity, data)        => mutate(entity, 'create', { data }).then(r => r.result),
-  update: (entity, id, data)    => mutate(entity, 'update', { id, data }).then(r => r.result),
+  list:   (entity, filter = {}) => mutate(entity, 'list', { filter }).then(r => r.results || r.data?.results || []),
+  create: (entity, data)        => mutate(entity, 'create', { data }).then(r => r.result || r.data?.result || r),
+  update: (entity, id, data)    => mutate(entity, 'update', { id, data }).then(r => r.result || r.data?.result || r),
   delete: (entity, id)          => mutate(entity, 'delete', { id }),
 };
 

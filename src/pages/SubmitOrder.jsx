@@ -232,10 +232,10 @@ export default function SubmitOrder() {
 
   useEffect(() => { if (form.estimated_jpy) calculate(); }, [form.estimated_jpy, selectedAddons, addonCustomFees, settings, activeRule]);
 
-  const deleteImageByUrl = async (imageUrl) => {
+  const deleteImageByUrl = async (imageUrl, path = "submitOrder") => {
     if (!imageUrl) return;
     try {
-      await base44.integrations.Core.DeleteFile(imageUrl);
+      await base44.integrations.Core.DeleteFile({ imageUrl, path });
     } catch (_) {}
   };
 
@@ -246,21 +246,25 @@ export default function SubmitOrder() {
     await deleteImageByUrl(url);
   };
 
-  const handleProductImageUpload = async (file) => {
+  const handleProductImageUpload = async (file, path) => {
     if (!file) return;
     if (form.product_image_url) {
       await deleteImageByUrl(form.product_image_url);
     }
     setUploading(true);
-    const { file_url } = await base44.integrations.Core.UploadFile({ file });
-    setForm((f) => ({ ...f, product_image_url: file_url }));
+    try {
+      const { file_url } = await base44.integrations.Core.UploadFile({ file, path });
+      setForm((f) => ({ ...f, product_image_url: file_url || "" }));
+    } catch (err) {
+      console.error('图片上传失败:', err);
+    }
     setUploading(false);
   };
 
-  const handleNoteImageUpload = async (file) => {
+  const handleNoteImageUpload = async (file, path) => {
     if (!file) return;
     setUploading(true);
-    const { file_url } = await base44.integrations.Core.UploadFile({ file });
+    const { file_url } = await base44.integrations.Core.UploadFile({ file, path });
     setForm((f) => ({ ...f, note_image_url: file_url }));
     setUploading(false);
   };
@@ -501,7 +505,7 @@ export default function SubmitOrder() {
     // 获取用户选择的付款方式和对应货币
     const selectedMethodObjForPre = paymentMethods.find((m) => (m.providerKey || m.methodName) === paymentMethod);
     const selectedCurrencyForPre = selectedMethodObjForPre?.paymentCurrency || "JPY";
-    debugger
+
     try {
       const res = IS_DEV_MOCK
         ? { data: { order: { id: 'dev-order-pre-' + Date.now() } } }
@@ -771,7 +775,7 @@ export default function SubmitOrder() {
                   if (typeof fileOrUrl === "string") {
                     setForm((f) => ({ ...f, product_image_url: fileOrUrl }));
                   } else {
-                    handleProductImageUpload(fileOrUrl);
+                    handleProductImageUpload(fileOrUrl, 'submitOrder');
                   }
                 }}
                 onDelete={deleteProductImage}

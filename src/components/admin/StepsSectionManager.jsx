@@ -324,18 +324,12 @@ function AudiencePanel({ form, onChange, categories }) {
 }
 
 // ─── Main Manager ────────────────────────────────────────
-export default function StepsSectionManager({ settings, onReload }) {
+export default function StepsSectionManager({ settings, onReload, faqCategories = [] }) {
   const [form, setForm] = useState(migrateConfig(null));
   const [activeTab, setActiveTab] = useState("guest");
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
-  const [categories, setCategories] = useState([]);
-
-  useEffect(() => {
-    base44.functions.invoke('manageFaqCategories', { action: 'list' })
-      .then(r => setCategories((r.data?.categories || []).filter(c => c.is_active !== false)))
-      .catch(() => {});
-  }, []);
+  const categories = faqCategories.filter(c => c.is_active !== false);
 
   useEffect(() => {
     const setting = (settings || []).find(s => s.key === "home_steps_config");

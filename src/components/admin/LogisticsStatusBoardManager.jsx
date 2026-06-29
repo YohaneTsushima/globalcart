@@ -29,17 +29,11 @@ const DEFAULT_CONFIG = {
   faq_item_ids: [],
 };
 
-export default function LogisticsStatusBoardManager({ settings, onReload }) {
+export default function LogisticsStatusBoardManager({ settings, onReload, faqCategories = [] }) {
   const [config, setConfig] = useState(DEFAULT_CONFIG);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
-  const [categories, setCategories] = useState([]);
-
-  useEffect(() => {
-    base44.functions.invoke('manageFaqCategories', { action: 'list' })
-      .then(r => setCategories((r.data?.categories || []).filter(c => c.is_active !== false)))
-      .catch(() => {});
-  }, []);
+  const categories = faqCategories.filter(c => c.is_active !== false);
 
   useEffect(() => {
     const setting = (settings || []).find(s => s.key === "home_status_board");

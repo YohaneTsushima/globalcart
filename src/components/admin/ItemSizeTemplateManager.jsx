@@ -8,10 +8,11 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
+import ImageUploader from "@/components/common/ImageUploader";
 
 const CURRENCIES = ["JPY", "CNY", "USD", "TWD", "HKD", "EUR", "SGD"];
 
-export default function ItemSizeTemplateManager({ initialData = null }) {
+export default function ItemSizeTemplateManager({ initialData = null, onReload }) {
   const [templates, setTemplates] = useState(initialData || []);
   const [loading, setLoading] = useState(false);
   const [showForm, setShowForm] = useState(false);
@@ -31,8 +32,8 @@ export default function ItemSizeTemplateManager({ initialData = null }) {
   const [migrationMsg, setMigrationMsg] = useState(null);
 
   const loadTemplates = async () => {
+    if (onReload) { await onReload(); return; }
     setLoading(true);
-    // const data = await tenantEntity.list('ItemSizeTemplate');
     const data = [];
     setTemplates(data || []);
     setLoading(false);
@@ -41,6 +42,10 @@ export default function ItemSizeTemplateManager({ initialData = null }) {
   useEffect(() => {
     if (initialData === null) loadTemplates();
   }, []);
+
+  useEffect(() => {
+    if (initialData) setTemplates(initialData);
+  }, [initialData]);
 
   const handleSave = async () => {
     if (!formData.title.trim()) return;
@@ -80,18 +85,29 @@ export default function ItemSizeTemplateManager({ initialData = null }) {
     setEditingId(null);
   };
 
-  const handleImageUpload = async (e) => {
-    const file = e.target.files?.[0];
+  const handleImageUpload = async (file, path) => {
     if (!file) return;
-    
-    setUploading(true);
-    try {
-      const res = await base44.integrations.Core.UploadFile({ file });
-      setFormData({ ...formData, image_url: res.data.file_url });
-    } catch (err) {
-      console.error('上传失败:', err);
+    if (formData.image_url) {
+      await deleteImageByUrl(formData.image_url, 'itemSize');
     }
+    setUploading(true);
+    const { file_url } = await base44.integrations.Core.UploadFile({ file, path });
+    setFormData({ ...formData, image_url: file_url });
     setUploading(false);
+  };
+
+  const deleteImageByUrl = async (imageUrl, path) => {
+    if (!imageUrl) return;
+    try {
+      await base44.integrations.Core.DeleteFile({imageUrl, path});
+    } catch (_) {}
+  };
+
+  const handleDeleteImage = async () => {
+    const url = formData.image_url;
+    if (!url) return;
+    setFormData({ ...formData, image_url: "" });
+    await deleteImageByUrl(url, 'itemSize');
   };
 
   const handleCancel = () => {
@@ -181,40 +197,20 @@ export default function ItemSizeTemplateManager({ initialData = null }) {
           </div>
 
           <div>
-            <Label className="text-xs text-gray-600">示意图</Label>
-            <div className="mt-1 flex gap-2">
-              <label className="flex-1 flex items-center justify-center gap-2 px-3 py-2 h-8 border border-gray-300 rounded text-xs cursor-pointer hover:bg-white transition-colors">
-                <Upload className="w-3.5 h-3.5" />
-                {uploading ? "上传中..." : "选择图片"}
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={handleImageUpload}
-                  disabled={uploading}
-                  className="hidden"
-                />
-              </label>
-              {formData.image_url && (
-                <button
-                  type="button"
-                  onClick={() => setFormData({ ...formData, image_url: "" })}
-                  className="p-1.5 rounded hover:bg-red-100 text-gray-400 hover:text-red-600 transition-colors"
-                  title="删除图片">
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              )}
-            </div>
-            <Input
-              className="mt-1 h-8 text-xs"
-              placeholder="或粘贴图片URL"
+            <ImageUploader
               value={formData.image_url}
-              onChange={(e) => setFormData({ ...formData, image_url: e.target.value })}
+              onChange={(fileOrUrl) => {
+                if (typeof fileOrUrl === "string") {
+                  setFormData({ ...formData, image_url: fileOrUrl });
+                } else {
+                  handleImageUpload(fileOrUrl, 'itemSize');
+                }
+              }}
+              onDelete={handleDeleteImage}
+              uploading={uploading}
+              label="示意图（可选）"
+              id="item-size-image-input"
             />
-            {formData.image_url && (
-              <div className="mt-2 max-w-xs">
-                <img src={formData.image_url} alt="预览" className="w-full h-auto rounded border border-gray-300 bg-white" />
-              </div>
-            )}
           </div>
 
           <div className="grid grid-cols-2 gap-3">

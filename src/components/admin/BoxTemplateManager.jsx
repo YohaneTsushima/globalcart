@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { base44 } from "@/api/base44Client";
+import ImageUploader from "@/components/common/ImageUploader";
 
 const EMPTY = { name: "", description: "", image_url: "", weight_g: "", price_jpy: "", cost_jpy: "", storage_fee_per_day: "" };
 
@@ -52,9 +53,18 @@ export default function BoxTemplateManager({ initialData = [], onReload }) {
 
   const handleUploadImage = async (file) => {
     setUploading(true);
-    const { file_url } = await base44.integrations.Core.UploadFile({ file });
+    const { file_url } = await base44.integrations.Core.UploadFile({ file, path: "boxTemplate" });
     setForm(p => ({ ...p, image_url: file_url }));
     setUploading(false);
+  };
+
+  const handleDeleteImage = async () => {
+    const url = form.image_url;
+    if (!url) return;
+    setForm(p => ({ ...p, image_url: "" }));
+    try {
+      await base44.integrations.Core.DeleteFile({ imageUrl: url, path: "boxTemplate" });
+    } catch (_) {}
   };
 
   return (
@@ -144,7 +154,23 @@ export default function BoxTemplateManager({ initialData = [], onReload }) {
               onChange={e => setForm(p => ({ ...p, storage_fee_per_day: e.target.value }))} />
             <p className="text-xs text-gray-400 mt-0.5">设置此外箱的每日仓储费，优先级高于默认设置</p>
           </div>
-          <div className="col-span-2">
+          <div>
+            <ImageUploader
+              value={form.image_url}
+              onChange={(fileOrUrl) => {
+                if (typeof fileOrUrl === "string") {
+                  setForm(p => ({ ...p, image_url: fileOrUrl }));
+                } else {
+                  handleUploadImage(fileOrUrl);
+                }
+              }}
+              onDelete={handleDeleteImage}
+              uploading={uploading}
+              label="示意图（可选）"
+              id="box-template-image-input"
+            />
+          </div>
+          {/* <div className="col-span-2">
             <Label className="text-xs text-gray-400">图片</Label>
             <div className="mt-0.5 flex items-center gap-2">
               <label
@@ -162,7 +188,7 @@ export default function BoxTemplateManager({ initialData = [], onReload }) {
                 <img src={form.image_url} alt="" className="w-8 h-8 rounded object-cover border border-gray-100" />
               )}
             </div>
-          </div>
+          </div> */}
         </div>
         <Button size="sm" variant="outline" onClick={handleAdd}
           disabled={adding || !form.name}>
