@@ -24,7 +24,7 @@ export default function PaymentSection({
       <CardContent className="space-y-3">
         {/* 付款选项 */}
         <div className="grid grid-cols-2 gap-2">
-          {settings.prepayEnabled !== 'false' && canPrePay && (
+          {settings.prepay_enabled !== 'false' && canPrePay && (
             <button
               type="button"
               onClick={() => setPaymentMode("prepay")}
@@ -39,7 +39,7 @@ export default function PaymentSection({
             </button>
           )}
           
-          {settings.prepayEnabled === 'false' && canFullPay && (
+          {settings.prepay_enabled === 'false' && canFullPay && (
             <button
               type="button"
               onClick={() => setPaymentMode("fullpay")}

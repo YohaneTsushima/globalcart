@@ -131,6 +131,29 @@ export const base44 = {
   functions: {
     invoke: (funcName, payload) => {
       return api.post(`/globalcart/${funcName}`, payload).then(r => r.data);
+    },
+    feetchRate: () => {
+      const DEFAULT_RATES = { JPY: 1, CNY: 0.049, USD: 0.0067, TWD: 0.21, HKD: 0.052, EUR: 0.0061, GBP: 0.0053, AUD: 0.01, SGD: 0.009 };
+      fetch('https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies/jpy.json')
+      .then(r => r.json())
+      .then(data => {
+        if (data && data.jpy) {
+          return {
+            JPY: 1,
+            CNY: data.jpy.cny || DEFAULT_RATES.CNY,
+            USD: data.jpy.usd || DEFAULT_RATES.USD,
+            EUR: data.jpy.eur || DEFAULT_RATES.EUR,
+            GBP: data.jpy.gbp || DEFAULT_RATES.GBP,
+            AUD: data.jpy.aud || DEFAULT_RATES.AUD,
+            SGD: data.jpy.sgd || DEFAULT_RATES.SGD,
+            HKD: data.jpy.hkd || DEFAULT_RATES.HKD,
+            TWD: data.jpy.twd || DEFAULT_RATES.TWD,
+          };
+        } else {
+          return DEFAULT_RATES;
+        }
+      })
+      .catch(() => { setRates(DEFAULT_RATES); });
     }
   },
   auth: {

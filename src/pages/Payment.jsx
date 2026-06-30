@@ -14,44 +14,45 @@ import { useLocale } from "@/lib/LocaleContext";
 import { t } from "@/lib/i18n";
 import PaymentMethodSelector from "@/components/common/PaymentMethodSelector";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
+import { toast } from "sonner";
 
 const IS_DEV_MOCK = import.meta.env.VITE_DEV_MOCK === 'true';
 
 const MOCK_PAYMENT_DATA = {
-  // order: {
-  //   id: 'mock-order-001',
-  //   order_number: 'GC-20260625-001',
-  //   product_name: 'Sony WH-1000XM5 降噪耳机',
-  //   product_image_url: 'https://www.amazon.co.jp/dp/B0BX2L8PBT',
-  //   estimated_jpy: 35000,
-  //   service_fee_amount: 2800,
-  //   prepayment_amount: 15000,
-  //   paid_amount: 0,
-  //   payment_method: 'alipay',
-  //   order_status: 'pending_payment',
-  //   user_note: '请尽快发货',
-  // },
-  // settings: {
-  //   alipay_account: 'globalcart@alipay.com',
-  //   alipay_account_name: '张三',
-  //   alipay_qr_url: '',
-  //   payment_pending_reminder: '请在30分钟内完成支付，超时订单将自动取消。',
-  // },
-  // paymentMethods: [
-  //   { id: 1, name: '支付宝', provider_key: 'alipay', payment_currency: 'CNY', icon: '💰', color: 'bg-blue-100 text-blue-700', is_active: true, sort_order: 0, surcharge_rate: 0, surcharge_fixed_jpy: 0, image_url: '', payment_note: '' },
-  //   { id: 2, name: '微信支付', provider_key: 'wechat', payment_currency: 'CNY', icon: '💚', color: 'bg-green-100 text-green-700', is_active: true, sort_order: 1, surcharge_rate: 0, surcharge_fixed_jpy: 0, image_url: '', payment_note: '' },
-  //   { id: 3, name: '银行转账', provider_key: '', payment_currency: 'JPY', icon: '🏦', color: 'bg-gray-100 text-gray-700', is_active: true, sort_order: 2, surcharge_rate: 0, surcharge_fixed_jpy: 0, image_url: '', payment_note: '请在备注中填写订单号\n到账后1个工作日内确认' },
-  //   { id: 4, name: 'USDT', provider_key: '', payment_currency: 'USD', icon: '💵', color: 'bg-teal-100 text-teal-700', is_active: true, sort_order: 3, surcharge_rate: 1.5, surcharge_fixed_jpy: 0, image_url: '', payment_note: 'TRC20 地址：TXXX...XXX\n请转账后上传凭证' },
-  //   { id: 5, name: 'PayPal', provider_key: 'paypal', payment_currency: 'USD', icon: '🅿️', color: 'bg-blue-100 text-blue-800', is_active: true, sort_order: 4, surcharge_rate: 3.5, surcharge_fixed_jpy: 100, image_url: '', payment_note: '' },
-  // ],
-  // rates: { CNY: 0.049, USD: 0.0067, TWD: 0.21 },
-  // isFullPayOnce: false,
-  // estimatedShippingFee: 2500,
-  // paymentAmountJpy: 15000,
-  // surchargeJpy: 0,
-  // paymentAmountWithSurcharge: 15000,
-  // paymentBreakdown: null,
-  // isSupplement: false,
+  order: {
+    id: 'mock-order-001',
+    order_number: 'GC-20260625-001',
+    product_name: 'Sony WH-1000XM5 降噪耳机',
+    product_image_url: 'https://www.amazon.co.jp/dp/B0BX2L8PBT',
+    estimated_jpy: 35000,
+    service_fee_amount: 2800,
+    prepayment_amount: 15000,
+    paid_amount: 0,
+    payment_method: 'alipay',
+    order_status: 'pending_payment',
+    user_note: '请尽快发货',
+  },
+  settings: {
+    alipay_account: 'globalcart@alipay.com',
+    alipay_account_name: '张三',
+    alipay_qr_url: '',
+    payment_pending_reminder: '请在30分钟内完成支付，超时订单将自动取消。',
+  },
+  payment_methods: [
+    { id: 1, name: '支付宝', provider_key: 'alipay', payment_currency: 'CNY', icon: '💰', color: 'bg-blue-100 text-blue-700', is_active: true, sort_order: 0, surcharge_rate: 0, surcharge_fixed_jpy: 0, image_url: '', payment_note: '' },
+    { id: 2, name: '微信支付', provider_key: 'wechat', payment_currency: 'CNY', icon: '💚', color: 'bg-green-100 text-green-700', is_active: true, sort_order: 1, surcharge_rate: 0, surcharge_fixed_jpy: 0, image_url: '', payment_note: '' },
+    { id: 3, name: '银行转账', provider_key: '', payment_currency: 'JPY', icon: '🏦', color: 'bg-gray-100 text-gray-700', is_active: true, sort_order: 2, surcharge_rate: 0, surcharge_fixed_jpy: 0, image_url: '', payment_note: '请在备注中填写订单号\n到账后1个工作日内确认' },
+    { id: 4, name: 'USDT', provider_key: '', payment_currency: 'USD', icon: '💵', color: 'bg-teal-100 text-teal-700', is_active: true, sort_order: 3, surcharge_rate: 1.5, surcharge_fixed_jpy: 0, image_url: '', payment_note: 'TRC20 地址：TXXX...XXX\n请转账后上传凭证' },
+    { id: 5, name: 'PayPal', provider_key: 'paypal', payment_currency: 'USD', icon: '🅿️', color: 'bg-blue-100 text-blue-800', is_active: true, sort_order: 4, surcharge_rate: 3.5, surcharge_fixed_jpy: 100, image_url: '', payment_note: '' },
+  ],
+  rates: { CNY: 0.049, USD: 0.0067, TWD: 0.21 },
+  is_full_pay_once: false,
+  estimated_shipping_fee: 2500,
+  payment_amount_jpy: 15000,
+  surcharge_jpy: 0,
+  payment_amount_with_surcharge: 15000,
+  payment_breakdown: null,
+  is_supplement: false,
 };
 
 export default function Payment() {
@@ -104,17 +105,17 @@ export default function Payment() {
       const data = MOCK_PAYMENT_DATA;
       setOrder(data.order);
       setSettings(data.settings);
-      setPaymentMethods(data.paymentMethods);
+      setPaymentMethods(data.payment_methods);
       setRates(data.rates);
       setOtherPaymentConfig(null);
       setServerPaymentData({
-        isFullPayOnce: data.isFullPayOnce,
-        estimatedShippingFee: data.estimatedShippingFee,
-        paymentAmountJpy: data.paymentAmountJpy,
-        surchargeJpy: data.surchargeJpy,
-        paymentAmountWithSurcharge: data.paymentAmountWithSurcharge,
-        paymentBreakdown: data.paymentBreakdown,
-        isSupplement: data.isSupplement,
+        isFullPayOnce: data.is_full_pay_once,
+        estimatedShippingFee: data.estimated_shipping_fee,
+        paymentAmountJpy: data.payment_amount_jpy,
+        surchargeJpy: data.surcharge_jpy,
+        paymentAmountWithSurcharge: data.payment_amount_with_surcharge,
+        paymentBreakdown: data.payment_breakdown,
+        isSupplement: data.is_supplement,
       });
       if (data.settings?.payment_pending_reminder) {
         setPaymentPendingReminder(data.settings.payment_pending_reminder);
@@ -130,7 +131,7 @@ export default function Payment() {
 
     base44.functions.invoke('payment/getPaymentPageData', { order_id: orderId, ...(payMethodKey ? { payment_method_key: payMethodKey } : {}) })
       .then(r => {
-        
+        console.log(user)
         clearTimeout(timeoutId);
         const data = r.data || {};
 
@@ -143,20 +144,20 @@ export default function Payment() {
           if (data.settings?.payment_pending_reminder) {
             setPaymentPendingReminder(data.settings.payment_pending_reminder);
           }
-          const methodsList = Array.isArray(data.paymentMethods)
-            ? data.paymentMethods
-            : data.paymentMethods?.paymentMethods || [];
+          const methodsList = Array.isArray(data.payment_methods)
+            ? data.payment_methods
+            : data.payment_methods?.payment_methods || [];
           setPaymentMethods(methodsList);
-          setRates(data.rates || null);
-          setOtherPaymentConfig(data.otherPaymentConfig || null);
+          setRates(data.rates || null); 
+          setOtherPaymentConfig(data.other_payment_config || null);
           setServerPaymentData({
-            isFullPayOnce: data.isFullPayOnce || false,
-            estimatedShippingFee: data.estimatedShippingFee || 0,
-            paymentAmountJpy: data.paymentAmountJpy ?? null,
-            surchargeJpy: data.surchargeJpy ?? 0,
-            paymentAmountWithSurcharge: data.paymentAmountWithSurcharge ?? null,
-            paymentBreakdown: data.paymentBreakdown || null,
-            isSupplement: data.isSupplement || false,
+            isFullPayOnce: data.is_full_pay_once || false,
+            estimatedShippingFee: data.estimated_shipping_fee || 0,
+            paymentAmountJpy: data.payment_amount_jpy ?? null,
+            surchargeJpy: data.surcharge_jpy ?? 0,
+            paymentAmountWithSurcharge: data.payment_amount_with_surcharge ?? null,
+            paymentBreakdown: data.payment_breakdown || null,
+            isSupplement: data.is_supplement || false,
           });
         }
         setLoading(false);
@@ -173,8 +174,12 @@ export default function Payment() {
   // 监听支付宝付款完成的 postMessage
   useEffect(() => {
     const handleMessage = (e) => {
+      debugger
       if (e.data?.type === "alipay_payment_done") {
-        loadPaymentData();
+        // loadPaymentData();
+        const url = createPageUrl("MyOrders");
+
+          window.location.href = url;
       }
     };
     window.addEventListener("message", handleMessage);
@@ -183,49 +188,69 @@ export default function Payment() {
 
   const handleGenerateAlipayLink = async () => {
     setGeneratingLink(true);
-    const subject = `同一物流代购 - ${order.product_name}`;
+    // 在 await 之前打开新窗口，保留用户手势上下文，否则 Edge 会拦截弹窗
 
     // CNY 转换 — 优先用下单时的汇率
-    const payCurrency = activeMethod?.paymentCurrency || urlPayCurrency || "JPY";
+    const payCurrency = activeMethod?.paymentCurrency  || activeMethod?.payment_currency || urlPayCurrency || "JPY";
     let amountToCharge = amountJpy;
     let currencyToSend = "JPY";
     if (payCurrency !== "JPY") {
-      const orderRate = order?.prepaymentRateJpyCny || order?.prepayment_rate_jpy_cny;
-      const rate = (payCurrency === "CNY" && orderRate) ? orderRate : (rates && rates[payCurrency]);
+      const orderRate = order?.prepaymentRateJpyCny || order?.prepayment_rate_jpy_cny; //下单时的汇率
+      const rate = (payCurrency === "CNY" && orderRate) ? orderRate : (rates && rates[payCurrency]); //当无法从当前订单获取汇率，只能够按照当前的汇率
       if (rate) {
         amountToCharge = Math.round(amountJpy * rate * 100) / 100;
         currencyToSend = payCurrency;
       }
     }
 
-    const res = await base44.functions.invoke('alipay/pay', {
+    const selectedObj = paymentMethods.find(m => (m.provider_key || m.id) === method);
+
+    //用于更新Payment Method
+    const newMethod = {
+      payable_amount: amountToCharge,
+      method_name: method,
+      payment_currency: selectedObj?.payment_currency,
+      payment_currency_type: selectedObj?.payment_currency,
+      prepayment_rate_jpy_cny: rates[payCurrency],
+      provider_key: method
+    }
+
+    const payParam = {
       orderId: order.id,
       amount: amountToCharge,
       currency: currencyToSend,
       subject,
       paymentType: "order",
-    });
+      payment_method: newMethod
+    };
+
+    const res = await base44.functions.invoke('alipay/pay', payParam);
+    debugger
+    if(!res?.data?.success) {
+      toast.error(`下单失败: ${res?.data?.result}`);
+      setGeneratingLink(false);
+      return;
+    }
+    
+    const payWindow = window.open('', '_blank');
     const formData = res?.data?.form;
     setGeneratingLink(false);
 
     // 后端返回 HTML 表单，在新窗口渲染并自动提交到支付宝
-    if (formData && typeof formData === 'string') {
-      const newWindow = window.open('', '_blank');
-      if (newWindow) {
-        newWindow.document.write(formData);
-        newWindow.document.close();
-      }
+    if (payWindow && formData && typeof formData === 'string') {
+      payWindow.document.write(formData);
+      payWindow.document.close();
     }
 
     // 同时开始轮询（在另一个页面或定时器）
-    const timer = setInterval(async () => {
-      const queryRes = await base44.functions.invoke('alipay/query', { outTradeNo: res?.data?.outTradeNo });
-      if (queryRes.data === 'TRADE_SUCCESS') {
-        clearInterval(timer);
-        localStorage.removeItem('pendingOrder');
-        navigate(`/${locale}/MyOrders`);
-      }
-    }, 2000);
+    // const timer = setInterval(async () => {
+    //   const queryRes = await base44.functions.invoke('alipay/query', { outTradeNo: res?.data?.outTradeNo });
+    //   if (queryRes.data === 'TRADE_SUCCESS') {
+    //     clearInterval(timer);
+    //     localStorage.removeItem('pendingOrder');
+    //     navigate(`/${locale}/MyOrders`);
+    //   }
+    // }, 5000);
   };
 
   const handleCopy = (text) => {
@@ -276,7 +301,7 @@ export default function Payment() {
   const isFullPayOnce = serverPaymentData?.isFullPayOnce || false;
   const paymentBreakdown = serverPaymentData?.paymentBreakdown || null;
   // paymentAmountJpy = base amount before surcharge; paymentAmountWithSurcharge = final amount user pays
-  const baseAmountJpy = serverPaymentData?.paymentAmountJpy ?? (order?.prepayment_amount || 0);
+  const baseAmountJpy = serverPaymentData?.paymentAmountJpy ?? (order?.prepayment_amount || order?.full_payment_amount || 0);
   const surchargeJpy = serverPaymentData?.surchargeJpy ?? 0;
   const amountJpy = serverPaymentData?.paymentAmountWithSurcharge ?? baseAmountJpy;
   const amountJpyDisplay = Math.round(amountJpy).toLocaleString();
@@ -286,7 +311,7 @@ export default function Payment() {
   const newPaidAmount = (isShippingOnlyPayment || isSupplement) ? (order?.paid_amount || 0) + baseAmountJpy : baseAmountJpy;
 
   // Find the configured payment method for current selection
-  const activeMethod = paymentMethods.find(m => (m.providerKey || m.name) === method);
+  const activeMethod = paymentMethods.find(m => (m.provider_key || m.meghod_name) === method);
   // Automatic callback methods (e.g. alipay) should not show QR / upload proof UI
   const isAutoCallback = !!activeMethod?.provider_key;
   // Alipay gateway info: prefer PaymentMethod entity, fall back to SiteSettings
@@ -479,7 +504,10 @@ export default function Payment() {
           <CardContent>
             <PaymentMethodSelector
               value={method}
-              onChange={(m) => setSelectedMethod(m.value)}
+              onChange={(m) => {
+                console.log(order)
+                setSelectedMethod(m.value)}
+              }
               prefetched={paymentMethods}
               activeColor="border-red-500 bg-red-50 text-red-700"
             />

@@ -118,9 +118,9 @@ export default function SubmitOrder() {
       const data = MOCK_PAGE_DATA;
       setAddonOptions(data.addons);
       setRates(data.rates);
-      setActiveRule(data.activeRule);
+      setActiveRule(data.active_rule);
       setSettings(data.settings);
-      setPaymentMode(data.settings.prepayEnabled !== 'false' ? "prepay" : "fullpay");
+      setPaymentMode(data.settings.prepay_enabled !== 'false' ? "prepay" : "fullpay");
       setUserCredit(null);
       setPaymentMethods(MOCK_PAYMENT_METHODS.methods);
       setShippingMethods(MOCK_SHIPPING_METHODS.methods);
@@ -134,18 +134,18 @@ export default function SubmitOrder() {
       const data = r.data || {};
       setAddonOptions(data.addons || []);
       setRates(data.rates || null);
-      setActiveRule(data.activeRule || null);
+      setActiveRule(data.active_rule || null);
       const parsed = {};
       Object.entries(data.settings || {}).forEach(([k, v]) => { parsed[k] = v; });
       setSettings(parsed);
-      const prepayOn = parsed.prepayEnabled !== 'false';
+      const prepayOn = parsed.prepay_enabled !== 'false';
       setPaymentMode(prepayOn ? "prepay" : "fullpay");
       setUserCredit(null);
       timer.done('data ready');
     }).catch((err) => { console.error('SubmitOrder data load failed:', err); });
     
     base44.functions.invoke('config/page/getPaymentMethod', {})
-      .then((r) => { setPaymentMethods(r?.data?.paymentMethods || []); })
+      .then((r) => { setPaymentMethods(r?.data?.payment_methods || []); })
       .catch(() => {});
     
     base44.functions.invoke('config/shipping/getTenantShippingPools', { action: 'list_shipping_methods' })
@@ -157,9 +157,9 @@ export default function SubmitOrder() {
     const opt = addonOptions.find((a) => a.id === id);
     if (!opt) return sum;
     const customFee = addonCustomFees[id];
-    const isCustomizable = opt.isUserCustomizable;
+    const isCustomizable = opt.is_user_customizable;
     const effectiveFee = isCustomizable && customFee !== undefined ? customFee : parseFloat(opt.fee) || 0;
-    const feeCur = opt.feeCurrency || "JPY";
+    const feeCur = opt.fee_currency || "JPY";
     if (feeCur === "JPY") return sum + effectiveFee;
     const rateKey = `jpy_${feeCur.toLowerCase()}`;
     const rate = rates?.[rateKey] || 1;
@@ -170,7 +170,7 @@ export default function SubmitOrder() {
     const jpy = parseFloat(form.estimated_jpy);
     if (!jpy || jpy <= 0) { setCalculated(null); return; }
     
-    const prepayEnabled = settings.prepayEnabled !== 'false';
+    const prepayEnabled = settings.prepay_enabled !== 'false';
     let prepayRatePct = parseFloat(settings.prepay_rate);
     if (isNaN(prepayRatePct) || prepayRatePct <= 0 || prepayRatePct > 100) prepayRatePct = DEFAULT_PREPAY_RATE * 100;
     const prepayRate = prepayEnabled ? prepayRatePct / 100 : 1.0;
@@ -199,7 +199,7 @@ export default function SubmitOrder() {
         // const res = IS_DEV_MOCK
         //   ? { data: { fee: Math.round(variables.goodsAmount * (activeRule.simple_rate / 100)), steps: null } }
         //   : await base44.functions.invoke('serviceFeeRuleEngine', { action: 'evaluate', variables, rule: activeRule });
-        const res = { data: { fee: Math.round(variables.goodsAmount * (activeRule.simpleRate / 100)), steps: null } };
+        const res = { data: { fee: Math.round(variables.goodsAmount * (activeRule.simple_rate / 100)), steps: null } };
         
         serviceFeeJpy = res.data?.fee ?? 0;
         feeRateDisplay = activeRule.name;
@@ -220,10 +220,10 @@ export default function SubmitOrder() {
     const prepayJpy = totalJpy * prepayRate;
     setCalculated({
       jpy,
-      serviceFeeJpy: Math.round(serviceFeeJpy),
-      addonTotal: Math.round(addonTotalJpy),
-      totalJpy: Math.round(totalJpy),
-      prepayJpy: Math.round(prepayJpy),
+      serviceFeeJpy,
+      addonTotal: addonTotalJpy,
+      totalJpy,
+      prepayJpy,
       feeRateDisplay,
       feeSteps,
       prepayRate: (prepayRate * 100).toFixed(0)
@@ -292,13 +292,13 @@ export default function SubmitOrder() {
 
   const validateAddonFee = (addonId, fee) => {
     const addon = addonOptions.find(a => a.id === addonId);
-    if (!addon || !addon.isUserCustomizable) return null;
+    if (!addon || !addon.is_user_customizable) return null;
     
-    const minFee = parseFloat(addon.feeMin) || 0;
-    const maxFee = parseFloat(addon.feeMax) || Infinity;
+    const minFee = parseFloat(addon.fee_min) || 0;
+    const maxFee = parseFloat(addon.fee_max) || Infinity;
     
-    if (fee < minFee) return `${t("金额不能低于", locale)} ${minFee} ${addon.feeCurrency || 'JPY'}`;
-    if (maxFee > 0 && fee > maxFee) return `${t("金额不能高于", locale)} ${maxFee} ${addon.feeCurrency || 'JPY'}`;
+    if (fee < minFee) return `${t("金额不能低于", locale)} ${minFee} ${addon.fee_currency || 'JPY'}`;
+    if (maxFee > 0 && fee > maxFee) return `${t("金额不能高于", locale)} ${maxFee} ${addon.fee_currency || 'JPY'}`;
     return null;
   };
 
@@ -322,10 +322,9 @@ export default function SubmitOrder() {
     // Validate all customizable addon fees
     const validationErrors = {};
     let hasErrors = false;
-    
     selectedAddons.forEach(addonId => {
       const addon = addonOptions.find(a => a.id === addonId);
-      if (addon && addon.isUserCustomizable) {
+      if (addon && addon.is_user_customizable) {
         const fee = addonCustomFees[addonId] || 0;
         const error = validateAddonFee(addonId, fee);
         if (error) {
@@ -346,12 +345,12 @@ export default function SubmitOrder() {
       const addon = addonOptions.find((a) => a.id === id);
       if (!addon) return null;
       const customFee = addonCustomFees[id];
-      const isCustomizable = addon.isUserCustomizable;
+      const isCustomizable = addon.is_user_customizable;
       return {
         id: addon.id,
-        serviceName: addon.serviceName,
+        service_name: addon.service_name,
         fee: isCustomizable && customFee !== undefined ? customFee : parseFloat(addon.fee) || 0,
-        feeCurrency: addon.feeCurrency || "JPY"
+        feeCurrency: addon.fee_currency || "JPY"
       };
     }).filter(Boolean);
     
@@ -365,6 +364,7 @@ export default function SubmitOrder() {
 
     // 根据付款模式决定预付金额
     let prepaymentAmount = 0;
+    let prePayEnabled = (paymentMode === 'prepay');
     if (paymentMode === "prepay") {
       prepaymentAmount = calculated ? parseFloat(calculated.prepayJpy) : 0;
     } else if (paymentMode === "fullpay" || paymentMode === "deferred") {
@@ -376,8 +376,8 @@ export default function SubmitOrder() {
     const paymentModeMap = { prepay: "prepay", fullpay: "fullpay_once", deferred: "deferred", credit_weekly: "credit", credit_monthly: "credit" };
     
     // 获取用户选择的付款方式和对应货币
-    const selectedMethodObj = paymentMethods.find((m) => (m.providerKey || m.id) === paymentMethod);
-    const selectedCurrency = selectedMethodObj?.paymentCurrency || "JPY";
+    const selectedMethodObj = paymentMethods.find((m) => (m.provider_key || m.id) === paymentMethod);
+    const selectedCurrency = selectedMethodObj?.payment_currency || "JPY";
     
     try {
       const submitForm = {
@@ -387,15 +387,18 @@ export default function SubmitOrder() {
             user_name: user.full_name || user.email,
             // userId: user.id,
             quantity: 1,
-            provider_key: selectedMethodObj?.providerKey,
+            provider_key: selectedMethodObj?.provider_key,
             estimated_jpy: parseFloat(form.estimated_jpy) || 0,
-            service_fee_rate: (parseFloat(settings.serviceFeeRate) || 10),
+            service_fee_rate: (parseFloat(settings.service_fee_rate) || 10),
             service_fee_amount: calculated ? calculated.serviceFeeJpy : null,
             service_fee_rule_id: activeRule?.id || null,
             service_fee_rule_name: activeRule?.name || null,
             service_fee_rule_version: activeRule?.version || null,
-            prepayment_amount: prepaymentAmount,
+            full_payment_amount: (!prePayEnabled) ? prepaymentAmount : 0,
+            prepayment_amount: prePayEnabled ? prepaymentAmount : 0,
             prepayment_currency: selectedCurrency,
+            payable_amount: prepaymentAmount,
+            payment_currency: selectedCurrency,
             online_store_tag: tagResult.tag_label,
             online_store_tag_color: tagResult.tag_color,
             payment_method: paymentMethod,
@@ -404,9 +407,9 @@ export default function SubmitOrder() {
             order_status: isCredit ? "paid" : "payment_pending",
             payment_status: isCredit ? "paid" : "awaiting_payment",
             user_note: form.user_note || "",
-            prepayment_rate_jpy_cny: selectedCurrency === 'CNY' ? (rates?.jpyCny || null) : null,
+            payment_rate_jpy_cny: selectedCurrency === 'CNY' ? (rates?.jpy_cny || null) : null,
             selected_addon_ids: selectedAddons,
-            selected_addons: selectedAddonObjects.map((a) => ({ id: a.id, serviceName: a.serviceName, fee: parseFloat(a.fee) || 0, feeCurrency: a.feeCurrency || "JPY" }))
+            selected_addons: selectedAddonObjects.map((a) => ({ id: a.id, service_name: a.service_name, fee: parseFloat(a.fee) || 0, fee_currency: a.fee_currency || "JPY" }))
       };
 
       // 弹窗确认，确认后才调后端
@@ -478,7 +481,7 @@ export default function SubmitOrder() {
     
     selectedAddons.forEach(addonId => {
       const addon = addonOptions.find(a => a.id === addonId);
-      if (addon && addon.isUserCustomizable) {
+      if (addon && addon.is_user_customizable) {
         const fee = addonCustomFees[addonId] || 0;
         const error = validateAddonFee(addonId, fee);
         if (error) {
@@ -536,9 +539,9 @@ export default function SubmitOrder() {
               const addon = addonOptions.find(a => a.id === id);
               if (!addon) return null;
               const customFee = addonCustomFees[id];
-              const isCustomizable = addon.isUserCustomizable;
+              const isCustomizable = addon.is_user_customizable;
               const fee = isCustomizable && customFee !== undefined ? customFee : parseFloat(addon.fee) || 0;
-              return { id: addon.id, name: addon.name, fee, feeCurrency: addon.feeCurrency || "JPY" };
+              return { id: addon.id, name: addon.name, fee, fee_currency: addon.fee_currency || "JPY" };
             }).filter(Boolean)
           });
       setSubmitting(false);
@@ -577,7 +580,7 @@ export default function SubmitOrder() {
         </Alert>
       )}
 
-      {settings.prepayEnabled !== 'false' && (
+      {settings.prepay_enabled !== 'false' && (
         <Alert className="border-blue-200 bg-blue-50">
           <Info className="w-4 h-4 text-blue-600" />
           <AlertDescription className="text-blue-800 text-sm">
@@ -713,10 +716,10 @@ export default function SubmitOrder() {
                 <div className="space-y-2">
                   {addonOptions.map((opt) => {
                     const isSelected = selectedAddons.includes(opt.id);
-                    const isCustomizable = opt.isUserCustomizable;
+                    const isCustomizable = opt.is_user_customizable;
                     const customFee = addonCustomFees[opt.id];
                     const effectiveFee = isCustomizable && customFee !== undefined ? customFee : parseFloat(opt.fee) || 0;
-                    const feeCur = opt.feeCurrency || "JPY";
+                    const feeCur = opt.fee_currency || "JPY";
                     return (
                       <div key={opt.id} className={`rounded-lg border p-2.5 transition-colors ${isSelected ? "border-yellow-400 bg-yellow-50" : "border-gray-200"}`}>
                         <label className="flex items-start gap-3 cursor-pointer">
@@ -727,22 +730,22 @@ export default function SubmitOrder() {
                           />
                           <div className="flex-1">
                             <div className="flex items-center justify-between gap-2 flex-wrap mb-1">
-                              <span className="text-sm font-medium text-gray-800">{opt.serviceName}</span>
+                              <span className="text-sm font-medium text-gray-800">{opt.service_name}</span>
                               <span className="text-sm text-red-600 font-semibold">
                                 +{feeCur} {feeCur === "JPY" ? Math.round(effectiveFee) : effectiveFee}
                               </span>
                             </div>
-                            {opt.userDescription && <p className="text-xs text-gray-500 mt-0.5">{t(opt.userDescription, locale)}</p>}
+                            {opt.user_description && <p className="text-xs text-gray-500 mt-0.5">{t(opt.user_description, locale)}</p>}
                             {isCustomizable && isSelected && (
                               <div className="mt-2 space-y-1.5">
                                 <div className="flex items-center gap-2">
-                                  <Label className="text-xs text-gray-600">{t("自定义金额", locale)} ({opt.feeMin || 0} - {opt.feeMax || '∞'} {feeCur})</Label>
+                                  <Label className="text-xs text-gray-600">{t("自定义金额", locale)} ({opt.fee_min || 0} - {opt.fee_max || '∞'} {feeCur})</Label>
                                   <Input
                                     type="number"
-                                    min={opt.feeMin || 0}
-                                    max={opt.feeMax || undefined}
+                                    min={opt.fee_min || 0}
+                                    max={opt.fee_max || undefined}
                                     step="1"
-                                    placeholder={opt.feeMin || "0"}
+                                    placeholder={opt.fee_min || "0"}
                                     value={customFee !== undefined ? customFee : ""}
                                     onChange={(e) => handleAddonFeeChange(opt.id, e.target.value)}
                                     className={`h-7 text-xs w-32 ${
@@ -828,7 +831,7 @@ export default function SubmitOrder() {
         {/* 提交按钮 */}
         {canSubmitOrder && (
           <div className="space-y-2">
-            {settings.preShipmentEnabled !== 'false' && (
+            {settings.pre_shipment_enabled !== 'false' && (
             <Button
               type="button"
               variant="outline"

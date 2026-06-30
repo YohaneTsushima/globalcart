@@ -233,7 +233,7 @@ export default function AdminSettings() {
     noAccess: t("仅管理员可访问此页面", locale),
   };
 
-  const [newAddon, setNewAddon] = useState({ name: "", description: "", fee: "", fee_currency: "JPY", addon_type: "order", is_user_customizable: false, min_fee: 0, max_fee: 0 });
+  const [newAddon, setNewAddon] = useState({ service_name: "", user_description: "", fee: "", fee_currency: "JPY", addon_type: "order", is_user_customizable: false, fee_min: 0, fee_max: 0 });
   const [editingAddon, setEditingAddon] = useState(null);
   const [editAddonFields, setEditAddonFields] = useState({});
   const [saving, setSaving] = useState(false);
@@ -254,6 +254,10 @@ export default function AdminSettings() {
   const [countriesConfig, setCountriesConfig] = useState(null);
   const [faqCategories, setFaqCategories] = useState([]);
   const [countriesConfigId, setCountriesConfigId] = useState(null);
+
+  const syncAddonsToBackend = async (addonsData) => {
+      await tenantEntity.sync('AddonOption', addonsData);
+  };
 
   const load = useCallback(async () => {
     const t = timePage('AdminSettings');
@@ -283,6 +287,8 @@ export default function AdminSettings() {
           settingsData = refreshed.data?.settings || [];
         }
       }
+
+      console.log(settingsData)
       
       setSettings(settingsData);
       setAddons(data.addons || []);
@@ -321,6 +327,12 @@ export default function AdminSettings() {
     }
     setLoading(false);
   }, []);
+
+  useEffect(() => {
+    if (activeTab === "addons" && addons.length > 0) {
+      syncAddonsToBackend(addons);
+    }
+  }, [activeTab]);  // 仅在 tab 切换时触发，不依赖 addons（避免编辑时重复触发）
 
   const isTenantAdmin = user?.role === "admin" || user?.role === "tenant_admin";
   const isPlatformAdmin = user?.role === "platform_admin";
@@ -416,16 +428,16 @@ export default function AdminSettings() {
   };
 
   const handleAddAddon = async () => {
-    if (!newAddon.name || newAddon.fee === "") return;
+    if (!newAddon.service_name || newAddon.fee === "") return;
     await tenantEntity.create('AddonOption', {
       ...newAddon,
       fee: parseFloat(newAddon.fee) || 0,
-      min_fee: parseFloat(newAddon.min_fee) || 0,
-      max_fee: parseFloat(newAddon.max_fee) || 0,
+      fee_min: parseFloat(newAddon.fee_min) || 0,
+      fee_max: parseFloat(newAddon.fee_max) || 0,
       is_user_customizable: newAddon.is_user_customizable || false,
       is_active: true
     });
-    setNewAddon({ name: "", description: "", fee: "", fee_currency: "JPY", addon_type: "order", is_user_customizable: false, min_fee: 0, max_fee: 0 });
+    setNewAddon({ service_name: "", user_description: "", fee: "", fee_currency: "JPY", addon_type: "order", is_user_customizable: false, fee_min: 0, fee_max: 0 });
     await load();
   };
 
@@ -448,8 +460,8 @@ export default function AdminSettings() {
     await tenantEntity.update('AddonOption', id, {
       ...editAddonFields,
       fee: parseFloat(editAddonFields.fee) || 0,
-      min_fee: parseFloat(editAddonFields.min_fee) || 0,
-      max_fee: parseFloat(editAddonFields.max_fee) || 0
+      fee_min: parseFloat(editAddonFields.fee_min) || 0,
+      fee_max: parseFloat(editAddonFields.fee_max) || 0
     });
     setEditingAddon(null);
     await load();

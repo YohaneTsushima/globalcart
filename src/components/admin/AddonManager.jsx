@@ -20,11 +20,11 @@ function AddonRow({ a, editingId, editFields, onEdit, onCancel, onSave, onToggle
       <div className="flex items-center gap-3 p-2">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-sm font-medium text-gray-800">{a.name}</span>
+            <span className="text-sm font-medium text-gray-800">{a.service_name}</span>
             {a.is_user_customizable ? (
               <>
                 <Badge className="text-xs bg-green-100 text-green-700 border-green-200">用户可自定义</Badge>
-                <span className="text-xs text-gray-500">区间：{a.fee_currency || "JPY"} {a.min_fee} - {a.max_fee}</span>
+                <span className="text-xs text-gray-500">区间：{a.fee_currency || "JPY"} {a.fee_min} - {a.fee_max}</span>
                 <span className="text-xs text-gray-400">默认：{a.fee_currency || "JPY"} {Number(a.fee || 0).toLocaleString()}</span>
               </>
             ) : (
@@ -32,7 +32,7 @@ function AddonRow({ a, editingId, editFields, onEdit, onCancel, onSave, onToggle
             )}
             {!a.is_active && <Badge className="text-xs bg-gray-100 text-gray-400">已禁用</Badge>}
           </div>
-          {a.description && <p className="text-xs text-gray-400">{a.description}</p>}
+          {a.user_description && <p className="text-xs text-gray-400">{a.user_description}</p>}
         </div>
         <Button variant="ghost" size="sm" className="h-7 text-xs text-blue-500 flex-shrink-0"
           onClick={() => isEditing ? onCancel() : onEdit(a)}>
@@ -52,13 +52,13 @@ function AddonRow({ a, editingId, editFields, onEdit, onCancel, onSave, onToggle
           <div className="grid grid-cols-2 gap-2">
             <div>
               <Label className="text-xs text-gray-500">名称</Label>
-              <Input className="mt-0.5 h-7 text-sm" value={editFields.name}
+              <Input className="mt-0.5 h-7 text-sm" value={editFields.service_name}
                 onChange={e => setEditFields(p => ({ ...p, name: e.target.value }))} />
             </div>
             <div>
               <Label className="text-xs text-gray-500">说明</Label>
-              <Input className="mt-0.5 h-7 text-sm" value={editFields.description}
-                onChange={e => setEditFields(p => ({ ...p, description: e.target.value }))} />
+              <Input className="mt-0.5 h-7 text-sm" value={editFields.user_description}
+                onChange={e => setEditFields(p => ({ ...p, user_description: e.target.value }))} />
             </div>
             <div className="col-span-2">
               <div className="flex items-center gap-2 mb-2">
@@ -84,12 +84,12 @@ function AddonRow({ a, editingId, editFields, onEdit, onCancel, onSave, onToggle
                 <div>
                   <Label className="text-xs text-gray-500">最小费用</Label>
                   <Input type="number" className="mt-0.5 h-7 text-sm" value={editFields.min_fee || 0}
-                    onChange={e => setEditFields(p => ({ ...p, min_fee: e.target.value }))} />
+                    onChange={e => setEditFields(p => ({ ...p, fee_min: e.target.value }))} />
                 </div>
                 <div>
                   <Label className="text-xs text-gray-500">最大费用</Label>
                   <Input type="number" className="mt-0.5 h-7 text-sm" value={editFields.max_fee || 0}
-                    onChange={e => setEditFields(p => ({ ...p, max_fee: e.target.value }))} />
+                    onChange={e => setEditFields(p => ({ ...p, fee_max: e.target.value }))} />
                 </div>
               </>
             )}
@@ -176,12 +176,12 @@ export default function AddonManager({ addons, editingAddon, editAddonFields, ne
           <div>
             <Label className="text-xs text-gray-400">名称 *</Label>
             <Input className="mt-0.5 h-8 text-sm" placeholder="例：质检拍照"
-              value={newAddon.name} onChange={e => setNewAddon(p => ({ ...p, name: e.target.value }))} />
+              value={newAddon.service_name} onChange={e => setNewAddon(p => ({ ...p, service_name: e.target.value }))} />
           </div>
           <div>
             <Label className="text-xs text-gray-400">说明</Label>
             <Input className="mt-0.5 h-8 text-sm" placeholder="可选"
-              value={newAddon.description} onChange={e => setNewAddon(p => ({ ...p, description: e.target.value }))} />
+              value={newAddon.user_description} onChange={e => setNewAddon(p => ({ ...p, user_description: e.target.value }))} />
           </div>
           <div className="col-span-2">
             <div className="flex items-center gap-2 mb-2">
@@ -207,12 +207,12 @@ export default function AddonManager({ addons, editingAddon, editAddonFields, ne
               <div>
                 <Label className="text-xs text-gray-400">最小费用</Label>
                 <Input type="number" step="1" className="mt-0.5 h-8 text-sm" placeholder="0"
-                  value={newAddon.min_fee || 0} onChange={e => setNewAddon(p => ({ ...p, min_fee: e.target.value }))} />
+                  value={newAddon.fee_min || 0} onChange={e => setNewAddon(p => ({ ...p, fee_min: e.target.value }))} />
               </div>
               <div>
                 <Label className="text-xs text-gray-400">最大费用</Label>
                 <Input type="number" step="1" className="mt-0.5 h-8 text-sm" placeholder="0"
-                  value={newAddon.max_fee || 0} onChange={e => setNewAddon(p => ({ ...p, max_fee: e.target.value }))} />
+                  value={newAddon.fee_max || 0} onChange={e => setNewAddon(p => ({ ...p, fee_max: e.target.value }))} />
               </div>
             </>
           )}

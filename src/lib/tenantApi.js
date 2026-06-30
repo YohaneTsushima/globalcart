@@ -79,6 +79,7 @@ export const tenantEntity = {
   create: (entity, data)        => mutate(entity, 'create', { data }).then(r => r.result || r.data?.result || r),
   update: (entity, id, data)    => mutate(entity, 'update', { id, data }).then(r => r.result || r.data?.result || r),
   delete: (entity, id)          => mutate(entity, 'delete', { id }),
+  sync: (entity, data) => mutate(entity, 'sync', {data}).then(r => r.result || r.data?.result || r),
 };
 
 // ─── ShippingPool shortcuts ───────────────────────────────────────────────────

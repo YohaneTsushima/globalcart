@@ -18,6 +18,7 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import PaymentMethodSelector from "@/components/common/PaymentMethodSelector";
+import { useCurrentUser } from "@/hooks/useCurrentUser";
 
 /**
  * @param {object}   order
@@ -28,6 +29,7 @@ import PaymentMethodSelector from "@/components/common/PaymentMethodSelector";
 export default function PaymentModal({ order, mode = "prepay", onClose, onSuccess }) {
   const navigate = useNavigate();
   const { can } = usePermissions();
+  const { user } = useCurrentUser();
   
   // Check payment permissions based on mode
   const canPayment = mode === "shipping" ? true : can("payment:self_pay") || can("payment:manual_pay");
@@ -55,6 +57,8 @@ export default function PaymentModal({ order, mode = "prepay", onClose, onSucces
 
   const defaultAmount = roundAmount(rawAmount, cur);
 
+  const isFullPay = '';
+
   const title = isSupp ? "补款" : isShipping ? "运费付款" : "预付款";
   const amountLabel = cur === "JPY"
     ? `${title}金额：${Math.round(defaultAmount).toLocaleString()} yen`
@@ -74,34 +78,13 @@ export default function PaymentModal({ order, mode = "prepay", onClose, onSucces
 
   // Fetch exchange rates once on mount
   useEffect(() => {
-    const DEFAULT_RATES = { JPY: 1, CNY: 0.049, USD: 0.0067, TWD: 0.21, HKD: 0.052, EUR: 0.0061, GBP: 0.0053, AUD: 0.01, SGD: 0.009 };
-    fetch('https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies/jpy.json')
-      .then(r => r.json())
-      .then(data => {
-        console.log(data)
-        if (data && data.jpy) {
-          setRates({
-            JPY: 1,
-            CNY: data.jpy.cny || DEFAULT_RATES.CNY,
-            USD: data.jpy.usd || DEFAULT_RATES.USD,
-            EUR: data.jpy.eur || DEFAULT_RATES.EUR,
-            GBP: data.jpy.gbp || DEFAULT_RATES.GBP,
-            AUD: data.jpy.aud || DEFAULT_RATES.AUD,
-            SGD: data.jpy.sgd || DEFAULT_RATES.SGD,
-            HKD: data.jpy.hkd || DEFAULT_RATES.HKD,
-            TWD: data.jpy.twd || DEFAULT_RATES.TWD,
-          });
-        } else {
-          setRates(DEFAULT_RATES);
-        }
-      })
-      .catch(() => { setRates(DEFAULT_RATES); });
+    setRates(base44.functions.feetchRate());
   }, []);
 
   // When method changes (for prepay mode), reload surcharge from backend
   useEffect(() => {
     if (!isShipping && !isSupp && order?.id && method) {
-      base44.functions.invoke('getPaymentPageData', { order_id: order.id, payment_method_key: method })
+      base44.functions.invoke('payment/getPaymentPageData', { order_id: order.id, payment_method_key: method })
         .then(r => {
           const d = r.data || {};
           const sc = d.surchargeJpy ?? 0;
@@ -124,6 +107,8 @@ export default function PaymentModal({ order, mode = "prepay", onClose, onSucces
       if (e.data?.type === "alipay_payment_done") {
         setSubmitting(false);
         onSuccess?.();
+        setPaying('')
+        setGenerating(false)
       }
       if (e.data?.type === "alipay_payment_navigate" && e.data.url) {
         window.location.href = e.data.url;
@@ -148,6 +133,8 @@ export default function PaymentModal({ order, mode = "prepay", onClose, onSucces
     const sym = CURRENCY_SYMBOLS[payCurrency] || payCurrency;
     convertedDisplay = `${sym}${converted.toFixed(decimals)} ${payCurrency}`;
     convertedRate = rates[payCurrency]; // JPY→payCurrency rate
+
+    console.log(`汇率=${rates[payCurrency]} 计算后= ${convertedDisplay}`)
   }
 
   // Keep snapshotRate in sync with current convertedRate so async handlers can read it reliably
@@ -161,6 +148,7 @@ export default function PaymentModal({ order, mode = "prepay", onClose, onSucces
 
   // Alipay
   const [generating, setGenerating] = useState(false);
+  const [paying, setPaying] = useState('');
 
   // Manual
   const [proofUrl, setProofUrl] = useState("");
@@ -170,8 +158,8 @@ export default function PaymentModal({ order, mode = "prepay", onClose, onSucces
   const handleGenerateAlipay = async () => {
     setGenerating(true);
     const subject = isShipping
-      ? `同一物流运费 - ${order.product_name}`
-      : `同一物流代购 - ${order.product_name}`;
+      ? `${user.displayName}-运费 - ${order.product_name}`
+      : `${user.displayName}-代购 - ${order.product_name}`;
 
     // For prepay, use finalAmountJpy (includes surcharge); for shipping/supplement use paidAmount as-is
     const amountJpy = (!isShipping && !isSupp && surchargeJpy > 0) ? finalAmountJpy : parseFloat(paidAmount);
@@ -189,23 +177,25 @@ export default function PaymentModal({ order, mode = "prepay", onClose, onSucces
       amount: amountToCharge,
       currency: currencyToSend,
       subject,
-      paymentType: isShipping ? "shipping" : "order"
+      paymentType: isShipping ? "shipping" : "order",
+      aa: selectedMethodMeta
     };
 
-    console.log(payParam);
+    return;
 
     const res = await base44.functions.invoke("alipay/pay", payParam);
-    const formData = res?.data;
+    const formData = res?.data?.form;
 
-    setGenerating(false);
+    // setGenerating(false);
+    setPaying('正在付款......')
     // 后端返回的是 HTML 表单，在新窗口渲染并自动提交到支付宝
-    if (formData && typeof formData === 'string') {
-      const newWindow = window.open('', '_blank');
-      if (newWindow) {
-        newWindow.document.write(formData);
-        newWindow.document.close();
-      }
-    }
+    // if (formData && typeof formData === 'string') {
+    //   const newWindow = window.open('', '_blank');
+    //   if (newWindow) {
+    //     newWindow.document.write(formData);
+    //     newWindow.document.close();
+    //   }
+    // }
   };
 
   // Build actual-currency fields when paying in a non-JPY currency.

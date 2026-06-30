@@ -357,7 +357,7 @@ function CellValue({ col, order }) {
     case "order_stage_payment_jpy": {
       const amt = order.order_stage_payment_jpy;
       if (!amt || amt <= 0) {
-        const legacy = order.prepayment_amount_jpy || order.paid_amount;
+        const legacy = order.prepayment_amount_jpy || order.paid_amount || order.full_payment_amount;
         return <span className="text-sm text-gray-700">{legacy ? `${Math.round(legacy).toLocaleString()} yen` : "-"}</span>;
       }
       return <span className="text-sm text-gray-700 font-medium">{`${Math.round(amt).toLocaleString()} yen`}</span>;
@@ -393,7 +393,7 @@ function CellValue({ col, order }) {
     case "user_note":
       return <span className="text-xs text-gray-600 line-clamp-2 max-w-[200px]">{order.user_note || "-"}</span>;
     case "payment_due_date":
-      return <span className="text-xs text-gray-700">{order.payment_due_date || "-"}</span>;
+      return <span className="text-xs text-gray-700">{order.payment_due_date ? new Date(order.payment_due_date).toLocaleDateString("zh-CN") : "-"}</span>;
     case "submit_date":
       return <span className="text-xs text-gray-700">{order.created_date ? new Date(order.created_date).toLocaleDateString("zh-CN") : "-"}</span>;
     case "online_store_tag": {
@@ -587,12 +587,14 @@ export default function MyOrders() {
   // Listen for postMessage from Alipay popup tab after payment completes
   useEffect(() => {
     const handleMessage = (e) => {
+      debugger
       if (e.data?.type === "alipay_payment_done" && user) {
         setAlipayReturnMsg(`支付宝付款已提交${e.data.tradeNo ? `（单号: ${e.data.tradeNo}）` : ''}，系统将在数分钟内自动确认订单状态。`);
         fetchOrders(user);
         setTimeout(() => fetchOrders(user), 3000);
       }
       if (e.data?.type === "alipay_payment_navigate" && e.data.url) {
+        debugger
         window.location.href = e.data.url;
       }
     };

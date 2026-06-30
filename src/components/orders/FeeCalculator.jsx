@@ -9,7 +9,7 @@ export default function FeeCalculator({ calculated, settings }) {
       <CardHeader className="pb-2">
         <CardTitle className="text-sm font-semibold text-gray-700 flex items-center gap-2">
           <Calculator className="w-4 h-4" /> 
-          {settings.prepayEnabled !== 'false' ? '预付款估算' : '费用估算'}
+          {settings.prepay_enabled!== 'false' ? '预付款估算' : '费用估算'}
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-2">
@@ -18,7 +18,7 @@ export default function FeeCalculator({ calculated, settings }) {
           {/* 货款 */}
           <div className="flex items-center justify-between px-3 py-2 border-b border-gray-50">
             <span className="text-gray-500">货款</span>
-            <span className="text-gray-700 font-medium">¥{parseFloat(calculated.jpy).toLocaleString()}</span>
+            <span className="text-gray-700 font-medium">¥{parseFloat(calculated.jpy).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
           </div>
           
           {/* 服务费 */}
@@ -32,7 +32,7 @@ export default function FeeCalculator({ calculated, settings }) {
                   </span>
                 )}
               </span>
-              <span className="text-gray-700 font-medium">¥{calculated.serviceFeeJpy.toLocaleString()}</span>
+              <span className="text-gray-700 font-medium">¥{calculated.serviceFeeJpy.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
             </div>
             {/* 规则引擎计算步骤 */}
             {calculated.feeSteps && calculated.feeSteps.length > 0 && (
@@ -50,25 +50,25 @@ export default function FeeCalculator({ calculated, settings }) {
           {calculated.addonTotal > 0 && (
             <div className="flex items-center justify-between px-3 py-2 border-b border-gray-50">
               <span className="text-gray-500">增值服务</span>
-              <span className="text-gray-700 font-medium">¥{calculated.addonTotal.toLocaleString()}</span>
+              <span className="text-gray-700 font-medium">¥{calculated.addonTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
             </div>
           )}
 
           {/* 合计 */}
           <div className="flex items-center justify-between px-3 py-2.5 bg-gray-50">
             <span className="text-gray-700 font-semibold">合计</span>
-            <span className="text-gray-900 font-bold">¥{calculated.totalJpy.toLocaleString()}</span>
+            <span className="text-gray-900 font-bold">¥{calculated.totalJpy.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
           </div>
         </div>
 
         {/* 应付金额高亮 */}
-        {settings.prepayEnabled !== 'false' ? (
+        {settings.prepay_enabled!== 'false' ? (
           <div className="flex items-center justify-between bg-red-50 border border-red-300 rounded-lg px-4 py-3">
             <div>
               <span className="text-sm text-gray-700 font-medium">本次应付预付款 ({calculated.prepayRate}%)</span>
               <p className="text-xs text-gray-400 mt-0.5">提交后跳转到付款页，请按此金额支付</p>
             </div>
-            <span className="text-xl font-bold text-red-600">¥{calculated.prepayJpy.toLocaleString()}</span>
+            <span className="text-xl font-bold text-red-600">¥{calculated.prepayJpy.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
           </div>
         ) : (
           <div className="flex items-center justify-between bg-red-50 border border-red-300 rounded-lg px-4 py-3">
@@ -76,7 +76,7 @@ export default function FeeCalculator({ calculated, settings }) {
               <span className="text-sm text-gray-700 font-medium">本次应付金额</span>
               <p className="text-xs text-gray-400 mt-0.5">提交后跳转到付款页，请按此金额支付</p>
             </div>
-            <span className="text-xl font-bold text-red-600">¥{calculated.totalJpy.toLocaleString()}</span>
+            <span className="text-xl font-bold text-red-600">¥{calculated.totalJpy.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
           </div>
         )}
       </CardContent>

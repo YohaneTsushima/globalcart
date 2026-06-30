@@ -16,7 +16,6 @@ export default function PaymentReturn() {
     const outTradeNo = params.get("out_trade_no");
     const tradeStatus = params.get("trade_status");
 
-    console.log(params)
     // 通知 opener（PaymentModal/MyOrders）刷新
     if (window.opener && !window.opener.closed) {
       try {

@@ -360,7 +360,7 @@ export default function OrderDetailPanel({ order, onClose, onRefresh, userProfil
                   {order.payment_due_date && (
                     <div className="flex justify-between">
                       <span className="text-gray-500">付款截止</span>
-                      <span className="font-medium text-orange-700">{order.payment_due_date}</span>
+                      <span className="font-medium text-orange-700">{formatDate(order.payment_due_date)}</span>
                     </div>
                   )}
                 </div>
