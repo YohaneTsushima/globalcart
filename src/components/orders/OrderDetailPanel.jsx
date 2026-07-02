@@ -85,6 +85,8 @@ export default function OrderDetailPanel({ order, onClose, onRefresh, userProfil
     return `${currency} ${parseFloat(amount.toFixed(2))}`;
   };
 
+  console.log(order)
+
   const formatDate = (dateStr) => {
     if (!dateStr) return "-";
     return new Date(dateStr).toLocaleString("zh-CN", { 
@@ -418,7 +420,7 @@ export default function OrderDetailPanel({ order, onClose, onRefresh, userProfil
                     {(order.selected_addons || []).length > 0
                       ? (order.selected_addons).map((a, i) => (
                           <div key={i} className="flex items-center justify-between text-sm">
-                            <span className="text-gray-700">{a.name || a.id}</span>
+                            <span className="text-gray-700">{a.service_name || a.id}</span>
                             {(parseFloat(a.fee) > 0) && (
                               <span className="font-medium text-purple-700">
                                 +{a.fee_currency || "JPY"} {Math.round(parseFloat(a.fee))}
@@ -534,7 +536,7 @@ export default function OrderDetailPanel({ order, onClose, onRefresh, userProfil
                       <div className="text-xs text-green-600 pl-3">
                         {(order.selected_addons || []).map((a, i) => (
                           <div key={i} className="flex justify-between">
-                            <span>{a.name || a.id}</span>
+                            <span>{a.service_name || a.id}</span>
                             <span>{formatCurrency(parseFloat(a.fee) || 0, a.fee_currency)}</span>
                           </div>
                         ))}
@@ -543,10 +545,10 @@ export default function OrderDetailPanel({ order, onClose, onRefresh, userProfil
                   )}
 
                   {/* Payment surcharge */}
-                  {(order.payment_surcharge_jpy || 0) > 0 && (
+                  {(order.payment_surcharge_jpy || order.service_fee_amount || 0) > 0 && (
                     <div className="flex justify-between items-center py-1">
                       <span className="text-green-700">支付方式服务费</span>
-                      <span className="font-medium text-green-900">{formatCurrency(order.payment_surcharge_jpy)}</span>
+                      <span className="font-medium text-green-900">{formatCurrency(order.payment_surcharge_jpy || order.service_fee_amount)}</span>
                     </div>
                   )}
 
@@ -574,14 +576,15 @@ export default function OrderDetailPanel({ order, onClose, onRefresh, userProfil
                   <div className="border-t border-green-300 pt-2 flex justify-between items-center text-base">
                     <span className="font-semibold text-green-900">预付款总额</span>
                     <span className="font-bold text-green-900">
-                      {formatCurrency(order.prepayment_amount || 0, order.prepayment_currency)}
+                      {formatCurrency(order.prepayment_amount_jpy || 0, order.prepayment_currency)}
                     </span>
                   </div>
 
                   {/* Paid amount */}
                   {(order.paid_amount || 0) > 0 && (() => {
+                    debugger
                     const paidCurrency = order.payment_currency || order.prepayment_currency;
-                    const paidAmountJpy = order.paid_amount_jpy
+                    const paidAmountJpy = (order?.paid_amount_jpy || order?.prepayment_amount || order?.full_payment_amount)
                       || (paidCurrency === 'CNY' && order.prepayment_rate_jpy_cny
                         ? Math.round(order.paid_amount / order.prepayment_rate_jpy_cny)
                         : order.paid_amount);
@@ -605,7 +608,7 @@ export default function OrderDetailPanel({ order, onClose, onRefresh, userProfil
                   <div className="border-t-2 border-green-400 pt-3 flex justify-between items-center text-lg bg-green-100/50 rounded px-3 py-2">
                     <span className="font-bold text-green-900">待付金额</span>
                     <span className="font-bold text-green-900">
-                      {formatCurrency(
+                       {formatCurrency(
                         (order.estimated_jpy || 0) - (order.prepayment_amount || 0) - (order.balance_credit || 0),
                         "JPY"
                       )}

@@ -539,6 +539,7 @@ export default function MyOrders() {
     setPageData(data);
     setPendingEditRequests(data.pendingEditRequests || []);
     fetchingRef.current = false;
+    isInitialized.current = true;
     setLoading(false);
   };
 
@@ -550,7 +551,6 @@ export default function MyOrders() {
   useEffect(() => {
     if (!user) { if (!authLoading) setLoading(false); return; }
     fetchOrders(user);
-    isInitialized.current = true;
   }, [user, authLoading]);
 
   // 筛选/排序变化 → 直接拉取（后端会收到新参数）

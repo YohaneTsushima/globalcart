@@ -17,11 +17,11 @@ export default function PaymentReturn() {
     const tradeStatus = params.get("trade_status");
 
     // 通知 opener（PaymentModal/MyOrders）刷新
-    if (window.opener && !window.opener.closed) {
-      try {
-        window.opener.postMessage({ type: "alipay_payment_done", tradeNo: outTradeNo }, "*");
-      } catch (_) {}
-    }
+    // if (window.opener && !window.opener.closed) {
+    //   try {
+    //     window.opener.postMessage({ type: "alipay_payment_done", tradeNo: outTradeNo }, "*");
+    //   } catch (_) {}
+    // }
 
     // 确认支付状态
     if (tradeStatus === "TRADE_SUCCESS" || tradeStatus === "TRADE_FINISHED") {
