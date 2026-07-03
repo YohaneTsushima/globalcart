@@ -60,12 +60,13 @@ export default function AdminOrderEditModal({ order, initialItemSizeTemplates, o
     admin_note: order.admin_note || "",
     admin_confirmed_amount: order.admin_confirmed_amount || order.prepayment_amount || "",
     prepayment_amount: order.prepayment_amount || "",
-    prepayment_currency: order.prepayment_currency || "JPY",
+    prepayment_currency: order.prepayment_currency || order.payment_currency_type || "JPY",
     prepayment_amount_jpy: order.prepayment_amount_jpy || "",
-    payment_deadline: order.payment_deadline || "",
+    payment_deadline: order.payment_deadline ? String(order.payment_deadline).slice(0, 10) : "",
     estimated_jpy: order.estimated_jpy || "",
     balance_credit: order.balance_credit || 0,
     cancel_reason: order.cancel_reason || "",
+    actual_paid_amount: order.actual_paid_amount
   });
 
   // Upload state
@@ -112,8 +113,9 @@ export default function AdminOrderEditModal({ order, initialItemSizeTemplates, o
   const cur = order.prepayment_currency || "CNY";
 
   // Only fetch item size templates if not provided by the parent (page-level prefetch)
+  // Note: initialItemSizeTemplates may be empty array if no templates exist, that's fine - parent already fetched
   useEffect(() => {
-    if (initialItemSizeTemplates && initialItemSizeTemplates.length > 0) return;
+    if (initialItemSizeTemplates !== undefined && initialItemSizeTemplates !== null) return;
     tenantEntity.list('ItemSizeTemplate', { is_active: true })
       .then(templates => setItemSizeTemplates(templates || []))
       .catch(() => {});
@@ -1256,7 +1258,7 @@ export default function AdminOrderEditModal({ order, initialItemSizeTemplates, o
                   <Label className="text-sm">
                     {form.prepayment_currency === "JPY" ? "预付款金额 (JPY)" : `实际付款金额 (${form.prepayment_currency})`}
                   </Label>
-                  <Input type="number" step="0.01" className="mt-1" value={form.prepayment_amount}
+                  <Input type="number" step="0.01" className="mt-1" value={form.prepayment_amount || form.actual_paid_amount}
                     onChange={e => f("prepayment_amount", e.target.value)} disabled={!canEditAmount} />
                 </div>
                 {form.prepayment_currency !== "JPY" && (
@@ -1321,16 +1323,20 @@ export default function AdminOrderEditModal({ order, initialItemSizeTemplates, o
                   )}
                 </div>
               )}
-              <div>
-                <Label className="text-sm">付款截止日期</Label>
-                <Input type="date" className="mt-1" value={form.payment_deadline}
-                  onChange={e => f("payment_deadline", e.target.value)} />
-              </div>
-              <div>
-                <Label className="text-sm">取消理由</Label>
-                <Input className="mt-1" value={form.cancel_reason}
-                  onChange={e => f("cancel_reason", e.target.value)} />
-              </div>
+              {!["paid", "purchased", "in_warehouse", "notified_shipment", "shipped", "delivered"].includes(status) && (
+                <>
+                  <div>
+                    <Label className="text-sm">付款截止日期</Label>
+                    <Input type="date" className="mt-1" value={form.payment_deadline}
+                      onChange={e => f("payment_deadline", e.target.value)} />
+                  </div>
+                  <div>
+                    <Label className="text-sm">取消理由</Label>
+                    <Input className="mt-1" value={form.cancel_reason}
+                      onChange={e => f("cancel_reason", e.target.value)} />
+                  </div>
+                </>
+              )}
               <div>
                 <Label className="text-sm">管理员备注</Label>
                 <Textarea rows={3} className="mt-1" value={form.admin_note}

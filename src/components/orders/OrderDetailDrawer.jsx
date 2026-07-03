@@ -370,9 +370,9 @@ export default function OrderDetailDrawer({ order, currentUser, initialUserPrefe
           <div className="space-y-2 pt-1">
             {status === "payment_pending" && order.payment_status !== "awaiting_confirmation" && (
               <>
-                {order.payment_due_date && (
+                {(order?.payment_due_date || order?.payment_deadline) && (
                   <div className="text-xs text-orange-600 text-center">
-                    付款截止日期：{order.payment_due_date}
+                    付款截止日期：{(order?.payment_due_date || order?.payment_deadline)}
                   </div>
                 )}
                 <Button className="w-full bg-red-600 hover:bg-red-700 text-sm"

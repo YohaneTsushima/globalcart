@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useRef } from "react";
 import { base44 } from "@/api/base44Client";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Package, Ticket } from "lucide-react";
@@ -59,6 +59,7 @@ export default function AdminOrders() {
   const [activeTab, setActiveTab] = useState(initialTab);
   
   const [orders, setOrders] = useState([]);
+  const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -87,6 +88,9 @@ export default function AdminOrders() {
   const [selectedPool, setSelectedPool] = useState(null);
   const [showArchived, setShowArchived] = useState(false);
   const { pageSize, setPageSize, currentPage, setCurrentPage, resetPage, PAGE_SIZES } = usePageSize("admin_orders_page_size", 20);
+  const fetchingRef = useRef(false);
+  const searchTimerRef = useRef(null);
+  const isInitialized = useRef(false);
   // 额外筛选条件
   const [storeTagFilter, setStoreTagFilter] = useState("all");
   const [weightFilter, setWeightFilter] = useState("all"); // "all" | "0-100" | "100-500" | "500-1000" | "1000+"
@@ -100,30 +104,48 @@ export default function AdminOrders() {
   const [actualWeight, setActualWeight] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
 
-  const fetchOrders = useCallback(async () => {
+  const fetchOrders = async () => {
+    if (fetchingRef.current) return;
+    fetchingRef.current = true;
     setLoading(true);
     try {
-      const r = await base44.functions.invoke('getAdminOrdersPageData', {});
-      const { orders: data = [], storeTagRules: rules = [], itemSizeTemplates: templates = [], pendingEditRequests: edits = [], userProfileMap: profiles = {}, shippingPools: pools = [], shippingMethods: sMethods = [], boxTemplates: boxes = [], transitLocations: locs = [], transitShippingMethods: tMethods = [], defaultPackingFeeSingle: pfs = 0, defaultPackingFeeConsolidation: pfc = 0 } = r.data || {};
+      const skipPagination = groupBy !== "none";
+      const r = await base44.functions.invoke('admin/orders/getAdminOrdersPage', {
+        ...(skipPagination ? {} : { page: currentPage, pageSize }),
+        search,
+        statusFilter,
+        storeTagFilter,
+        weightFilter,
+        itemSizeFilter,
+        replyFilter,
+        dateField: dateRangeFilter?.field || undefined,
+        dateFrom: dateRangeFilter?.from || undefined,
+        dateTo: dateRangeFilter?.to || undefined,
+        showArchived,
+        sortKey: sortKey || undefined,
+        sortDir: sortDir || undefined,
+        groupBy,
+      });
+      const d = r.data || {};
+      const data = d.orders || [];
       setOrders(data);
-      setStoreTagRules(rules);
-      setItemSizeTemplates(templates);
-      setPendingEditRequests(edits);
-      setUserProfileMap(profiles);
-      setShippingPools(pools);
-      setShippingMethods(sMethods);
-      setBoxTemplates(boxes);
-      setTransitLocations(locs);
-      setTransitShippingMethods(tMethods);
-      setDefaultPackingFeeSingle(pfs);
-      setDefaultPackingFeeConsolidation(pfc);
+      if (!skipPagination) setTotal(d.total || 0);
+      setStoreTagRules(d.storeTagRules || []);
+      setItemSizeTemplates(d.itemSizeTemplates || []);
+      setPendingEditRequests(d.pendingEditRequests || []);
+      setUserProfileMap(d.userProfileMap || {});
+      setShippingPools(d.shippingPools || []);
+      setShippingMethods(d.shippingMethods || []);
+      setBoxTemplates(d.boxTemplates || []);
+      setTransitLocations(d.transitLocations || []);
+      setTransitShippingMethods(d.transitShippingMethods || []);
+      setDefaultPackingFeeSingle(d.defaultPackingFeeSingle || 0);
+      setDefaultPackingFeeConsolidation(d.defaultPackingFeeConsolidation || 0);
     } catch (err) {
       console.warn('[AdminOrders] API 请求失败，使用 Mock 数据:', err.message);
-      // Mock 模式下重置列配置，用 defaultVisible 映射为 visible
       localStorage.removeItem(STORAGE_KEY);
       setColumns(physicalController.getColumnConfig().map(c => ({ ...c, visible: c.defaultVisible })));
       const mock = MOCK_ADMIN_ORDERS_DATA;
-      console.log(mock)
       setOrders(mock.orders);
       setStoreTagRules(mock.storeTagRules);
       setItemSizeTemplates(mock.itemSizeTemplates);
@@ -137,11 +159,37 @@ export default function AdminOrders() {
       setDefaultPackingFeeSingle(mock.defaultPackingFeeSingle);
       setDefaultPackingFeeConsolidation(mock.defaultPackingFeeConsolidation);
     } finally {
+      fetchingRef.current = false;
+      isInitialized.current = true;
       setLoading(false);
     }
-  }, []);
+  };
 
-  useEffect(() => { fetchOrders(); }, [fetchOrders]);
+  // 首次加载
+  useEffect(() => {
+    if (!user) return;
+    fetchOrders();
+  }, [user]);
+
+  // 筛选/排序/groupBy 变化 → 直接拉取
+  useEffect(() => {
+    if (!isInitialized.current) return;
+    fetchOrders();
+  }, [statusFilter, storeTagFilter, weightFilter, itemSizeFilter, replyFilter, dateRangeFilter, showArchived, sortKey, sortDir, groupBy]);
+
+  // 搜索防抖 → 400ms 后拉取
+  useEffect(() => {
+    if (!isInitialized.current) return;
+    clearTimeout(searchTimerRef.current);
+    searchTimerRef.current = setTimeout(() => fetchOrders(), 400);
+    return () => clearTimeout(searchTimerRef.current);
+  }, [search]);
+
+  // 分页变化 → 拉取
+  useEffect(() => {
+    if (!isInitialized.current) return;
+    fetchOrders();
+  }, [currentPage, pageSize]);
 
   if (user && !isAdmin && !can("order:update")) {
     return <div className="text-center py-8 text-red-600">无访问权限</div>;
@@ -183,54 +231,17 @@ export default function AdminOrders() {
     fetchOrders();
   };
 
-  // 使用控制器的 filterData 方法过滤实物订单
-  const physicalOrders = physicalController?.filterData
-    ? physicalController.filterData(orders, { statusFilter, search, userProfileMap, showArchived, storeTagFilter, storeTagRules, weightFilter, itemSizeFilter, replyFilter, dateRangeFilter })
-    : orders.filter(o => {
-        if (showArchived ? !o.is_archived : !!o.is_archived) return false;
-        if (o.split_index === -1) return false;
-        const matchStatus = statusFilter === "all" || o.order_status === statusFilter;
-        const q = search.toLowerCase();
-        const displayName = (userProfileMap[o.user_email]?.display_name || o.user_name || "").toLowerCase();
-        const matchSearch = !q ||
-          (o.product_name || "").toLowerCase().includes(q) ||
-          (o.order_number || "").toLowerCase().includes(q) ||
-          (o.user_email || "").toLowerCase().includes(q) ||
-          (o.user_name || "").toLowerCase().includes(q) ||
-          displayName.includes(q);
-        return matchStatus && matchSearch;
-      });
-
-  const filtered = physicalOrders.sort((a, b) => {
-    if (!sortKey) return 0;
-    const rk = sortKey === "submit_date" ? "created_at" : sortKey;
-    let va = a[rk], vb = b[rk];
-    if (sortKey === "reply_status") {
-      // Sort by unread: unread admin first
-      va = (a.unread_roles || []).includes("admin") ? 1 : 0;
-      vb = (b.unread_roles || []).includes("admin") ? 1 : 0;
-    } else if (typeof va === "string" && typeof vb === "string") {
-      va = va.toLowerCase(); vb = vb.toLowerCase();
-    }
-    if (va == null) va = "";
-    if (vb == null) vb = "";
-    if (va < vb) return sortDir === "asc" ? -1 : 1;
-    if (va > vb) return sortDir === "asc" ? 1 : -1;
-    return 0;
-  });
-
+  // 后端已分页/排序，orders 即当前页数据
+  const filtered = orders;
   const visibleCols = columns.filter(c => c.visible);
-
-  // Pagination: reset page when filter/sort changes
-  const pagedFiltered = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
   const toggleSelect = (id) => {
     setSelectedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
   };
 
   const toggleAll = () => {
-    if (selectedIds.length === pagedFiltered.length) setSelectedIds([]);
-    else setSelectedIds(pagedFiltered.map(o => o.id));
+    if (selectedIds.length === orders.length) setSelectedIds([]);
+    else setSelectedIds(orders.map(o => o.id));
   };
 
   const handleBulkUpdate = async () => {
@@ -505,7 +516,7 @@ export default function AdminOrders() {
             <tr className="bg-gray-50 border-b border-gray-200">
               <th className="w-8 px-3 py-2 text-left">
                 {groupBy === "none" ? (
-                  <Checkbox checked={pagedFiltered.length > 0 && pagedFiltered.every(o => selectedIds.includes(o.id))}
+                  <Checkbox checked={orders.length > 0 && orders.every(o => selectedIds.includes(o.id))}
                     onCheckedChange={toggleAll} />
                 ) : null}
               </th>
@@ -532,7 +543,7 @@ export default function AdminOrders() {
             ) : filtered.length === 0 ? (
               <tr><td colSpan={visibleCols.length + 2} className="text-center py-12 text-gray-400 text-sm">暂无订单</td></tr>
             ) : (() => {
-              const renderData = groupBy === "none" ? pagedFiltered : filtered;
+              const renderData = groupBy === "none" ? orders : filtered;
               const renderOrderRow = (order) => {
                 const pendingEdit = pendingEditRequests.find(r => r.order_id === order.id);
                 return (
@@ -720,7 +731,7 @@ export default function AdminOrders() {
       </div>
 
       <PaginationBar
-        total={filtered.length}
+        total={total}
         pageSize={pageSize}
         currentPage={currentPage}
         onPageChange={setCurrentPage}

@@ -4,7 +4,7 @@
  * 可嵌入订单详情操作区，支持双币种退款记录
  * 支持使用通知模板发送取消通知（在 AdminNotificationTemplates 中配置）
  */
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { base44 } from "@/api/base44Client";
 import { updateOrder } from "@/lib/tenantApi";
 import { AlertTriangle, CheckCircle, Loader2, MessageCircle, Tags, X } from "lucide-react";
@@ -39,38 +39,35 @@ export default function OrderCancellationModule({ order, onSuccess, compact = fa
   const [cancellationTemplate, setCancellationTemplate] = useState(null);
   const [adminContact, setAdminContact] = useState("");
 
-  // 获取取消通知模板和管理员联系方式
-  useEffect(() => {
-    const fetchTemplateAndContact = async () => {
-      try {
-        // 获取通知模板
-        const templatesRes = await base44.functions.invoke('getNotificationTemplates', {});
-        const templates = templatesRes.data.templates || [];
-        
-        // 根据是否有退款金额选择模板
-        const hasRefundAmount = refundAmountJpy || refundAmountCurrency;
-        const template = templates.find(t => 
-          t.notification_type === 'cancellation' && 
-          t.notification_subtype === (hasRefundAmount ? 'order_cancelled_with_refund' : 'order_cancelled_no_refund')
-        );
-        setCancellationTemplate(template || null);
+  // 懒加载：获取取消通知模板和管理员联系方式（仅在点击取消按钮时调用）
+  const fetchTemplateAndContact = async () => {
+    try {
+      // 获取通知模板
+      const templatesRes = await base44.functions.invoke('getNotificationTemplates', {});
+      const templates = templatesRes.data.templates || [];
+      
+      // 根据是否有退款金额选择模板
+      const hasRefundAmount = refundAmountJpy || refundAmountCurrency;
+      const template = templates.find(t => 
+        t.notification_type === 'cancellation' && 
+        t.notification_subtype === (hasRefundAmount ? 'order_cancelled_with_refund' : 'order_cancelled_no_refund')
+      );
+      setCancellationTemplate(template || null);
 
-        // 获取管理员联系方式（从 SiteSettings 或联系人）
-        const configRes = await base44.functions.invoke('getTenantConfigData', {});
-        const settings = configRes.data.settings || [];
-        const contactSetting = settings.find(s => s.key === 'admin_contact_info');
-        if (contactSetting?.value) {
-          setAdminContact(contactSetting.value);
-        } else {
-          // 默认联系方式
-          setAdminContact("管理员");
-        }
-      } catch (error) {
-        console.error('获取模板失败:', error);
+      // 获取管理员联系方式（从 SiteSettings 或联系人）
+      const configRes = await base44.functions.invoke('getTenantConfigData', {});
+      const settings = configRes.data.settings || [];
+      const contactSetting = settings.find(s => s.key === 'admin_contact_info');
+      if (contactSetting?.value) {
+        setAdminContact(contactSetting.value);
+      } else {
+        // 默认联系方式
+        setAdminContact("管理员");
       }
-    };
-    fetchTemplateAndContact();
-  }, [refundAmountJpy, refundAmountCurrency]);
+    } catch (error) {
+      console.error('获取模板失败:', error);
+    }
+  };
 
   // 获取订单付款货币
   const paymentCurrency = order.prepayment_currency || "JPY";
@@ -132,6 +129,11 @@ export default function OrderCancellationModule({ order, onSuccess, compact = fa
     if (refundCurrencyNum > originalAmount && paymentCurrency !== "JPY") {
       toast.error(`退款金额不能超过订单金额（${originalAmount} ${paymentCurrency}）`);
       return;
+    }
+
+    // 懒加载：点击取消按钮时才获取模板和配置
+    if (!cancellationTemplate && !adminContact) {
+      await fetchTemplateAndContact();
     }
 
     // 显示二次确认弹窗
