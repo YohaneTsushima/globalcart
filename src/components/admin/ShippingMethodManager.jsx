@@ -424,25 +424,6 @@ export function EstimateRateGlobalSetting() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
-  useEffect(() => {
-    Promise.all([
-      tenantEntity.list('SiteSettings', { key: 'default_estimate_rates' }).catch(() => []),
-      tenantEntity.list('SiteSettings', { key: 'default_estimate_rate_per_100g' }).catch(() => []),
-      tenantEntity.list('SiteSettings', { key: 'default_estimate_unit_g' }).catch(() => []),
-    ]).then(([newList, legacyRateList, legacyUnitList]) => {
-      if (newList?.length > 0) {
-        setSettingId(newList[0].id);
-        try {
-          const parsed = JSON.parse(newList[0].value);
-          if (Array.isArray(parsed) && parsed.length > 0) { setRows(parsed); return; }
-        } catch { }
-      }
-      const legacyRate = legacyRateList?.[0]?.value || "";
-      const legacyUnit = legacyUnitList?.[0]?.value || "100";
-      if (legacyRate) setRows([{ country: "", rate_per_unit: legacyRate, unit_g: legacyUnit }]);
-    });
-  }, []);
-
   const handleSave = async () => {
     setSaving(true);
     const value = JSON.stringify(rows.map(r => ({ country: r.country || "", rate_per_unit: parseFloat(r.rate_per_unit) || 0, unit_g: parseFloat(r.unit_g) || 100 })));

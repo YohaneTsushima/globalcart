@@ -582,7 +582,6 @@ export default function OrderDetailPanel({ order, onClose, onRefresh, userProfil
 
                   {/* Paid amount */}
                   {(order.paid_amount || 0) > 0 && (() => {
-                    debugger
                     const paidCurrency = order.payment_currency || order.prepayment_currency;
                     const paidAmountJpy = (order?.paid_amount_jpy || order?.prepayment_amount || order?.full_payment_amount)
                       || (paidCurrency === 'CNY' && order.prepayment_rate_jpy_cny
@@ -633,12 +632,12 @@ export default function OrderDetailPanel({ order, onClose, onRefresh, userProfil
                       <div className="text-xs text-gray-500">{formatDate(order.created_date)}</div>
                     </div>
                   </div>
-                  {order.submit_date && (
+                  {(order?.submit_date ||order?.created_date) && (
                     <div className="flex items-start gap-3">
                       <div className="w-2 h-2 rounded-full bg-blue-500 mt-1.5" />
                       <div className="flex-1">
                         <div className="text-sm font-medium text-gray-900">提交日期</div>
-                        <div className="text-xs text-gray-500">{formatDate(order.submit_date)}</div>
+                        <div className="text-xs text-gray-500">{formatDate(order.created_date)}</div>
                       </div>
                     </div>
                   )}

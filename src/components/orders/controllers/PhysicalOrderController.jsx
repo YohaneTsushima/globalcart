@@ -108,22 +108,23 @@ export const PhysicalOrderController = {
         );
       
       case "estimated_jpy":
-        return <span className="text-sm text-gray-700">{order.estimated_jpy ? `${Math.round(order.estimated_jpy).toLocaleString()} yen` : "-"}</span>;
+        return <span className="text-sm text-gray-700">{order.estimated_jpy ? `${Math.round(order.estimated_jpy).toLocaleString()} JPY` : "-"}</span>;
       
       case "payable_amount": {
         const amt = order.payable_amount;
+        const cur = order.payment_currency_type || "JPY";
         if (!amt || amt <= 0) {
           // 旧订单兼容：显示 prepayment_amount_jpy
           const legacy = order.prepayment_amount_jpy || order.paid_amount;
-          return <span className="text-sm text-gray-700">{legacy ? `${Math.round(legacy).toLocaleString()} yen` : "-"}</span>;
+          return <span className="text-sm text-gray-700">{legacy ? formatAmount(legacy, order.prepayment_amount_jpy ? "JPY" : cur) : "-"}</span>;
         }
-        return <span className="text-sm text-gray-700 font-medium">{`${Math.round(amt).toLocaleString()} yen`}</span>;
+        return <span className="text-sm text-gray-700 font-medium">{formatAmount(amt, cur)}</span>;
       }
       
       case "paid_amount": {
         const amt = order.paid_amount;
         if (!amt || amt <= 0) return <span className="text-sm text-gray-400">-</span>;
-        return <span className="text-sm text-gray-700">{`${Math.round(amt).toLocaleString()} yen`}</span>;
+        return <span className="text-sm text-gray-700">{formatAmount(amt, order.payment_currency_type || "JPY")}</span>;
       }
       
       case "weight_g":

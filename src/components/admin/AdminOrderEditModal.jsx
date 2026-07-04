@@ -3,13 +3,13 @@
  * Full admin workflow panel for a single order.
  * Covers all status transitions per the new order flow.
  */
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import ReactMarkdown from "react-markdown";
 import { base44 } from "@/api/base44Client";
 import { updateOrder, tenantEntity } from "@/lib/tenantApi";
 import { usePermissions } from "@/hooks/usePermissions";
 import { X, ExternalLink, Copy, Loader2, CheckCircle, AlertTriangle, MessageCircle, Package, Send, Layers, Scissors, GitBranch, GitPullRequest, Lock, Zap } from "lucide-react";
-import FileDropzone from "@/components/common/FileDropzone";
+import ImageUploader from "@/components/common/ImageUploader";
 import { ImageWithViewer } from "@/components/common/ImageViewer";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -74,6 +74,10 @@ export default function AdminOrderEditModal({ order, initialItemSizeTemplates, o
   const [arrivalPhoto, setArrivalPhoto] = useState(null);
   const [uploadingScreenshot, setUploadingScreenshot] = useState(false);
   const [uploadingArrival, setUploadingArrival] = useState(false);
+
+  // Track uploaded URLs for cleanup on unmount (delete orphaned files)
+  const uploadedUrlsRef = useRef(new Set());
+  const savedRef = useRef(false);
 
   // Item size templates — use prefetched data when available, skip self-fetch
   const [itemSizeTemplates, setItemSizeTemplates] = useState(initialItemSizeTemplates || []);
@@ -150,12 +154,31 @@ export default function AdminOrderEditModal({ order, initialItemSizeTemplates, o
   };
 
   // ── Upload helpers ──
-  const uploadFile = async (file, setter, loadingSetter) => {
+  const deleteImageByUrl = async (imageUrl, path = "orderPaid") => {
+    if (!imageUrl) return;
+    try {
+      await base44.integrations.Core.DeleteFile({ imageUrl, path });
+    } catch (_) {}
+  };
+
+  const uploadFile = async (file, setter, loadingSetter, path = "orderPaid") => {
     loadingSetter(true);
-    const { file_url } = await base44.integrations.Core.UploadFile({ file });
+    const { file_url } = await base44.integrations.Core.UploadFile({ file, path });
     setter(file_url);
     loadingSetter(false);
+    return file_url;
   };
+
+  // Cleanup: delete orphaned uploaded files when modal closes without saving
+  useEffect(() => {
+    return () => {
+      if (!savedRef.current) {
+        for (const url of uploadedUrlsRef.current) {
+          deleteImageByUrl(url);
+        }
+      }
+    };
+  }, []);
 
   // Fetch child orders for purchased -00 parent orders
   useEffect(() => {
@@ -180,6 +203,7 @@ export default function AdminOrderEditModal({ order, initialItemSizeTemplates, o
     setSplitting(false);
     if (res.data?.success) {
       setSplitResult(res.data);
+      savedRef.current = true;
       onSaved();
     }
   };
@@ -232,8 +256,11 @@ export default function AdminOrderEditModal({ order, initialItemSizeTemplates, o
       purchased_date: new Date().toISOString().split("T")[0],
       admin_note: form.admin_note,
     };
+
+    debugger
     if (purchaseScreenshot) updates.purchase_screenshot_url = purchaseScreenshot;
     await updateOrder(order.id, updates);
+    savedRef.current = true;
     onSaved();
   };
 
@@ -264,6 +291,7 @@ export default function AdminOrderEditModal({ order, initialItemSizeTemplates, o
       const poolId = poolRes?.data?.pool_id || null;
       const isOfficialPool = poolRes?.data?.is_official_pool || false;
       if (andOpenPool && poolId) {
+        savedRef.current = true;
         onSaved();
         onOpenPool?.(poolId, isOfficialPool);
         return;
@@ -275,6 +303,7 @@ export default function AdminOrderEditModal({ order, initialItemSizeTemplates, o
       }
     }
 
+    savedRef.current = true;
     onSaved();
   };
 
@@ -607,35 +636,24 @@ export default function AdminOrderEditModal({ order, initialItemSizeTemplates, o
                 <div className="space-y-3">
                   <div className="space-y-3 border border-indigo-100 rounded-xl p-3 bg-indigo-50">
                     <div className="text-sm font-medium text-indigo-800">待下单 — 完成购买后上传截图</div>
-                    <div className="space-y-2">
-                      <FileDropzone
-                        onFile={f => uploadFile(f, setPurchaseScreenshot, setUploadingScreenshot)}
-                        uploading={uploadingScreenshot}
-                        uploaded={!!purchaseScreenshot}
-                        label="截图已上传，点击或拖拽可更换"
-                        placeholder="点击或拖拽上传购买截图（可选）"
-                        borderColor="border-indigo-200"
-                        pasteHint={false}
-                      />
-                      <div>
-                        <Label className="text-xs text-gray-500">或粘贴截图 URL</Label>
-                        <Input
-                          type="text"
-                          placeholder="https://example.com/screenshot.jpg"
-                          value={purchaseScreenshot || ""}
-                          onChange={e => setPurchaseScreenshot(e.target.value)}
-                          onPaste={e => {
-                            const item = Array.from(e.clipboardData.items).find(i => i.type.startsWith("image/"));
-                            if (item) {
-                              e.preventDefault();
-                              const file = item.getAsFile();
-                              if (file) uploadFile(file, setPurchaseScreenshot, setUploadingScreenshot);
-                            }
-                          }}
-                          className="mt-1 text-xs"
-                        />
-                      </div>
-                    </div>
+                    <ImageUploader
+                      value={purchaseScreenshot || ""}
+                      onChange={async (fileOrUrl) => {
+                        if (typeof fileOrUrl === "string") {
+                          setPurchaseScreenshot(fileOrUrl);
+                        } else {
+                          const url = await uploadFile(fileOrUrl, setPurchaseScreenshot, setUploadingScreenshot);
+                          if (url) uploadedUrlsRef.current.add(url);
+                        }
+                      }}
+                      onDelete={async () => {
+                        await deleteImageByUrl(purchaseScreenshot);
+                        setPurchaseScreenshot(null);
+                      }}
+                      uploading={uploadingScreenshot}
+                      label="购买截图（可选）"
+                      id="order-purchase-screenshot"
+                    />
                     {/* Split marker preview */}
                     {order.has_split_marker && (order.split_sections || []).length > 1 && !splitResult && (
                       <div className="bg-indigo-50 border border-indigo-200 rounded-lg px-3 py-2.5 space-y-1.5">
@@ -692,32 +710,24 @@ export default function AdminOrderEditModal({ order, initialItemSizeTemplates, o
                 <div className="space-y-3 border border-teal-100 rounded-xl p-3 bg-teal-50">
                   <div className="text-sm font-medium text-teal-800">已下单 — 到货后入库</div>
                   <div className="space-y-2">
-                    <FileDropzone
-                      onFile={f => uploadFile(f, setArrivalPhoto, setUploadingArrival)}
+                    <ImageUploader
+                      value={arrivalPhoto || ""}
+                      onChange={async (fileOrUrl) => {
+                        if (typeof fileOrUrl === "string") {
+                          setArrivalPhoto(fileOrUrl);
+                        } else {
+                          const url = await uploadFile(fileOrUrl, setArrivalPhoto, setUploadingArrival);
+                          if (url) uploadedUrlsRef.current.add(url);
+                        }
+                      }}
+                      onDelete={async () => {
+                        await deleteImageByUrl(arrivalPhoto);
+                        setArrivalPhoto(null);
+                      }}
                       uploading={uploadingArrival}
-                      uploaded={!!arrivalPhoto}
-                      label="到货图片已上传，点击或拖拽可更换"
-                      borderColor="border-teal-200"
-                      pasteHint={false}
+                      label="到货图片"
+                      id="order-arrival-photo"
                     />
-                    <div>
-                      <Label className="text-xs text-gray-500">或粘贴图片 URL</Label>
-                      <Input
-                        type="text"
-                        placeholder="https://example.com/photo.jpg"
-                        value={arrivalPhoto || ""}
-                        onChange={e => setArrivalPhoto(e.target.value)}
-                        onPaste={e => {
-                          const item = Array.from(e.clipboardData.items).find(i => i.type.startsWith("image/"));
-                          if (item) {
-                            e.preventDefault();
-                            const file = item.getAsFile();
-                            if (file) uploadFile(file, setArrivalPhoto, setUploadingArrival);
-                          }
-                        }}
-                        className="mt-1 text-xs"
-                      />
-                    </div>
                   </div>
                   <div>
                     <Label className="text-xs">货品重量 (g)（默认 100g）</Label>

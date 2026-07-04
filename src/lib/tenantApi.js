@@ -25,8 +25,8 @@ export async function createOrder(data) {
 }
 
 export async function updateOrder(order_id, data) {
-  // const res = await base44.functions.invoke('updateTenantOrder', { order_id, ...data });
-  const res = {};
+  
+  const res = await base44.functions.invoke('admin/orders/updateTenantOrder', { order_id, ...data });
   return res.data?.order;
 }
 
@@ -79,7 +79,7 @@ export const tenantEntity = {
   create: (entity, data)        => mutate(entity, 'create', { data }).then(r => r.result || r.data?.result || r),
   update: (entity, id, data)    => mutate(entity, 'update', { id, data }).then(r => r.result || r.data?.result || r),
   delete: (entity, id)          => mutate(entity, 'delete', { id }),
-  sync: (entity, data) => mutate(entity, 'sync', {data}).then(r => r.result || r.data?.result || r),
+  sync: (entity, data) => mutate(entity, 'sync', {data}).then(r => r?.result || r?.data?.result || r),
 };
 
 // ─── ShippingPool shortcuts ───────────────────────────────────────────────────
