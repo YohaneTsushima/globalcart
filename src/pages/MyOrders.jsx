@@ -851,12 +851,11 @@ export default function MyOrders() {
                     </span>
                   )}
                   {order.order_status === "payment_pending" && order.payment_status !== "awaiting_confirmation" && (() => {
-                    const fpo = order.pre_shipment?.fullpay_once_config;
-                    const isFullPayOnce = fpo && (fpo.user_estimated_weight_g || 0) > 0 && (fpo.estimated_shipping_fee_jpy || 0) > 0;
+                    const isFullPayOnce = order.payment_mode === "fullpay_once";
                     return (
                       <Button size="sm" className="h-7 text-xs bg-red-600 hover:bg-red-700"
                         onClick={() => setPaymentOrder(order)}>
-                        <CreditCard className="w-3 h-3 mr-1" />{isFullPayOnce ? "一次付货款和运费" : "付款"}
+                        <CreditCard className="w-3 h-3 mr-1" />{isFullPayOnce ? "一次付货款(和运费?)" : "付款"}
                       </Button>
                     );
                   })()}

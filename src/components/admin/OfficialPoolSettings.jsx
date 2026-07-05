@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { EstimateRateGlobalSetting } from "@/components/admin/ShippingMethodManager";
 import { Layers } from "lucide-react";
 
-export default function OfficialPoolSettings() {
+export default function OfficialPoolSettings({ settings = [] }) {
   return (
     <div className="space-y-4">
       <Card className="border-purple-200">
@@ -20,7 +20,7 @@ export default function OfficialPoolSettings() {
           </p>
         </CardHeader>
         <CardContent>
-          <EstimateRateGlobalSetting />
+          <EstimateRateGlobalSetting settings={settings} />
         </CardContent>
       </Card>
 

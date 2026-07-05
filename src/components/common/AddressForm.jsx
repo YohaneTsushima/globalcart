@@ -44,6 +44,7 @@ function getPhoneCode(countryCode) {
 function FieldLabel({ jp, zh, required = true }) {
   return (
     <label className="block mb-1">
+      {required && <span className="text-red-500 mr-0.5">*</span>}
       <span className="text-xs font-semibold text-gray-700">{jp}</span>
       <span className="text-xs text-gray-400 ml-1">（{zh}）</span>
       {!required && <span className="text-xs text-gray-300 ml-1">任意</span>}
@@ -83,7 +84,7 @@ export function isAddressFormValid(v) {
   return !!(v.recipient_name?.trim() && v.country?.trim() && v.addr1?.trim() && v.addr2?.trim() && v.state?.trim() && v.phone?.trim());
 }
 
-export default function AddressForm({ value, onChange, className = "" }) {
+export default function AddressForm({ value, onChange, className = "", error = false }) {
   // Only pass the single changed field as a partial object.
   // The caller (AddressBlock) merges it with its own state via functional setState,
   // so there's no risk of stale-snapshot overwrites between rapid field changes.
@@ -97,7 +98,7 @@ export default function AddressForm({ value, onChange, className = "" }) {
       <div>
         <FieldLabel jp="受取人お名前" zh="收件人名" required />
         <Input
-          className="h-8 text-sm bg-white"
+          className={`h-8 text-sm bg-white ${error && !value.recipient_name?.trim() ? "border-red-400 placeholder:text-red-400 focus-visible:ring-red-300" : ""}`}
           placeholder="例：山田 太郎 / 张三"
           value={value.recipient_name || ""}
           onChange={e => f("recipient_name", e.target.value)}
@@ -111,7 +112,7 @@ export default function AddressForm({ value, onChange, className = "" }) {
           value={value.country || ""}
           onChange={v => f("country", v)}
           placeholder="选择国家"
-          className=""
+          className={error && !value.country?.trim() ? "border-red-400" : ""}
         />
       </div>
 
@@ -119,7 +120,7 @@ export default function AddressForm({ value, onChange, className = "" }) {
       <div>
         <FieldLabel jp="住所1　部屋番号、マンション名" zh="房间号码，公寓名" required />
         <Input
-          className="h-8 text-sm bg-white"
+          className={`h-8 text-sm bg-white ${error && !value.addr1?.trim() ? "border-red-400 placeholder:text-red-400 focus-visible:ring-red-300" : ""}`}
           placeholder="例：201号室、グリーンマンション"
           value={value.addr1 || ""}
           onChange={e => f("addr1", e.target.value)}
@@ -130,7 +131,7 @@ export default function AddressForm({ value, onChange, className = "" }) {
       <div>
         <FieldLabel jp="住所2　○番－○号　町名、○丁目" zh="详细地址" required />
         <Input
-          className="h-8 text-sm bg-white"
+          className={`h-8 text-sm bg-white ${error && !value.addr2?.trim() ? "border-red-400 placeholder:text-red-400 focus-visible:ring-red-300" : ""}`}
           placeholder="例：1番2号 渋谷1丁目 / 建国路88号"
           value={value.addr2 || ""}
           onChange={e => f("addr2", e.target.value)}
@@ -152,7 +153,7 @@ export default function AddressForm({ value, onChange, className = "" }) {
       <div>
         <FieldLabel jp="州名など" zh="省等" required />
         <Input
-          className="h-8 text-sm bg-white"
+          className={`h-8 text-sm bg-white ${error && !value.state?.trim() ? "border-red-400 placeholder:text-red-400 focus-visible:ring-red-300" : ""}`}
           placeholder="例：東京都 / 北京市 / California"
           value={value.state || ""}
           onChange={e => f("state", e.target.value)}
@@ -169,7 +170,7 @@ export default function AddressForm({ value, onChange, className = "" }) {
             </div>
           )}
           <Input
-            className="h-8 text-sm bg-white flex-1"
+            className={`h-8 text-sm bg-white flex-1 ${error && !value.phone?.trim() ? "border-red-400 placeholder:text-red-400 focus-visible:ring-red-300" : ""}`}
             placeholder="例：138 0000 0000"
             value={value.phone || ""}
             onChange={e => f("phone", e.target.value)}

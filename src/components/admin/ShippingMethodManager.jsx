@@ -5,6 +5,7 @@
 import { useState, useEffect } from "react";
 import { tenantEntity } from "@/lib/tenantApi";
 import { Plus, Trash2, Edit2, Check, X, Download, Info, GripVertical, Eye, EyeOff, ChevronUp, ChevronDown } from "lucide-react";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -418,20 +419,54 @@ function ShippingListPanel({ methods, activeId, onSelect, onToggle, onDelete, on
 }
 
 // ─── Global estimate rate setting ─────────────────────────────
-export function EstimateRateGlobalSetting() {
+export function EstimateRateGlobalSetting({ settings = [] }) {
   const [rows, setRows] = useState([{ country: "", rate_per_unit: "", unit_g: "100" }]);
   const [settingId, setSettingId] = useState(null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
+  useEffect(() => {
+    const existing = settings.find(s => s.key === 'default_estimate_rates');
+    if (existing) {
+      setSettingId(existing.id);
+      try {
+        const parsed = JSON.parse(existing.value);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setRows(parsed.map(r => ({ ...r, rate_per_unit: String(r.rate_per_unit ?? ""), unit_g: String(r.unit_g ?? "100") })));
+        }
+      } catch {}
+      return;
+    }
+    tenantEntity.list('SiteSettings').then(list => {
+      const found = (list || []).find(s => s.key === 'default_estimate_rates');
+      if (found) {
+        setSettingId(found.id);
+        try {
+          const parsed = JSON.parse(found.value);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setRows(parsed.map(r => ({ ...r, rate_per_unit: String(r.rate_per_unit ?? ""), unit_g: String(r.unit_g ?? "100") })));
+          }
+        } catch {}
+      }
+    }).catch(() => {});
+  }, [settings]);
+
   const handleSave = async () => {
     setSaving(true);
     const value = JSON.stringify(rows.map(r => ({ country: r.country || "", rate_per_unit: parseFloat(r.rate_per_unit) || 0, unit_g: parseFloat(r.unit_g) || 100 })));
+    debugger
     if (settingId) {
       await tenantEntity.update('SiteSettings', settingId, { value });
     } else {
-      const created = await tenantEntity.create('SiteSettings', { key: 'default_estimate_rates', value, description: '官方拼邮预估运费全局建议估算率列表（按国家/地带，JSON数组）', category: 'shipping' });
-      setSettingId(created.id);
+      const allSettings = await tenantEntity.list('SiteSettings');
+      const found = (allSettings || []).find(s => s.key === 'default_estimate_rates');
+      if (found) {
+        await tenantEntity.update('SiteSettings', found.id, { value });
+        setSettingId(found.id);
+      } else {
+        const created = await tenantEntity.create('SiteSettings', { key: 'default_estimate_rates', value, description: '官方拼邮预估运费全局建议估算率列表（按国家/地带，JSON数组）', category: 'shipping' });
+        setSettingId(created.id);
+      }
     }
     setSaving(false); setSaved(true); setTimeout(() => setSaved(false), 2000);
   };
@@ -470,10 +505,11 @@ export function EstimateRateGlobalSetting() {
 }
 
 // ─── Main export ──────────────────────────────────────────────
-export default function ShippingMethodManager({ initialData = null, itemSizeTemplates = [] }) {
+export default function ShippingMethodManager({ initialData = null, itemSizeTemplates = [], onReload, settings = [] }) {
   const [methods, setMethods] = useState(null);
   const [selected, setSelected] = useState(null);
   const [seeding, setSeeding] = useState(false);
+  const [deleteTargetId, setDeleteTargetId] = useState(null);
 
   useEffect(() => {
     if (initialData === null) return;
@@ -502,6 +538,7 @@ export default function ShippingMethodManager({ initialData = null, itemSizeTemp
       setMethods(prev => prev.map(m => m.id === id ? { ...m, ...saved } : m));
       setSelected(prev => prev?.id === id ? { ...prev, ...saved } : prev);
     }
+    onReload?.();
   };
 
   const handleToggle = async (m) => {
@@ -509,13 +546,16 @@ export default function ShippingMethodManager({ initialData = null, itemSizeTemp
     await tenantEntity.update('ShippingMethod', m.id, { is_active: updated.is_active });
     setMethods(prev => prev.map(x => x.id === m.id ? updated : x));
     if (selected?.id === m.id) setSelected(updated);
+    onReload?.();
   };
 
-  const handleDelete = async (id) => {
-    if (!confirm("确认删除此运输方式？")) return;
-    await tenantEntity.delete('ShippingMethod', id);
-    setMethods(prev => prev.filter(m => m.id !== id));
-    if (selected?.id === id) setSelected(null);
+  const handleDelete = async () => {
+    if (!deleteTargetId) return;
+    await tenantEntity.delete('ShippingMethod', deleteTargetId);
+    setMethods(prev => prev.filter(m => m.id !== deleteTargetId));
+    if (selected?.id === deleteTargetId) setSelected(null);
+    setDeleteTargetId(null);
+    onReload?.();
   };
 
   const handleMoveUp = (idx) => {
@@ -553,14 +593,27 @@ export default function ShippingMethodManager({ initialData = null, itemSizeTemp
             activeId={selected?.id}
             onSelect={m => setSelected(m)}
             onToggle={handleToggle}
-            onDelete={handleDelete}
+            onDelete={id => setDeleteTargetId(id)}
             onMoveUp={handleMoveUp}
             onMoveDown={handleMoveDown}
           />
         </div>
       </div>
 
-      <EstimateRateGlobalSetting />
+      <EstimateRateGlobalSetting settings={settings} />
+
+      <AlertDialog open={!!deleteTargetId} onOpenChange={open => { if (!open) setDeleteTargetId(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>确认删除</AlertDialogTitle>
+            <AlertDialogDescription>确认删除此运输方式？此操作不可撤销。</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDelete} className="bg-red-600 hover:bg-red-700">删除</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

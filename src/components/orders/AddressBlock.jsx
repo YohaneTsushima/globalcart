@@ -23,7 +23,8 @@ export default function AddressBlock({
   saveNewAddress,
   onSelect,
   onNewAddressChange,
-  onSaveToggle
+  onSaveToggle,
+  error = false
 }) {
   const hasSaved = savedAddresses.length > 0;
   const selectedAddr = hasSaved && !isNewMode ? savedAddresses.find((a) => a.id === selectedId) : null;
@@ -44,6 +45,7 @@ export default function AddressBlock({
       <label className="flex items-center gap-1.5 text-xs font-semibold text-gray-700 uppercase tracking-wide">
         <MapPin className="w-3.5 h-3.5 text-blue-500" />
         {label}
+        <span className="text-red-500">*</span>
       </label>
       {!hasSaved || effectiveNewMode ? (
         // Show structured address form
@@ -65,6 +67,7 @@ export default function AddressBlock({
               value={addrValue}
               onChange={handleAddressFormChange}
               showLabel={false}
+              error={error}
             />
           </div>
           {hasSaved && saveNewAddress !== undefined && (

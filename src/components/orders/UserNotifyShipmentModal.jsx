@@ -7,6 +7,7 @@
  * - Join existing shipping pool option
  */
 import { useState, useEffect } from "react";
+import { toast } from "sonner";
 import { X, Truck, Package, MapPin, Lock, Users, Search, Star } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import CustomsDeclarationForm from "@/components/orders/CustomsDeclarationForm";
@@ -102,7 +103,7 @@ function TransitMethodSection({ consType, selectedTransitId, transitLocations, t
   return (
     <div>
       <label className="text-xs text-gray-500 font-medium uppercase tracking-wide flex items-center gap-1.5">
-        <Truck className="w-3.5 h-3.5" />中转段运输方式
+        <Truck className="w-3.5 h-3.5" />中转段运输方式 <span className="text-red-500">*</span>
       </label>
       <div className="mt-1.5 space-y-1.5">
         {allowPickup && (
@@ -376,7 +377,7 @@ export default function UserNotifyShipmentModal({ order, orders, initialData, on
   //  - new address form is open (isNewMode or no saved addresses) AND form is valid
   const isAddressSlotOk = (slot) => {
     const inNewMode = !!addressInputMode[slot] || savedAddresses.length === 0;
-    if (inNewMode) return isAddressFormValid(newAddress) && !!(newAddress.label?.trim());
+    if (inNewMode) return isAddressFormValid(newAddress);
     const id = slot === "final" ? finalAddressId : selectedAddress;
     return !!id;
   };
@@ -546,12 +547,17 @@ export default function UserNotifyShipmentModal({ order, orders, initialData, on
     };
 
     // Call unified engine
-    await base44.functions.invoke('createShippingPool', {
-      order_ids: orderIds,
-      payload: shipmentPayload,
-    });
-
-    onSuccess?.();
+    try {
+      await base44.functions.invoke('createShippingPool', {
+        order_ids: orderIds,
+        payload: shipmentPayload,
+      });
+      onSuccess?.();
+    } catch (err) {
+      console.error('[UserNotifyShipmentModal] createShippingPool failed:', err);
+      toast.error(err?.message || "提交失败，请稍后重试");
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -588,9 +594,9 @@ export default function UserNotifyShipmentModal({ order, orders, initialData, on
 
           {/* Shipping method */}
            <div>
-             <label className="text-xs text-gray-500 font-medium uppercase tracking-wide">发货方式</label>
+             <label className="text-xs text-gray-500 font-medium uppercase tracking-wide">发货方式 <span className="text-red-500">*</span></label>
              <Select value={method} onValueChange={(val) => { setMethod(val); setMethodError(null); }} disabled={!!isJoiningPool}>
-               <SelectTrigger className={`mt-1.5 ${isJoiningPool ? "opacity-50 cursor-not-allowed" : ""} ${methodError ? "border-red-300" : ""}`}>
+               <SelectTrigger className={`mt-1.5 ${isJoiningPool ? "opacity-50 cursor-not-allowed" : ""} ${methodError ? "border-red-300" : ""} ${!method && !isJoiningPool ? "border-red-400" : ""}`}>
                  <SelectValue placeholder={isJoiningPool ? "使用拼邮池配置" : "请选择发货方式"} />
                </SelectTrigger>
                <SelectContent>
@@ -666,10 +672,10 @@ export default function UserNotifyShipmentModal({ order, orders, initialData, on
           )}
 
           {/* Address selection for non-consolidation */}
-          {consType === "" && !joinDirectPool && (
+           {consType === "" && !joinDirectPool && (
             <AddressBlock
               slot="direct"
-              label="收货地址 *"
+              label="收货地址"
               savedAddresses={savedAddresses}
               selectedId={selectedAddress}
               isNewMode={!!addressInputMode["direct"]}
@@ -678,6 +684,7 @@ export default function UserNotifyShipmentModal({ order, orders, initialData, on
               onSelect={(v) => handleAddressSelect(v, "direct")}
               onNewAddressChange={setNewAddress}
               onSaveToggle={setSaveNewAddress}
+              error={!isAddressSlotOk("direct")}
             />
           )}
 
@@ -685,7 +692,7 @@ export default function UserNotifyShipmentModal({ order, orders, initialData, on
           {consType === "other" && !isJoiningPool && (
             <AddressBlock
               slot="other"
-              label="拼邮目标地址 *"
+              label="拼邮目标地址"
               savedAddresses={savedAddresses}
               selectedId={selectedAddress}
               isNewMode={!!addressInputMode["other"]}
@@ -694,6 +701,7 @@ export default function UserNotifyShipmentModal({ order, orders, initialData, on
               onSelect={(v) => handleAddressSelect(v, "other")}
               onNewAddressChange={setNewAddress}
               onSaveToggle={setSaveNewAddress}
+              error={!isAddressSlotOk("other")}
             />
           )}
 
@@ -710,7 +718,7 @@ export default function UserNotifyShipmentModal({ order, orders, initialData, on
           {consType === "transit" && (
             <div className="space-y-3">
               <div className="border border-blue-100 rounded-xl p-4 bg-blue-50/40 space-y-2">
-                <label className="text-xs text-blue-700 font-medium">选择中转地 *</label>
+                <label className="text-xs text-blue-700 font-medium">选择中转地 <span className="text-red-500">*</span></label>
                 {transitLocations.length === 0 ? (
                   <p className="text-xs text-gray-400">暂无可用中转地，请联系管理员</p>
                 ) : transitLocations.map(l => (
@@ -733,7 +741,7 @@ export default function UserNotifyShipmentModal({ order, orders, initialData, on
                 <div className={isPickupStorageSelected ? "opacity-50 pointer-events-none grayscale" : ""}>
                   <AddressBlock
                     slot="final"
-                    label={`最终收货地址${isPickupStorageSelected ? '（自取/暂存模式下无需填写）' : '（货品从中转地发往此处）*'}`}
+                    label="最终收货地址"
                     savedAddresses={savedAddresses}
                     selectedId={finalAddressId}
                     isNewMode={!!addressInputMode["final"]}
@@ -742,6 +750,7 @@ export default function UserNotifyShipmentModal({ order, orders, initialData, on
                     onSelect={(v) => handleAddressSelect(v, "final")}
                     onNewAddressChange={setNewAddress}
                     onSaveToggle={setSaveNewAddress}
+                    error={!isPickupStorageSelected && !isAddressSlotOk("final")}
                   />
                 </div>
               )}
@@ -928,7 +937,7 @@ export default function UserNotifyShipmentModal({ order, orders, initialData, on
               <div className={isPickupStorageSelected ? "opacity-50 pointer-events-none grayscale" : ""}>
                 <AddressBlock
                   slot="final"
-                  label={`最终收货地址${isPickupStorageSelected ? '（自取/暂存模式下无需填写）' : ' *'}`}
+                  label="最终收货地址"
                   savedAddresses={savedAddresses}
                   selectedId={finalAddressId}
                   isNewMode={!!addressInputMode["final"]}
@@ -937,6 +946,7 @@ export default function UserNotifyShipmentModal({ order, orders, initialData, on
                   onSelect={(v) => handleAddressSelect(v, "final")}
                   onNewAddressChange={setNewAddress}
                   onSaveToggle={setSaveNewAddress}
+                  error={!isPickupStorageSelected && !isAddressSlotOk("final")}
                 />
               </div>
               <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 space-y-2">
@@ -954,7 +964,7 @@ export default function UserNotifyShipmentModal({ order, orders, initialData, on
           {consType === "other" && !isJoiningPool && (
             <AddressBlock
               slot="other"
-              label="拼邮目标地址 *"
+              label="拼邮目标地址"
               savedAddresses={savedAddresses}
               selectedId={selectedAddress}
               isNewMode={!!addressInputMode["other"]}
@@ -963,6 +973,7 @@ export default function UserNotifyShipmentModal({ order, orders, initialData, on
               onSelect={(v) => handleAddressSelect(v, "other")}
               onNewAddressChange={setNewAddress}
               onSaveToggle={setSaveNewAddress}
+              error={!isAddressSlotOk("other")}
             />
           )}
 
@@ -1033,7 +1044,6 @@ export default function UserNotifyShipmentModal({ order, orders, initialData, on
           if (!isJoiningPool && consType === "transit" && !isPickupStorageSelected && !isAddressSlotOk("final")) {
             const inNew = !!addressInputMode["final"] || savedAddresses.length === 0;
             if (inNew) {
-              if (!newAddress.label?.trim()) missing.push("收货地址：地址标签");
               if (!newAddress.recipient_name?.trim()) missing.push("收货地址：受取人お名前");
               if (!newAddress.country?.trim()) missing.push("收货地址：受取人国名");
               if (!newAddress.addr2?.trim()) missing.push("収货地址：住所2");
@@ -1047,7 +1057,6 @@ export default function UserNotifyShipmentModal({ order, orders, initialData, on
           if (isJoiningPool && !isPickupStorageSelected && !isAddressSlotOk("final")) {
             const inNew = !!addressInputMode["final"] || savedAddresses.length === 0;
             if (inNew) {
-              if (!newAddress.label?.trim()) missing.push("收货地址：地址标签");
               if (!newAddress.recipient_name?.trim()) missing.push("收货地址：受取人お名前");
               if (!newAddress.country?.trim()) missing.push("收货地址：受取人国名");
               if (!newAddress.addr2?.trim()) missing.push("収货地址：住所2");
@@ -1061,7 +1070,6 @@ export default function UserNotifyShipmentModal({ order, orders, initialData, on
           if (!isJoiningPool && consType === "" && !joinDirectPool && !isAddressSlotOk("direct")) {
             const inNew = !!addressInputMode["direct"] || savedAddresses.length === 0;
             if (inNew) {
-              if (!newAddress.label?.trim()) missing.push("收货地址：地址标签");
               if (!newAddress.recipient_name?.trim()) missing.push("收货地址：受取人お名前");
               if (!newAddress.country?.trim()) missing.push("收货地址：受取人国名");
               if (!newAddress.addr2?.trim()) missing.push("收货地址：住所2");
@@ -1075,7 +1083,6 @@ export default function UserNotifyShipmentModal({ order, orders, initialData, on
           if (!isJoiningPool && consType === "other" && !isAddressSlotOk("other")) {
             const inNew = !!addressInputMode["other"] || savedAddresses.length === 0;
             if (inNew) {
-              if (!newAddress.label?.trim()) missing.push("拼邮地址：地址标签");
               if (!newAddress.recipient_name?.trim()) missing.push("拼邮地址：受取人お名前");
               if (!newAddress.country?.trim()) missing.push("拼邮地址：受取人国名");
               if (!newAddress.addr2?.trim()) missing.push("拼邮地址：住所2");

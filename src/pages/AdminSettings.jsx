@@ -790,7 +790,7 @@ export default function AdminSettings() {
       {activeTab === "shipping_methods" && (
         <Card className="border-gray-200">
           <CardContent className="pt-5">
-            <ShippingMethodManager initialData={shippingMethods} itemSizeTemplates={itemSizeTemplates || []} />
+            <ShippingMethodManager initialData={shippingMethods} itemSizeTemplates={itemSizeTemplates || []} onReload={load} settings={settings} />
           </CardContent>
         </Card>
       )}
@@ -815,7 +815,7 @@ export default function AdminSettings() {
       )}
 
       {activeTab === "official_pool" && (
-        <OfficialPoolSettings />
+        <OfficialPoolSettings settings={settings} />
       )}
 
       {activeTab === "transit_methods" && (
