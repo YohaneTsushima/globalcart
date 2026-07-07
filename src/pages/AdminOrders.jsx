@@ -130,17 +130,17 @@ export default function AdminOrders() {
       const data = d.orders || [];
       setOrders(data);
       if (!skipPagination) setTotal(d.total || 0);
-      setStoreTagRules(d.storeTagRules || []);
-      setItemSizeTemplates(d.itemSizeTemplates || []);
-      setPendingEditRequests(d.pendingEditRequests || []);
-      setUserProfileMap(d.userProfileMap || {});
-      setShippingPools(d.shippingPools || []);
-      setShippingMethods(d.shippingMethods || []);
-      setBoxTemplates(d.boxTemplates || []);
-      setTransitLocations(d.transitLocations || []);
-      setTransitShippingMethods(d.transitShippingMethods || []);
-      setDefaultPackingFeeSingle(d.defaultPackingFeeSingle || 0);
-      setDefaultPackingFeeConsolidation(d.defaultPackingFeeConsolidation || 0);
+      setStoreTagRules(d.store_tag_rules || []);
+      setItemSizeTemplates(d.item_size_templates || []);
+      setPendingEditRequests(d.pending_edit_requests || []);
+      setUserProfileMap(d.user_profile_map || {});
+      setShippingPools(d.shipping_pools || []);
+      setShippingMethods(d.shipping_methods || []);
+      setBoxTemplates(d.box_templates || []);
+      setTransitLocations(d.transit_locations || []);
+      setTransitShippingMethods(d.transit_shipping_methods || []);
+      setDefaultPackingFeeSingle(d.default_packing_fee_single || 0);
+      setDefaultPackingFeeConsolidation(d.default_packing_fee_consolidation || 0);
     } catch (err) {
       console.warn('[AdminOrders] API 请求失败，使用 Mock 数据:', err.message);
       localStorage.removeItem(STORAGE_KEY);

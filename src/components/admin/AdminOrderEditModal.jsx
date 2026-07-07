@@ -1147,6 +1147,7 @@ export default function AdminOrderEditModal({ order, initialItemSizeTemplates, o
 
               {/* notified_shipment → open pool detail modal or official pool kanban */}
               {status === "notified_shipment" && (() => {
+                debugger
                 // Find pool by order_ids (same logic as table action column)
                 const pool = shippingPools.find(p => (p.order_ids || []).includes(order.id))
                   || (order.consolidation_pool_id ? shippingPools.find(p => p.id === order.consolidation_pool_id) : null);

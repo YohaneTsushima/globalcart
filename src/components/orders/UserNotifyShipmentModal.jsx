@@ -548,7 +548,7 @@ export default function UserNotifyShipmentModal({ order, orders, initialData, on
 
     // Call unified engine
     try {
-      await base44.functions.invoke('createShippingPool', {
+      await base44.functions.invoke('shipping/createShippingPool', {
         order_ids: orderIds,
         payload: shipmentPayload,
       });

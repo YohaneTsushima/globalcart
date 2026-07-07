@@ -148,7 +148,7 @@ export default function SubmitOrder() {
       .then((r) => { setPaymentMethods(r?.data?.payment_methods || []); })
       .catch(() => {});
     
-    base44.functions.invoke('config/shipping/getTenantShippingPools', { action: 'list_shipping_methods' })
+    base44.functions.invoke('shipping/getTenantShippingPools', { action: 'list_shipping_methods' })
       .then((r) => { setShippingMethods(r.data?.methods || []); })
       .catch(() => {});
   }, []);
