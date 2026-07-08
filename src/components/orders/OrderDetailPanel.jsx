@@ -85,8 +85,6 @@ export default function OrderDetailPanel({ order, onClose, onRefresh, userProfil
     return `${currency} ${parseFloat(amount.toFixed(2))}`;
   };
 
-  console.log(order)
-
   const formatDate = (dateStr) => {
     if (!dateStr) return "-";
     return new Date(dateStr).toLocaleString("zh-CN", { 

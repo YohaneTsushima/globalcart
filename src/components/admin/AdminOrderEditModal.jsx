@@ -1151,7 +1151,8 @@ export default function AdminOrderEditModal({ order, initialItemSizeTemplates, o
                 // Find pool by order_ids (same logic as table action column)
                 const pool = shippingPools.find(p => (p.order_ids || []).includes(order.id))
                   || (order.consolidation_pool_id ? shippingPools.find(p => p.id === order.consolidation_pool_id) : null);
-                const poolId = pool?.id || order.consolidation_pool_id;
+                const poolId = String(pool?.id || order.consolidation_pool_id || "");
+                const poolCode = String(pool?.pool_code || order.consolidation_pool_id || "");
                 const isConsolidation = pool?.consolidation_type && pool.consolidation_type !== "";
                 const isOfficialPool = pool?.is_admin_created === true;
                 return (
@@ -1164,7 +1165,7 @@ export default function AdminOrderEditModal({ order, initialItemSizeTemplates, o
                     )}
                     {poolId && (
                       <div className="text-xs text-gray-500">
-                        发货申请 ID：<span className="font-mono text-cyan-700">{poolId.slice(-6).toUpperCase()}</span>
+                        发货申请 POOL CODE：<span className="font-mono text-cyan-700">{poolCode.toUpperCase()}</span>
                       </div>
                     )}
                     <Button size="sm" variant="outline"

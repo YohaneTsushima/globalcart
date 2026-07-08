@@ -587,7 +587,6 @@ export default function MyOrders() {
   // Listen for postMessage from Alipay popup tab after payment completes
   useEffect(() => {
     const handleMessage = (e) => {
-      debugger
       if (e.data?.type === "alipay_payment_done" && user) {
         setAlipayReturnMsg(`支付宝付款已提交${e.data.tradeNo ? `（单号: ${e.data.tradeNo}）` : ''}，系统将在数分钟内自动确认订单状态。`);
         fetchOrders(user);

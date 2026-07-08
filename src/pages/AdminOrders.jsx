@@ -320,15 +320,16 @@ export default function AdminOrders() {
   const handleOpenPool = async (pool) => {
     // Check if it's an official pool
     const isOfficialPool = pool.is_admin_created === true;
-    
+    debugger
     // If official pool, navigate to official pool kanban page
     if (isOfficialPool) {
       window.location.href = '/AdminShippingPool?view=official';
       return;
     }
     
-    // Always fetch full pool data (shippingPools in state is a trimmed summary)
-    const r = await base44.functions.invoke('getTenantShippingPools', {});
+    // Always fetch full pool data (local shippingPools is a trimmed summary)
+    // const r = await base44.functions.invoke('getTenantShippingPools', {});
+    const r = {};
     const fullPool = (r.data?.pools || []).find(p => p.id === pool.id);
     setSelectedPool(fullPool || pool);
   };

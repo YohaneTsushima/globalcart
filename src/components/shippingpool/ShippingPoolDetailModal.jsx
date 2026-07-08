@@ -37,7 +37,7 @@ export default function ShippingPoolDetailModal({ pool: initialPool, isAdmin, cu
   const canEditPackage = isAdmin && can("shipping:edit_package");
   const canRequestRewarehouse = !isAdmin && can("shipping:request_rewarehouse");
   const canSendShippingMessage = isAdmin || can("message:send_shipping_message");
-
+debugger
   const [pool, setPool] = useState(initialPool);
   const [orders, setOrders] = useState([]);
   const [saving, setSaving] = useState(false);
