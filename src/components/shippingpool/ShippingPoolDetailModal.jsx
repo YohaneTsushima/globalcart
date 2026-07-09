@@ -8,7 +8,7 @@ import { X, Package, Edit2, Save, MoreVertical, ArrowRight, RotateCcw, Loader2, 
 import { base44 } from "@/api/base44Client";
 import { usePermissions } from "@/hooks/usePermissions";
 import { updateOrder, tenantEntity, shippingPoolApi, userPrefApi, fetchTenantConfig } from "@/lib/tenantApi";
-import { getExchangeRates } from "@/lib/exchangeRates";
+// exchangeRates now provided by getShippingPoolDetail response
 import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -37,7 +37,7 @@ export default function ShippingPoolDetailModal({ pool: initialPool, isAdmin, cu
   const canEditPackage = isAdmin && can("shipping:edit_package");
   const canRequestRewarehouse = !isAdmin && can("shipping:request_rewarehouse");
   const canSendShippingMessage = isAdmin || can("message:send_shipping_message");
-debugger
+
   const [pool, setPool] = useState(initialPool);
   const [orders, setOrders] = useState([]);
   const [saving, setSaving] = useState(false);
@@ -73,7 +73,7 @@ debugger
   const [userCredit, setUserCredit] = useState(null); // {credit_enabled, credit_balance_jpy, credit_limit_jpy}
 
   const [tenantUserMap, setTenantUserMap] = useState({});
-  const [allPoolsMap, setAllPoolsMap] = useState({}); // id -> pool_code for target pool display
+  const [allPoolsMap] = useState({}); // id -> pool_code for target pool display (fallback for pending edits)
 
   // User-side move/add state
   const [userActionOrder, setUserActionOrder] = useState(null); // order being acted on
@@ -222,52 +222,52 @@ debugger
   };
 
   useEffect(() => {
-    const fetches = [];
-    if (pool.order_ids?.length > 0) {
-      // Admins fetch all tenant orders; users pass pool_id so the backend
-      // returns all orders in the pool (privacy masking is done client-side).
-      const orderParams = isAdmin ? { all: true } : { pool_id: pool.id };
-      fetches.push(
-        base44.functions.invoke('getTenantOrders', orderParams).
-        then((r) => {
-          const allOrders = r.data?.orders || [];
-          setOrders(allOrders.filter((o) => pool.order_ids.includes(o.id)));
-        }).
-        catch(() => {})
-      );
-    }
-    fetches.push(
-      base44.functions.invoke('getTenantUsers', {}).
-      then((r) => {
-        const map = {};
-        (r.data?.users || []).forEach((u) => {map[u.email] = u;});
-        setTenantUserMap(map);
-      }).
-      catch(() => {})
-    );
-    fetches.push(
-      base44.functions.invoke('getTenantShippingPools', {}).
-      then((r) => {
-        const map = {};
-        (r.data?.pools || []).forEach((p) => {map[p.id] = p;});
-        setAllPoolsMap(map);
-        // Refresh current pool with latest data (ensures supplement_amount_per_user etc. are up to date)
-        const freshPool = map[initialPool.id];
-        if (freshPool) {
-          setPool(p => ({ ...p, ...freshPool }));
+    // Fetch pool detail (pool + orders + users + rates) in one call
+    base44.functions.invoke('shipping/getShippingPoolDetail', { id: pool.id })
+      .then((r) => {
+        const d = r?.data || {};
+        if (d.pool) setPool((p) => ({ ...p, ...d.pool }));
+        if (d.orders) setOrders(d.orders);
+
+        // Backend returns single "user" object or "users" map
+        if (d.users) {
+          setTenantUserMap(d.users);
+        } else if (d.user) {
+          // Convert single user object to map keyed by email
+          const email = d.user.userEmail || d.user.email || d.user.user_email;
+          if (email) setTenantUserMap({ [email]: d.user });
         }
-      }).
-      catch(() => {})
-    );
-    // Load exchange rates and user credit status for payment panel
+
+        // Backend returns nested { date, jpy: { cny, twd, usr } }
+        // Frontend expects flat { jpy_cny, jpy_twd, jpy_usd, ... }
+        if (d.rates) {
+          const r = d.rates;
+          if (r.jpy) {
+            setExchangeRates({
+              jpy_cny: r.jpy.cny,
+              jpy_twd: r.jpy.twd,
+              jpy_usd: r.jpy.usd || r.jpy.usr,
+              jpy_eur: r.jpy.eur,
+              jpy_gbp: r.jpy.gbp,
+              jpy_aud: r.jpy.aud,
+              jpy_sgd: r.jpy.sgd,
+              jpy_hkd: r.jpy.hkd,
+            });
+          } else {
+            setExchangeRates(r);
+          }
+        }
+      })
+      .catch((e) => {
+        console.error('[PoolModal] Fetch error:', e);
+      });
+
+    // Load user credit status for payment panel (non-admin only)
     if (!isAdmin) {
-      getExchangeRates().then(r => setExchangeRates(r)).catch(() => {});
       base44.functions.invoke('manageCreditApplication', { action: 'get_user_credit' })
-        .then(r => setUserCredit(r.data || null))
+        .then((r) => setUserCredit(r.data || null))
         .catch(() => {});
     }
-
-    Promise.all(fetches);
 
     // Mark as read on open
     const myRole = isAdmin ? "admin" : "user";
@@ -301,12 +301,16 @@ debugger
     setUserTargetPoolId("");
     setUserActionNote("");
     if (mode === 'move') {
-      // Load available pools (pending, not this one, not fee-notified)
-      const lockedStatuses = ['awaiting_payment', 'awaiting_payment_confirmation', 'ready_to_ship', 'shipped', 'delivered', 'cancelled'];
-      const available = Object.values(allPoolsMap).filter(p =>
-        p.id !== pool.id && !lockedStatuses.includes(p.status)
-      );
-      setUserActionPools(available);
+      // Lazy-load available pools for user-side move
+      base44.functions.invoke('getTenantShippingPools', {})
+        .then((r) => {
+          const lockedStatuses = ['awaiting_payment', 'awaiting_payment_confirmation', 'ready_to_ship', 'shipped', 'delivered', 'cancelled'];
+          const available = (r.data?.pools || []).filter(p =>
+            p.id !== pool.id && !lockedStatuses.includes(p.status)
+          );
+          setUserActionPools(available);
+        })
+        .catch(() => setUserActionPools([]));
     }
   };
 
@@ -784,10 +788,11 @@ debugger
 
               const renderOrder = (o) => {
                 const isEditingThis = editingOrderData?.id === o.id;
-                const canSeeDetail = isAdmin || o.user_email === currentUser?.email;
-                const isMyOrder = o.user_email === currentUser?.email;
+                const canSeeDetail = isAdmin || o.user_id === currentUser?.id;
+                const isMyOrder = o.user_id === currentUser?.id;
                 const isRWSel = rewarehouseSelectedIds.includes(o.id);
                 const hasPendingRW = pendingEdits.some(r => r.order_id === o.id && r.is_rewarehouse_request);
+
                 return (
                   <div key={o.id} className={`rounded-lg border transition-colors ${isEditingThis ? "border-blue-200 bg-blue-50" : isRWSel ? "border-orange-300 bg-orange-50" : "border-transparent bg-gray-50"}`}>
                     {isEditingThis ?
@@ -813,9 +818,9 @@ debugger
                                 <img src={o.product_image_url} alt="" className="w-12 h-12 rounded object-cover border border-gray-200 cursor-pointer hover:opacity-80 transition-opacity" />
                               </ImageWithViewer>
                         }
-                            {canSeeDetail && o.arrival_photo_url &&
-                        <ImageWithViewer src={o.arrival_photo_url} alt="入库图片">
-                                <img src={o.arrival_photo_url} alt="" className="w-12 h-12 rounded object-cover border border-blue-200 cursor-pointer hover:opacity-80 transition-opacity" title="入库图片" />
+                            {canSeeDetail && (o.arrival_photo_url || o.storage_image)&&
+                        <ImageWithViewer src={o.arrival_photo_url || o.storage_image} alt="入库图片">
+                                <img src={o.arrival_photo_url || o.storage_image} alt="" className="w-12 h-12 rounded object-cover border border-blue-200 cursor-pointer hover:opacity-80 transition-opacity" title="入库图片" />
                               </ImageWithViewer>
                         }
                             {!canSeeDetail && (
@@ -830,7 +835,7 @@ debugger
                             </p>
                             <p className="text-xs text-gray-400">
                               {canSeeDetail ? o.order_number : "—"} · {o.weight_g || 0}g
-                              {isAdmin && o.user_email ? ` · ${tenantUserMap[o.user_email]?.display_name || tenantUserMap[o.user_email]?.full_name || o.user_name || ""}` : ""}
+                              {isAdmin && o.id ? ` · ${tenantUserMap[o.user_email]?.display_name || tenantUserMap[o.user_email]?.full_name || o.user_name || ""}` : ""}
                             </p>
                               
 
@@ -1466,6 +1471,7 @@ debugger
             transitLocations={transitLocations}
             transitShippingMethods={transitShippingMethods}
             userProfileMap={tenantUserMap}
+            exchangeRates={exchangeRates}
             onPoolUpdated={onUpdated} />
 
           }

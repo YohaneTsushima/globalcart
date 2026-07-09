@@ -20,7 +20,6 @@ import { CreditCard, Truck, CheckCircle, ExternalLink, X, Plus, Loader2, MapPin,
 import CustomsDeclarationDisplay from "@/components/shippingpool/CustomsDeclarationDisplay";
 import { getCountry, getCountryZone } from "@/lib/countries";
 import { calcFeeBreakdownPerUser } from "@/lib/shippingFeeCalc";
-import { getExchangeRates } from "@/lib/exchangeRates";
 import ShippingFeeBreakdown from "@/components/shippingpool/ShippingFeeBreakdown";
 import { ImageWithViewer } from "@/components/common/ImageViewer";
 
@@ -94,6 +93,7 @@ export default function AdminShippingInfoPanel({
   transitLocations = [],
   transitShippingMethods = [],
   userProfileMap = {},
+  exchangeRates: exchangeRatesProp = null,
   onPoolUpdated,
 }) {
   const isConsolidation = (initialPool.consolidation_type === "transit" || initialPool.consolidation_type === "other");
@@ -143,11 +143,12 @@ export default function AdminShippingInfoPanel({
   }, [JSON.stringify(initialPool.order_ids)]);
   const [saving, setSaving] = useState(false);
   const [confirmingSaving, setConfirmingSaving] = useState(false);
-  const [exchangeRates, setExchangeRates] = useState(null);
+  const [exchangeRates, setExchangeRates] = useState(exchangeRatesProp);
 
+  // Sync exchange rates from parent prop
   useEffect(() => {
-    getExchangeRates().then(rates => setExchangeRates(rates)).catch(() => {});
-  }, []);
+    if (exchangeRatesProp) setExchangeRates(exchangeRatesProp);
+  }, [exchangeRatesProp]);
 
   // Form fields
   const [trackingNumber, setTrackingNumber] = useState(pool.tracking_number || "");
@@ -205,6 +206,7 @@ export default function AdminShippingInfoPanel({
 
   // Auto-calculate shipping fee from weight using the matched shipping method's rates
   const calcFeeFromWeight = (weightG) => {
+    debugger
     if (!matchedShippingMethod || !pool.destination_country) return null;
     const country = pool.destination_country;
     // Resolve zone code: if rates are stored by zone (e.g. "zone1"), map the country code first

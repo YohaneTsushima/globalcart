@@ -318,20 +318,12 @@ export default function AdminOrders() {
   const getOrderPool = (order) => shippingPools.find(p => (p.order_ids || []).includes(order.id)) || null;
 
   const handleOpenPool = async (pool) => {
-    // Check if it's an official pool
     const isOfficialPool = pool.is_admin_created === true;
-    debugger
-    // If official pool, navigate to official pool kanban page
     if (isOfficialPool) {
       window.location.href = '/AdminShippingPool?view=official';
       return;
     }
-    
-    // Always fetch full pool data (local shippingPools is a trimmed summary)
-    // const r = await base44.functions.invoke('getTenantShippingPools', {});
-    const r = {};
-    const fullPool = (r.data?.pools || []).find(p => p.id === pool.id);
-    setSelectedPool(fullPool || pool);
+    setSelectedPool(pool);
   };
 
   return (
@@ -753,18 +745,11 @@ export default function AdminOrders() {
             setSelectedOrder(null);
             if (!poolId) return;
             
-            // If official pool, navigate to official pool kanban page
             if (isOfficialPool) {
-              // Navigate to official pool kanban - the page will load all official pools
               window.location.href = '/AdminShippingPool?view=official';
               return;
             }
-            
-            // For non-official pools, open the detail modal
-            // Always fetch full pool data (local shippingPools is a trimmed summary)
-            const r = await base44.functions.invoke('getTenantShippingPools', {});
-            const pool = (r.data?.pools || []).find(p => p.id === poolId);
-            if (pool) setSelectedPool(pool);
+            setSelectedPool({ id: poolId });
           }}
         />
       )}
