@@ -749,6 +749,7 @@ export default function AdminOrders() {
               window.location.href = '/AdminShippingPool?view=official';
               return;
             }
+                        
             setSelectedPool({ id: poolId });
           }}
         />

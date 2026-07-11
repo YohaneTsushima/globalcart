@@ -10,18 +10,19 @@
 import { useState, useMemo, useEffect, useRef } from "react";
 import { base44 } from "@/api/base44Client";
 import { shippingPoolApi, updateOrder } from "@/lib/tenantApi";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { CreditCard, Truck, CheckCircle, ExternalLink, X, Plus, Loader2, MapPin, Copy } from "lucide-react";
+import { CreditCard, Truck, CheckCircle, ExternalLink, X, MapPin, Copy } from "lucide-react";
 import CustomsDeclarationDisplay from "@/components/shippingpool/CustomsDeclarationDisplay";
 import { getCountry, getCountryZone } from "@/lib/countries";
 import { calcFeeBreakdownPerUser } from "@/lib/shippingFeeCalc";
 import ShippingFeeBreakdown from "@/components/shippingpool/ShippingFeeBreakdown";
-import { ImageWithViewer } from "@/components/common/ImageViewer";
+import MultiImageUploader from "@/components/common/MultiImageUploader";
 
 const STATUS_CONFIG = {
   pending:                       { label: "待处理",    color: "bg-amber-100 text-amber-700" },
@@ -129,6 +130,42 @@ export default function AdminShippingInfoPanel({
 
   const [pool, setPool] = useState(initialPool);
 
+  // Sync full pool + form fields from parent when it becomes available (e.g. after async API fetch)
+  // This handles the case where parent initially passes a partial pool (e.g. { id })
+  // and later updates it with full data after an API call completes.
+  useEffect(() => {
+    if (!initialPool?.status || initialPool.status === pool.status) return;
+    setPool(prev => ({ ...prev, ...initialPool }));
+    setTrackingNumber(initialPool.tracking_number || "");
+    setBoxTemplateId(initialPool.box_template_id || "none");
+    setFinalWeightG(initialPool.final_weight_g?.toString() || initialPool.total_weight_g?.toString() || "");
+    setShippingFeeJpy(initialPool.shipping_fee_jpy?.toString() || "");
+    setAdminNote(initialPool.admin_note || "");
+    setAdminPackingNote(initialPool.admin_packing_note || "");
+    setActualShippingCostJpy(initialPool.actual_international_shipping_cost_jpy?.toString() || "");
+    setLabelImageUrls(initialPool.label_image_urls || []);
+    setPackingImageUrls(initialPool.packing_image_urls || []);
+    // Restore base packing fee from saved per-user data
+    const saved = initialPool.packing_fees_per_user || [];
+    if (saved.length > 0 && saved[0].base_fee_jpy !== undefined) {
+      setBasePackingFee(saved[0].base_fee_jpy);
+    }
+    // Re-init per-user packing fees from saved data
+    if (saved.length > 0) {
+      setPackingFeesPerUser(saved.map(u => ({
+        ...u,
+        extra_fee_jpy: u.extra_fee_jpy ?? Math.max(0, (u.fee_jpy || 0) - (u.base_fee_jpy ?? defaultBaseFee)),
+      })));
+    }
+    // Re-calc shipping from restored weight
+    const w = parseFloat(initialPool.final_weight_g || initialPool.total_weight_g);
+    if (!isNaN(w) && w > 0) {
+      const calc = calcFeeFromWeight(w);
+      if (calc) { setShippingFeeJpy(String(calc.fee)); setFeeAutoCalced(true); setShippingCalcResult(calc); }
+      else { setShippingCalcResult(null); }
+    }
+  }, [initialPool?.status]);
+
   // Sync pool.order_ids when parent passes updated pool (e.g. after orders are moved in)
   useEffect(() => {
     setPool(prev => {
@@ -156,6 +193,7 @@ export default function AdminShippingInfoPanel({
   const [finalWeightG, setFinalWeightG] = useState(pool.final_weight_g?.toString() || pool.total_weight_g?.toString() || "");
   const [shippingFeeJpy, setShippingFeeJpy] = useState(pool.shipping_fee_jpy?.toString() || "");
   const [feeAutoCalced, setFeeAutoCalced] = useState(false);
+  const [shippingCalcResult, setShippingCalcResult] = useState(null);
   const [basePackingFee, setBasePackingFee] = useState(() => {
     // Try to restore base fee from saved data: if all users have same fee, that's the base
     const saved = initialPool.packing_fees_per_user || [];
@@ -174,6 +212,14 @@ export default function AdminShippingInfoPanel({
       }
     }
   }, [orders.length]);
+  // Initialize shippingCalcResult on mount so the IIFE doesn't need to call calcFeeFromWeight
+  useEffect(() => {
+    const w = parseFloat(pool.final_weight_g || pool.total_weight_g);
+    if (!isNaN(w) && w > 0) {
+      const calc = calcFeeFromWeight(w);
+      if (calc) setShippingCalcResult(calc);
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const [adminNote, setAdminNote] = useState(pool.admin_note || "");
   const [adminPackingNote, setAdminPackingNote] = useState(pool.admin_packing_note || "");
   const [actualShippingCostJpy, setActualShippingCostJpy] = useState(pool.actual_international_shipping_cost_jpy?.toString() || "");
@@ -181,10 +227,8 @@ export default function AdminShippingInfoPanel({
   // Image uploads
   const [labelImageUrls, setLabelImageUrls] = useState(pool.label_image_urls || []);
   const [packingImageUrls, setPackingImageUrls] = useState(pool.packing_image_urls || []);
-  const [uploadingLabel, setUploadingLabel] = useState(false);
-  const [uploadingPacking, setUploadingPacking] = useState(false);
-  const [draggingLabel, setDraggingLabel] = useState(false);
-  const [draggingPacking, setDraggingPacking] = useState(false);
+
+  const filterNumeric = (v) => v.replace(/[^0-9.]/g, '').replace(/(\..*)\./g, '$1');
 
   const selectedBox = boxTemplates.find(b => b.id === boxTemplateId);
   const boxWeight = selectedBox?.weight_g || 0;
@@ -206,7 +250,6 @@ export default function AdminShippingInfoPanel({
 
   // Auto-calculate shipping fee from weight using the matched shipping method's rates
   const calcFeeFromWeight = (weightG) => {
-    debugger
     if (!matchedShippingMethod || !pool.destination_country) return null;
     const country = pool.destination_country;
     // Resolve zone code: if rates are stored by zone (e.g. "zone1"), map the country code first
@@ -347,40 +390,54 @@ export default function AdminShippingInfoPanel({
 
   const handleSaveInfoOnly = async () => {
     setSaving(true);
-    const payload = buildUpdatePayload();
-    await shippingPoolApi.update(pool.id, payload);
-    setPool(p => ({ ...p, ...payload }));
-    setSaving(false);
-    onPoolUpdated?.({ ...pool, ...payload });
+    try {
+      const payload = buildUpdatePayload();
+      await shippingPoolApi.update(pool.id, payload);
+      setPool(p => ({ ...p, ...payload }));
+      onPoolUpdated?.({ ...pool, ...payload });
+      toast.success("保存成功");
+    } catch (err) {
+      console.error("保存失败:", err);
+      toast.error("保存失败：" + (err?.message || "未知错误"));
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleConfirmPayment = async () => {
     setConfirmingSaving(true);
-    // Mark all per-user payments as paid if any exist
-    const existingPerUserPayments = pool.per_user_payments || [];
-    const updatedPerUserPayments = existingPerUserPayments.map(p => ({
-      ...p,
-      payment_status: "paid",
-      confirmed_at: p.confirmed_at || new Date().toISOString(),
-    }));
-    const payload = {
-      ...buildUpdatePayload(),
-      status: "ready_to_ship",
-      payment_status: "paid",
-      admin_confirmed_payment: true,
-      supplement_amount_per_user: [], // clear supplement after payment confirmed
-      per_user_payments: updatedPerUserPayments,
-    };
-    await shippingPoolApi.update(pool.id, payload);
-    // Update all orders in this pool to notified_shipment_fee_paid
-    await Promise.all(
-      (pool.order_ids || []).map(id =>
-        updateOrder(id, { order_status: "notified_shipment_fee_paid", order_balance_settled: true })
-      )
-    );
-    setPool(p => ({ ...p, ...payload }));
-    setConfirmingSaving(false);
-    onPoolUpdated?.({ ...pool, ...payload });
+    try {
+      // Mark all per-user payments as paid if any exist
+      const existingPerUserPayments = pool.per_user_payments || [];
+      const updatedPerUserPayments = existingPerUserPayments.map(p => ({
+        ...p,
+        payment_status: "paid",
+        confirmed_at: p.confirmed_at || new Date().toISOString(),
+      }));
+      const payload = {
+        ...buildUpdatePayload(),
+        status: "ready_to_ship",
+        payment_status: "paid",
+        admin_confirmed_payment: true,
+        supplement_amount_per_user: [], // clear supplement after payment confirmed
+        per_user_payments: updatedPerUserPayments,
+      };
+      await shippingPoolApi.update(pool.id, payload);
+      // Update all orders in this pool to notified_shipment_fee_paid
+      await Promise.all(
+        (pool.order_ids || []).map(id =>
+          updateOrder(id, { order_status: "notified_shipment_fee_paid", order_balance_settled: true })
+        )
+      );
+      setPool(p => ({ ...p, ...payload }));
+      onPoolUpdated?.({ ...pool, ...payload });
+      toast.success("收款确认成功");
+    } catch (err) {
+      console.error("确认收款失败:", err);
+      toast.error("确认收款失败：" + (err?.message || "未知错误"));
+    } finally {
+      setConfirmingSaving(false);
+    }
   };
 
   // Confirm payment and ship directly (for allowShipWithoutPayment setting)
@@ -655,30 +712,6 @@ export default function AdminShippingInfoPanel({
     onPoolUpdated?.({ ...pool, ...payload });
   };
 
-  const handleUploadLabelImage = async (file) => {
-    setUploadingLabel(true);
-    const { file_url } = await base44.integrations.Core.UploadFile({ file });
-    setLabelImageUrls(prev => [...prev, file_url]);
-    setUploadingLabel(false);
-  };
-
-  const handleUploadPackingImage = async (file) => {
-    setUploadingPacking(true);
-    const { file_url } = await base44.integrations.Core.UploadFile({ file });
-    setPackingImageUrls(prev => [...prev, file_url]);
-    setUploadingPacking(false);
-  };
-
-  const handleDrop = async (e, type) => {
-    e.preventDefault();
-    if (type === "label") setDraggingLabel(false); else setDraggingPacking(false);
-    const files = Array.from(e.dataTransfer.files).filter(f => f.type.startsWith("image/"));
-    for (const file of files) {
-      if (type === "label") await handleUploadLabelImage(file);
-      else await handleUploadPackingImage(file);
-    }
-  };
-
   const currentStatus = pool.status;
   const isStep1 = currentStatus === "pending" || currentStatus === "processing";
   const isAwaitingPayment = currentStatus === "awaiting_payment";
@@ -803,30 +836,32 @@ export default function AdminShippingInfoPanel({
           {/* Weight & shipping fee */}
           {(() => {
             const wNum = parseFloat(finalWeightG);
-            const calcResult = (!isNaN(wNum) && wNum > 0) ? calcFeeFromWeight(wNum) : null;
+            const calcResult = shippingCalcResult;
             const feeCurrency = calcResult ? calcResult.currency : "JPY";
             const applyWeight = (w) => {
               setFinalWeightG(String(w));
               if (w > 0) {
                 const calc = calcFeeFromWeight(w);
-                if (calc) { setShippingFeeJpy(String(calc.fee)); setFeeAutoCalced(true); }
-              } else { setFeeAutoCalced(false); }
+                if (calc) { setShippingFeeJpy(String(calc.fee)); setFeeAutoCalced(true); setShippingCalcResult(calc); }
+                else { setShippingCalcResult(null); }
+              } else { setFeeAutoCalced(false); setShippingCalcResult(null); }
             };
             return (
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <Label className="text-xs text-gray-500">最终总重量 (g)</Label>
                   <div className="mt-1 flex items-center gap-1.5">
-                    <Input className="h-8 text-sm flex-1" type="text" inputMode="decimal" placeholder={pool.total_weight_g || "0"}
+                    <Input className="h-8 text-sm flex-1" type="text" inputMode="decimal" placeholder={pool.total_weight_g || pool.final_weight_g || "0"}
                       value={finalWeightG}
                       onChange={e => {
-                        const raw = e.target.value;
+                        const raw = filterNumeric(e.target.value);
                         setFinalWeightG(raw);
                         const w = parseFloat(raw);
                         if (!isNaN(w) && w > 0) {
                           const calc = calcFeeFromWeight(w);
-                          if (calc) { setShippingFeeJpy(String(calc.fee)); setFeeAutoCalced(true); }
-                        } else { setFeeAutoCalced(false); }
+                          if (calc) { setShippingFeeJpy(String(calc.fee)); setFeeAutoCalced(true); setShippingCalcResult(calc); }
+                          else { setShippingCalcResult(null); }
+                        } else { setFeeAutoCalced(false); setShippingCalcResult(null); }
                       }} />
                     <button type="button" onClick={() => applyWeight((parseFloat(finalWeightG) || 0) + 100)}
                       className="h-8 px-2 text-xs rounded border border-gray-200 bg-white hover:bg-gray-50 text-gray-600 flex-shrink-0">+100</button>
@@ -846,7 +881,7 @@ export default function AdminShippingInfoPanel({
                   <div className="mt-1 relative">
                     <Input className="h-8 text-sm pr-14" type="text" inputMode="decimal" placeholder="0"
                       value={shippingFeeJpy}
-                      onChange={e => { setShippingFeeJpy(e.target.value); setFeeAutoCalced(false); }} />
+                      onChange={e => { setShippingFeeJpy(filterNumeric(e.target.value)); setFeeAutoCalced(false); }} />
                     <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">{feeCurrency}</span>
                   </div>
                   {matchedShippingMethod && calcResult && (
@@ -867,7 +902,7 @@ export default function AdminShippingInfoPanel({
             </Label>
             <Input className="mt-1 h-8 text-sm" type="text" inputMode="decimal" placeholder="0（选填）"
               value={actualShippingCostJpy}
-              onChange={e => setActualShippingCostJpy(e.target.value)} />
+              onChange={e => setActualShippingCostJpy(filterNumeric(e.target.value))} />
           </div>
 
           {/* Packing fees per user */}
@@ -878,7 +913,7 @@ export default function AdminShippingInfoPanel({
               <div className="flex items-center gap-1.5">
                 <Input className="h-8 text-sm flex-1" type="text" inputMode="decimal" placeholder="0"
                   value={basePackingFee === 0 ? "" : basePackingFee}
-                  onChange={e => setBasePackingFee(parseFloat(e.target.value) || 0)} />
+                  onChange={e => setBasePackingFee(parseFloat(filterNumeric(e.target.value)) || 0)} />
                 <button type="button" onClick={() => setBasePackingFee(v => v + 100)}
                   className="h-8 px-2 text-xs rounded border border-gray-200 bg-white hover:bg-gray-50 text-gray-600 flex-shrink-0">+100</button>
                 <button type="button" onClick={() => setBasePackingFee(v => Math.max(0, v - 100))}
@@ -962,91 +997,21 @@ export default function AdminShippingInfoPanel({
           </div>
 
           {/* Image uploads */}
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <Label className="text-xs text-gray-500 mb-1.5 block">发货面单图片</Label>
-              <div className="flex flex-wrap gap-1.5 mb-1.5">
-                {labelImageUrls.map((url, i) => (
-                  <div key={i} className="relative group">
-                    <ImageWithViewer src={url} alt="发货面单">
-                      <img src={url} alt="" className="w-12 h-12 rounded object-cover border border-gray-200 cursor-pointer hover:opacity-80 transition-opacity" />
-                    </ImageWithViewer>
-                    <button
-                      onClick={() => setLabelImageUrls(prev => prev.filter((_, j) => j !== i))}
-                      className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                      <X className="w-2.5 h-2.5" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-              <label
-                className={`cursor-pointer flex flex-col items-center gap-1 px-2.5 py-3 border-2 border-dashed rounded-md text-xs transition-colors ${draggingLabel ? "border-blue-400 bg-blue-50 text-blue-500" : "border-gray-300 text-gray-400 hover:border-gray-400"}`}
-                onDragOver={e => { e.preventDefault(); setDraggingLabel(true); }}
-                onDragLeave={() => setDraggingLabel(false)}
-                onDrop={e => handleDrop(e, "label")}>
-                {uploadingLabel ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
-                <span>{uploadingLabel ? "上传中..." : "点击或拖拽上传"}</span>
-                <input type="file" accept="image/*" className="hidden" disabled={uploadingLabel} multiple
-                  onChange={e => { Array.from(e.target.files).forEach(f => handleUploadLabelImage(f)); }} />
-              </label>
-              <input
-                type="text"
-                placeholder="粘贴图片URL或剪切板图片（Ctrl+V）"
-                className="mt-1.5 w-full h-7 rounded-md border border-input bg-transparent px-2 py-1 text-xs shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                onPaste={e => {
-                  const item = Array.from(e.clipboardData.items).find(i => i.type.startsWith("image/"));
-                  if (item) { e.preventDefault(); const f = item.getAsFile(); if (f) handleUploadLabelImage(f); }
-                }}
-                onKeyDown={e => {
-                  if (e.key === "Enter") {
-                    const url = e.target.value.trim();
-                    if (url) { setLabelImageUrls(prev => [...prev, url]); e.target.value = ""; }
-                  }
-                }}
-              />
-            </div>
-            <div>
-              <Label className="text-xs text-gray-500 mb-1.5 block">捆包状态图片</Label>
-              <div className="flex flex-wrap gap-1.5 mb-1.5">
-                {packingImageUrls.map((url, i) => (
-                  <div key={i} className="relative group">
-                    <ImageWithViewer src={url} alt="捆包状态图片">
-                      <img src={url} alt="" className="w-12 h-12 rounded object-cover border border-gray-200 cursor-pointer hover:opacity-80 transition-opacity" />
-                    </ImageWithViewer>
-                    <button
-                      onClick={() => setPackingImageUrls(prev => prev.filter((_, j) => j !== i))}
-                      className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                      <X className="w-2.5 h-2.5" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-              <label
-                className={`cursor-pointer flex flex-col items-center gap-1 px-2.5 py-3 border-2 border-dashed rounded-md text-xs transition-colors ${draggingPacking ? "border-blue-400 bg-blue-50 text-blue-500" : "border-gray-300 text-gray-400 hover:border-gray-400"}`}
-                onDragOver={e => { e.preventDefault(); setDraggingPacking(true); }}
-                onDragLeave={() => setDraggingPacking(false)}
-                onDrop={e => handleDrop(e, "packing")}>
-                {uploadingPacking ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
-                <span>{uploadingPacking ? "上传中..." : "点击或拖拽上传"}</span>
-                <input type="file" accept="image/*" className="hidden" disabled={uploadingPacking} multiple
-                  onChange={e => { Array.from(e.target.files).forEach(f => handleUploadPackingImage(f)); }} />
-              </label>
-              <input
-                type="text"
-                placeholder="粘贴图片URL或剪切板图片（Ctrl+V）"
-                className="mt-1.5 w-full h-7 rounded-md border border-input bg-transparent px-2 py-1 text-xs shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                onPaste={e => {
-                  const item = Array.from(e.clipboardData.items).find(i => i.type.startsWith("image/"));
-                  if (item) { e.preventDefault(); const f = item.getAsFile(); if (f) handleUploadPackingImage(f); }
-                }}
-                onKeyDown={e => {
-                  if (e.key === "Enter") {
-                    const url = e.target.value.trim();
-                    if (url) { setPackingImageUrls(prev => [...prev, url]); e.target.value = ""; }
-                  }
-                }}
-              />
-            </div>
+          <div className="grid grid-cols-2 gap-3 items-stretch">
+            <MultiImageUploader
+              value={labelImageUrls}
+              onChange={setLabelImageUrls}
+              uploadPath="shippingLabel"
+              label="发货面单图片"
+              id="admin-label-image-input"
+            />
+            <MultiImageUploader
+              value={packingImageUrls}
+              onChange={setPackingImageUrls}
+              uploadPath="shippingPacking"
+              label="捆包状态图片"
+              id="admin-packing-image-input"
+            />
           </div>
 
           {/* Action buttons */}
