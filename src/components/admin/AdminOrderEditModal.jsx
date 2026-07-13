@@ -25,14 +25,16 @@ import { toast } from "sonner";
 // All statuses admin can manually set (escape hatch)
 const ALL_STATUSES = [
   { v: "pending_confirmation", l: "后付款待确认" },
-  { v: "awaiting_reply", l: "用户已回复（待回复）" },
-  { v: "admin_replied", l: "管理员已回复" },
   { v: "payment_pending", l: "待付款" },
-  { v: "paid", l: "已付款/待下单" },
+  { v: "paid", l: "已付款" },
+  { v: "pending_purchase", l: "待下单" },
   { v: "purchased", l: "已下单" },
   { v: "in_warehouse", l: "已入库" },
-  { v: "notified_shipment", l: "已通知出货/待出货" },
-  { v: "shipping_fee_pending", l: "待付运费/已付运费" },
+  { v: "notified_shipment", l: "已通知出货" },
+  { v: "notified_shipment_fee_pending", l: "待出货待付运费" },
+  { v: "notified_shipment_fee_paid", l: "待出货已付运费" },
+  { v: "shipping_fee_pending", l: "待付运费" },
+  { v: "ready_to_ship", l: "准备发货" },
   { v: "shipped", l: "已发出" },
   { v: "delivered", l: "已收货" },
   { v: "cancelled", l: "已取消" },
@@ -1147,8 +1149,9 @@ export default function AdminOrderEditModal({ order, initialItemSizeTemplates, o
               {/* notified_shipment → open pool detail modal or official pool kanban */}
               {status === "notified_shipment" && (() => {
                 // Find pool by order_ids (same logic as table action column)
-                const pool = shippingPools.find(p => (p.order_ids || []).includes(order.id))
-                  || (order.consolidation_pool_id ? shippingPools.find(p => p.id === order.consolidation_pool_id) : null);
+                const orderId = String(order.id);
+                const pool = shippingPools.find(p => (p.order_ids || []).some(id => String(id) === orderId))
+                  || (order.consolidation_pool_id ? shippingPools.find(p => String(p.id) === String(order.consolidation_pool_id)) : null);
                 const poolId = String(pool?.id || order.consolidation_pool_id || "");
                 const poolCode = String(pool?.pool_code || order.consolidation_pool_id || "");
                 const isConsolidation = pool?.consolidation_type && pool.consolidation_type !== "";

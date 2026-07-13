@@ -620,7 +620,8 @@ export default function MyOrders() {
   const handleConfirmDelivered = async (order) => {;
     await base44.functions.invoke('updateTenantOrder', { order_id: order.id, order_status: "delivered" });
     // Also mark the associated shipping pool as delivered
-    const pool = shippingPools.find(p => (p.order_ids || []).includes(order.id));
+    const orderId = String(order.id);
+    const pool = shippingPools.find(p => (p.order_ids || []).some(id => String(id) === orderId));
     if (pool && pool.status === "shipped") {
       await shippingPoolApi.update(pool.id, { status: "delivered" });
     }
@@ -875,10 +876,11 @@ export default function MyOrders() {
                     </div>
                   )}
                   {order.order_status === "transit_shipped" && (() => {
-                    const pool = shippingPools.find(p => (p.order_ids || []).includes(order.id));
+                    const orderId = String(order.id);
+                    const pool = shippingPools.find(p => (p.order_ids || []).some(id => String(id) === orderId));
                     // Other orders in same pool for this user
                     const poolOrderIds = pool?.order_ids || [];
-                    const otherPoolOrders = poolOrderIds.filter(id => id !== order.id);
+                    const otherPoolOrders = poolOrderIds.filter(id => String(id) !== orderId);
                     return (
                       <div className="flex flex-col gap-1 items-start">
                         <span className="inline-flex items-center gap-1 text-xs bg-blue-100 text-blue-700 border border-blue-200 px-1.5 py-0.5 rounded-full font-medium">
@@ -953,8 +955,9 @@ export default function MyOrders() {
                     </span>
                   )}
                   {order.order_status === "notified_shipment" && (() => {
-                    const pool = shippingPools.find(p => (p.order_ids || []).includes(order.id));
-                    const hasPendingEdit = pendingEditRequests.some(r => r.order_id === order.id);
+                    const orderId = String(order.id);
+                    const pool = shippingPools.find(p => (p.order_ids || []).some(id => String(id) === orderId));
+                    const hasPendingEdit = pendingEditRequests.some(r => String(r.order_id) === orderId);
                     const poolAwaitingPayment = pool && (pool.status === "awaiting_payment" || pool.status === "awaiting_payment_confirmation");
                     return (
                       <div className="flex flex-col gap-1 items-start">
@@ -987,10 +990,11 @@ export default function MyOrders() {
                   })()}
                   {(order.order_status === "shipping_fee_pending" || order.order_status === "notified_shipment_fee_pending") && (() => {
                     // Try order_ids first, fall back to consolidation_pool_id on the order itself
-                    const pool = shippingPools.find(p => (p.order_ids || []).includes(order.id))
-                      || (order.consolidation_pool_id ? shippingPools.find(p => p.id === order.consolidation_pool_id) : null);
+                    const orderId = String(order.id);
+                    const pool = shippingPools.find(p => (p.order_ids || []).some(id => String(id) === orderId))
+                      || (order.consolidation_pool_id ? shippingPools.find(p => String(p.id) === String(order.consolidation_pool_id)) : null);
                     if (!pool) return null;
-                    const hasPendingRewarehouse = pendingEditRequests.some(r => r.order_id === order.id && r.is_rewarehouse_request);
+                    const hasPendingRewarehouse = pendingEditRequests.some(r => String(r.order_id) === orderId && r.is_rewarehouse_request);
                     return (
                       <div className="flex flex-col gap-1 items-start">
                         <button
@@ -1017,7 +1021,8 @@ export default function MyOrders() {
                     );
                   })()}
                   {order.order_status === "shipped" && (() => {
-                    const pool = shippingPools.find(p => (p.order_ids || []).includes(order.id));
+                    const orderId = String(order.id);
+                    const pool = shippingPools.find(p => (p.order_ids || []).some(id => String(id) === orderId));
                     return (
                       <div className="flex flex-col gap-1 items-start">
                         {pool && (

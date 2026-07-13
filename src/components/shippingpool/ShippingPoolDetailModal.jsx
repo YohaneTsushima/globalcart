@@ -216,7 +216,7 @@ export default function ShippingPoolDetailModal({ pool: initialPool, isAdmin, cu
     // Refresh orders
     const r = await base44.functions.invoke('getTenantOrders', { pool_id: pool.id });
     const all = r.data?.orders || [];
-    setOrders(all.filter(o => pool.order_ids.includes(o.id)));
+    setOrders(all.filter(o => (pool.order_ids || []).some(id => String(id) === String(o.id))));
     setEditingUserPrefs(false);
     setSavingUserPrefs(false);
   };
@@ -1687,12 +1687,16 @@ export default function ShippingPoolDetailModal({ pool: initialPool, isAdmin, cu
                         );
                       }
 
-                      if ((pool.fee_breakdown_per_user || []).length > 0) {
+                      const feeBreakdowns = pool.fee_breakdown_per_user || [];
+                      const myBreakdown = currentUser?.email
+                        ? feeBreakdowns.find(b => b.user_email === currentUser.email)
+                        : null;
+                      if (feeBreakdowns.length > 0 && myBreakdown) {
                         return (
                           <div>
                             <p className="text-xs font-medium text-gray-500 mb-2">费用明细</p>
                             <ShippingFeeBreakdown
-                              breakdowns={pool.fee_breakdown_per_user}
+                              breakdowns={feeBreakdowns}
                               isConsolidation={pool.consolidation_type === "transit" || pool.consolidation_type === "other"}
                               currentUserEmail={currentUser?.email}
                               userProfileMap={tenantUserMap} />
@@ -1700,12 +1704,60 @@ export default function ShippingPoolDetailModal({ pool: initialPool, isAdmin, cu
                         );
                       }
 
+                      // Fallback: fee_breakdown_per_user has entries but current user not matched
+                      // (e.g. order.user_email is null → stored as "__unknown__")
+                      // Show all breakdowns without filtering so the fee details are still visible
+                      if (feeBreakdowns.length > 0) {
+                        return (
+                          <div>
+                            <p className="text-xs font-medium text-gray-500 mb-2">费用明细</p>
+                            <ShippingFeeBreakdown
+                              breakdowns={feeBreakdowns}
+                              isConsolidation={pool.consolidation_type === "transit" || pool.consolidation_type === "other"}
+                              currentUserEmail={null}
+                              userProfileMap={tenantUserMap} />
+                          </div>
+                        );
+                      }
+
+                      const boxFee = Math.round(parseFloat(pool.box_price_jpy) || 0);
+                      const shippingFee = Math.round(parseFloat(pool.shipping_fee_jpy) || 0);
+                      const packingFee = Math.round(parseFloat(pool.packing_fee_jpy) || 0);
+                      const grandTotal = boxFee + shippingFee + packingFee;
+                      const hasFeeItems = boxFee > 0 || shippingFee > 0 || packingFee > 0;
                       return (
-                        <div className="bg-yellow-50 border border-yellow-100 rounded-lg px-3 py-2.5">
-                          <p className="text-sm font-medium text-yellow-800">
-                            运费：<span className="text-lg font-bold text-orange-600">¥{Math.round(pool.shipping_fee_jpy || 0).toLocaleString()}</span>
-                            <span className="text-xs text-yellow-600 ml-1">(JPY)</span>
-                          </p>
+                        <div className="bg-yellow-50 border border-yellow-100 rounded-lg px-3 py-2.5 space-y-1">
+                          {hasFeeItems ? (
+                            <>
+                              {boxFee > 0 && (
+                                <div className="flex justify-between items-center text-sm">
+                                  <span className="text-yellow-700">外箱费用</span>
+                                  <span className="font-medium text-yellow-800">¥{boxFee.toLocaleString()}</span>
+                                </div>
+                              )}
+                              {shippingFee > 0 && (
+                                <div className="flex justify-between items-center text-sm">
+                                  <span className="text-yellow-700">国际运费</span>
+                                  <span className="font-medium text-yellow-800">¥{shippingFee.toLocaleString()}</span>
+                                </div>
+                              )}
+                              {packingFee > 0 && (
+                                <div className="flex justify-between items-center text-sm">
+                                  <span className="text-yellow-700">捆包作业服务费</span>
+                                  <span className="font-medium text-yellow-800">¥{packingFee.toLocaleString()}</span>
+                                </div>
+                              )}
+                              <div className="flex justify-between items-center text-sm pt-1 border-t border-yellow-200 mt-1">
+                                <span className="font-semibold text-yellow-800">应付合计</span>
+                                <span className="font-bold text-orange-600">¥{grandTotal.toLocaleString()} <span className="text-xs font-normal">JPY</span></span>
+                              </div>
+                            </>
+                          ) : (
+                            <p className="text-sm font-medium text-yellow-800">
+                              运费：<span className="text-lg font-bold text-orange-600">¥{shippingFee.toLocaleString()}</span>
+                              <span className="text-xs text-yellow-600 ml-1">(JPY)</span>
+                            </p>
+                          )}
                         </div>
                       );
                     })()}
@@ -1753,9 +1805,17 @@ export default function ShippingPoolDetailModal({ pool: initialPool, isAdmin, cu
                         const supplements = pool.supplement_amount_per_user || [];
                         const mySupplement = supplements.find(s => s.user_email === currentUser?.email);
                         if (mySupplement) return Math.round(mySupplement.supplement_jpy || 0);
-                        const myBreakdown = (pool.fee_breakdown_per_user || []).find(b => b.user_email === currentUser?.email);
-                        if (myBreakdown) return Math.ceil((myBreakdown.total_jpy || 0) / 10) * 10;
-                        return Math.round(pool.shipping_fee_jpy || 0);
+                        const feeBreakdowns = pool.fee_breakdown_per_user || [];
+                        const myBreakdown = currentUser?.email
+                          ? feeBreakdowns.find(b => b.user_email === currentUser?.email)
+                          : null;
+                        if (myBreakdown) return Math.round(myBreakdown.total_jpy || 0);
+                        // Fallback: no matched breakdown, use first entry's total or pool fee fields
+                        if (feeBreakdowns.length > 0) return Math.round(feeBreakdowns[0].total_jpy || 0);
+                        const boxFee = Math.round(parseFloat(pool.box_price_jpy) || 0);
+                        const shippingFee = Math.round(parseFloat(pool.shipping_fee_jpy) || 0);
+                        const packingFee = Math.round(parseFloat(pool.packing_fee_jpy) || 0);
+                        return boxFee + shippingFee + packingFee;
                       })();
                       const currency = selectedMethodMeta.payment_currency;
                       const CURRENCY_SYMBOLS = { CNY: "¥", USD: "$", TWD: "NT$", HKD: "HK$", EUR: "€", SGD: "S$" };

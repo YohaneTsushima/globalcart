@@ -399,7 +399,8 @@ export default function OrderDetailDrawer({ order, currentUser, initialUserPrefe
                 onClick={async () => {
                   setLoadingPool(true);
                   const pools = await fetchShippingPools();
-                  const found = pools.find(p => (p.order_ids || []).includes(order.id));
+                  const orderId = String(order.id);
+                  const found = pools.find(p => (p.order_ids || []).some(id => String(id) === orderId));
                   setEditPool(found || null);
                   setLoadingPool(false);
                 }}>
@@ -431,7 +432,8 @@ export default function OrderDetailDrawer({ order, currentUser, initialUserPrefe
                 onClick={async () => {
                   setLoadingPool(true);
                   const pools = await fetchShippingPools();
-                  const found = pools.find(p => (p.order_ids || []).includes(order.id));
+                  const orderId = String(order.id);
+                  const found = pools.find(p => (p.order_ids || []).some(id => String(id) === orderId));
                   setPayPool(found || null);
                   setLoadingPool(false);
                 }}>

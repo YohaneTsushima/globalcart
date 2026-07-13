@@ -385,7 +385,7 @@ function AddToStagingModal({ allOrders, officialPools, currentUser, stagedOrderI
 
   const eligibleOrders = allOrders.filter(o => {
     if (["shipped", "delivered", "cancelled"].includes(o.order_status)) return false;
-    const alreadyInPool = officialPools.some(p => !p.is_pending_pool && (p.order_ids || []).includes(o.id));
+    const alreadyInPool = officialPools.some(p => !p.is_pending_pool && (p.order_ids || []).some(id => String(id) === String(o.id)));
     if (alreadyInPool) return false;
     if (stagedOrderIds.has(o.id)) return false;
     return true;
@@ -705,7 +705,7 @@ function StagingColumn({ allOrders, officialPools, pendingPools, currentUser, is
 
   const handleRemove = async (order) => {
     // If order is in a pending pool, remove from that pool first
-    const pendingPool = pendingPools.find(p => (p.order_ids || []).includes(order.id));
+    const pendingPool = pendingPools.find(p => (p.order_ids || []).some(id => String(id) === String(order.id)));
     if (pendingPool) {
       await base44.functions.invoke('updateTenantOrder', {
         order_id: order.id,

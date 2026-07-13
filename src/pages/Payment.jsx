@@ -225,7 +225,7 @@ export default function Payment() {
     };
 
     const res = await base44.functions.invoke('alipay/pay', payParam);
-    debugger
+    
     if(!res?.data?.success) {
       toast.error(`下单失败: ${res?.data?.result}`);
       setGeneratingLink(false);

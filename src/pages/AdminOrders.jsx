@@ -315,7 +315,10 @@ export default function AdminOrders() {
   };
 
   // Find the shipping pool for a notified_shipment order
-  const getOrderPool = (order) => shippingPools.find(p => (p.order_ids || []).includes(order.id)) || null;
+  const getOrderPool = (order) => {
+    const orderId = String(order.id);
+    return shippingPools.find(p => (p.order_ids || []).some(id => String(id) === orderId)) || null;
+  };
 
   const handleOpenPool = async (pool) => {
     const isOfficialPool = pool.is_admin_created === true;

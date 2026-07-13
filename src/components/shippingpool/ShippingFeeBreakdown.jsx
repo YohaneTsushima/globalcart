@@ -56,7 +56,7 @@ export default function ShippingFeeBreakdown({ breakdowns, isConsolidation, curr
               {currentUserEmail ? "您需支付" : "应付合计"}
             </span>
             <span className="text-base font-bold text-orange-600">
-              ¥{(Math.ceil((b.total_jpy || 0) / 10) * 10).toLocaleString()} <span className="text-xs font-normal">JPY</span>
+              ¥{Math.round(b.total_jpy || 0).toLocaleString()} <span className="text-xs font-normal">JPY</span>
             </span>
           </div>
         </div>

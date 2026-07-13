@@ -9,7 +9,7 @@
  */
 import { useState, useMemo, useEffect, useRef } from "react";
 import { base44 } from "@/api/base44Client";
-import { shippingPoolApi, updateOrder } from "@/lib/tenantApi";
+import { shippingPoolApi } from "@/lib/tenantApi";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -375,69 +375,49 @@ export default function AdminShippingInfoPanel({
   const handleSetAwaitingPayment = async () => {
     if (!shippingFeeJpy) return;
     setSaving(true);
-    const payload = { ...buildUpdatePayload(), status: "awaiting_payment", payment_status: "unpaid" };
-    await shippingPoolApi.update(pool.id, payload);
-    // Update all orders in this pool to notified_shipment_fee_pending
-    await Promise.all(
-      (pool.order_ids || []).map(id =>
-        updateOrder(id, { order_status: "notified_shipment_fee_pending" })
-      )
-    );
-    setPool(p => ({ ...p, ...payload }));
-    setSaving(false);
-    onPoolUpdated?.({ ...pool, ...payload });
+    const payload = { ...buildUpdatePayload(), status: "awaiting_payment", payment_status: "unpaid", order_status: "notified_shipment_fee_pending" };
+    await updatePool(payload, { setLoading: setSaving });
   };
 
-  const handleSaveInfoOnly = async () => {
-    setSaving(true);
+  const updatePool = async (payload, { setLoading, successMsg } = {}) => {
     try {
-      const payload = buildUpdatePayload();
       await shippingPoolApi.update(pool.id, payload);
       setPool(p => ({ ...p, ...payload }));
       onPoolUpdated?.({ ...pool, ...payload });
-      toast.success("保存成功");
+      if (successMsg) toast.success(successMsg);
     } catch (err) {
-      console.error("保存失败:", err);
-      toast.error("保存失败：" + (err?.message || "未知错误"));
+      console.error("操作失败:", err);
+      toast.error("操作失败：" + (err?.message || "未知错误"));
     } finally {
-      setSaving(false);
+      setLoading?.(false);
     }
+  };
+
+  const handleSaveInfoOnly = async () => {
+    debugger
+    setSaving(true);
+    await updatePool(buildUpdatePayload(), { setLoading: setSaving, successMsg: "保存成功" });
   };
 
   const handleConfirmPayment = async () => {
     setConfirmingSaving(true);
-    try {
-      // Mark all per-user payments as paid if any exist
-      const existingPerUserPayments = pool.per_user_payments || [];
-      const updatedPerUserPayments = existingPerUserPayments.map(p => ({
-        ...p,
-        payment_status: "paid",
-        confirmed_at: p.confirmed_at || new Date().toISOString(),
-      }));
-      const payload = {
-        ...buildUpdatePayload(),
-        status: "ready_to_ship",
-        payment_status: "paid",
-        admin_confirmed_payment: true,
-        supplement_amount_per_user: [], // clear supplement after payment confirmed
-        per_user_payments: updatedPerUserPayments,
-      };
-      await shippingPoolApi.update(pool.id, payload);
-      // Update all orders in this pool to notified_shipment_fee_paid
-      await Promise.all(
-        (pool.order_ids || []).map(id =>
-          updateOrder(id, { order_status: "notified_shipment_fee_paid", order_balance_settled: true })
-        )
-      );
-      setPool(p => ({ ...p, ...payload }));
-      onPoolUpdated?.({ ...pool, ...payload });
-      toast.success("收款确认成功");
-    } catch (err) {
-      console.error("确认收款失败:", err);
-      toast.error("确认收款失败：" + (err?.message || "未知错误"));
-    } finally {
-      setConfirmingSaving(false);
-    }
+    const existingPerUserPayments = pool.per_user_payments || [];
+    const updatedPerUserPayments = existingPerUserPayments.map(p => ({
+      ...p,
+      payment_status: "paid",
+      confirmed_at: p.confirmed_at || new Date().toISOString(),
+    }));
+    const payload = {
+      ...buildUpdatePayload(),
+      status: "ready_to_ship",
+      payment_status: "paid",
+      admin_confirmed_payment: true,
+      supplement_amount_per_user: [],
+      per_user_payments: updatedPerUserPayments,
+      order_status: "notified_shipment_fee_paid",
+      order_balance_settled: true,
+    };
+    await updatePool(payload, { setLoading: setConfirmingSaving, successMsg: "收款确认成功" });
   };
 
   // Confirm payment and ship directly (for allowShipWithoutPayment setting)
@@ -457,17 +437,10 @@ export default function AdminShippingInfoPanel({
       admin_confirmed_payment: true,
       supplement_amount_per_user: [],
       per_user_payments: updatedPerUserPayments,
+      order_status: "shipped",
+      order_balance_settled: true,
     };
-    await shippingPoolApi.update(pool.id, payload);
-    // Update all orders in this pool to shipped (payment confirmed → balance settled)
-    await Promise.all(
-      (pool.order_ids || []).map(id =>
-        updateOrder(id, { order_status: "shipped", order_balance_settled: true })
-      )
-    );
-    setPool(p => ({ ...p, ...payload }));
-    setConfirmingSaving(false);
-    onPoolUpdated?.({ ...pool, ...payload });
+    await updatePool(payload, { setLoading: setConfirmingSaving });
   };
 
   // 发货后补付：确认收款但不改变发货/订单状态（用于跳过付款发货的池子）
@@ -486,15 +459,9 @@ export default function AdminShippingInfoPanel({
       // 后付款标记：用于个人档案与财务报表的后付款次数统计
       post_shipment_paid: true,
       post_shipment_paid_at: new Date().toISOString(),
+      order_balance_settled: true,
     };
-    await shippingPoolApi.update(pool.id, payload);
-    // 标记订单尾款已结算，但不改变订单状态
-    await Promise.all(
-      (pool.order_ids || []).map(id => updateOrder(id, { order_balance_settled: true }))
-    );
-    setPool(p => ({ ...p, ...payload }));
-    setConfirmingSaving(false);
-    onPoolUpdated?.({ ...pool, ...payload });
+    await updatePool(payload, { setLoading: setConfirmingSaving });
   };
 
   // Notify user of fee update (for awaiting_payment pools)
@@ -511,14 +478,10 @@ export default function AdminShippingInfoPanel({
     };
     const updatedMessages = [...(pool.messages || []), sysMsg];
     const updatedUnread = [...new Set([...(pool.unread_roles || []), "user"])];
-    await shippingPoolApi.update(pool.id, {
-      ...payload,
-      messages: updatedMessages,
-      unread_roles: updatedUnread,
-    });
-    setPool(p => ({ ...p, ...payload, messages: updatedMessages, unread_roles: updatedUnread }));
-    setSaving(false);
-    onPoolUpdated?.({ ...pool, ...payload, messages: updatedMessages, unread_roles: updatedUnread });
+    await updatePool(
+      { ...payload, messages: updatedMessages, unread_roles: updatedUnread },
+      { setLoading: setSaving }
+    );
   };
 
   // Notify user of fee update for already-paid pools (ready_to_ship or awaiting_payment_confirmation)
@@ -531,17 +494,20 @@ export default function AdminShippingInfoPanel({
 
     let newStatus = pool.status;
     let newPaymentStatus = pool.payment_status;
+    let newOrderStatus = "";
     let msgContent = "";
 
     if (diff > 0) {
       // User underpaid — require additional payment (diff only)
       newStatus = "awaiting_payment";
       newPaymentStatus = "unpaid";
+      newOrderStatus = "notified_shipment_fee_pending";
       msgContent = `管理员已更新运费，新合计金额为 ¥${newTotalJpy.toLocaleString()} JPY，比原付金额多 ¥${diff.toLocaleString()} JPY，请补交差额。`;
     } else {
       // User overpaid — proceed to ready_to_ship, admin will refund via message
       newStatus = "ready_to_ship";
       newPaymentStatus = "paid";
+      newOrderStatus = "notified_shipment_fee_paid";
       msgContent = `管理员已调整运费，新合计金额为 ¥${newTotalJpy.toLocaleString()} JPY，比原付金额少 ¥${Math.abs(diff).toLocaleString()} JPY，多余款项将另行退还，请留意管理员留言。`;
     }
 
@@ -578,24 +544,10 @@ export default function AdminShippingInfoPanel({
       supplement_amount_per_user: supplementAmountPerUser,
       messages: updatedMessages,
       unread_roles: updatedUnread,
+      order_status: newOrderStatus,
+      ...(diff <= 0 ? { order_balance_settled: true } : {}),
     };
-    await shippingPoolApi.update(pool.id, fullPayload);
-    if (diff > 0) {
-      await Promise.all(
-        (pool.order_ids || []).map(id =>
-          updateOrder(id, { order_status: "notified_shipment_fee_pending" })
-        )
-      );
-    } else {
-      await Promise.all(
-        (pool.order_ids || []).map(id =>
-          updateOrder(id, { order_status: "notified_shipment_fee_paid", order_balance_settled: true })
-        )
-      );
-    }
-    setPool(p => ({ ...p, ...fullPayload }));
-    setSaving(false);
-    onPoolUpdated?.({ ...pool, ...fullPayload });
+    await updatePool(fullPayload, { setLoading: setSaving });
   };
 
   // Notify user of supplement AND immediately move pool to ready_to_ship
@@ -640,16 +592,9 @@ export default function AdminShippingInfoPanel({
       supplement_amount_per_user: supplementAmountPerUser,
       messages: updatedMessages,
       unread_roles: updatedUnread,
+      order_status: "notified_shipment_fee_pending",
     };
-    await shippingPoolApi.update(pool.id, fullPayload);
-    await Promise.all(
-      (pool.order_ids || []).map(id =>
-        updateOrder(id, { order_status: "notified_shipment_fee_pending" })
-      )
-    );
-    setPool(p => ({ ...p, ...fullPayload }));
-    setSaving(false);
-    onPoolUpdated?.({ ...pool, ...fullPayload });
+    await updatePool(fullPayload, { setLoading: setSaving });
   };
 
   const handleConfirmPaymentAndShip = async () => {
@@ -670,21 +615,11 @@ export default function AdminShippingInfoPanel({
       supplement_amount_per_user: [],
       per_user_payments: updatedPerUserPayments,
       shipped_date: shippedDate,
+      tracking_number: trackingNumber,
+      order_status: "shipped",
+      order_balance_settled: true,
     };
-    await shippingPoolApi.update(pool.id, payload);
-    await Promise.all(
-      (pool.order_ids || []).map(id =>
-        updateOrder(id, {
-          order_status: "shipped",
-          tracking_number: trackingNumber,
-          shipped_date: shippedDate,
-          order_balance_settled: true,
-        })
-      )
-    );
-    setPool(p => ({ ...p, ...payload }));
-    setConfirmingSaving(false);
-    onPoolUpdated?.({ ...pool, ...payload });
+    await updatePool(payload, { setLoading: setConfirmingSaving });
   };
 
   const handleShip = async () => {
@@ -694,22 +629,11 @@ export default function AdminShippingInfoPanel({
       ...buildUpdatePayload(),
       status: "shipped",
       shipped_date: new Date().toISOString().split("T")[0],
+      tracking_number: trackingNumber,
+      order_status: "shipped",
+      order_balance_settled: pool.payment_status === "paid",
     };
-    await shippingPoolApi.update(pool.id, payload);
-    await Promise.all(
-      (pool.order_ids || []).map(id =>
-        updateOrder(id, {
-          order_status: "shipped",
-          tracking_number: trackingNumber,
-          shipped_date: payload.shipped_date,
-          // Step 2 ship: settle balance only if pool payment was confirmed
-          ...(pool.payment_status === "paid" ? { order_balance_settled: true } : {}),
-        })
-      )
-    );
-    setPool(p => ({ ...p, ...payload }));
-    setSaving(false);
-    onPoolUpdated?.({ ...pool, ...payload });
+    await updatePool(payload, { setLoading: setSaving });
   };
 
   const currentStatus = pool.status;
@@ -1114,17 +1038,11 @@ export default function AdminShippingInfoPanel({
                                         p.user_email === up.user_email ? { ...p, payment_status: "paid", confirmed_at: new Date().toISOString() } : p
                                       );
                                       const allPaid = updatedPayments.every(p => p.payment_status === "paid");
-                                      await shippingPoolApi.update(pool.id, {
+                                      const payload = {
                                         per_user_payments: updatedPayments,
                                         ...(allPaid ? { payment_status: "paid", admin_confirmed_payment: true } : {}),
-                                      });
-                                      setPool(p => ({
-                                        ...p,
-                                        per_user_payments: updatedPayments,
-                                        ...(allPaid ? { payment_status: "paid", admin_confirmed_payment: true } : {}),
-                                      }));
-                                      onPoolUpdated?.({ ...pool, per_user_payments: updatedPayments, ...(allPaid ? { payment_status: "paid", admin_confirmed_payment: true } : {}) });
-                                      setConfirmingSaving(false);
+                                      };
+                                      await updatePool(payload, { setLoading: setConfirmingSaving });
                                     }}>
                                     <CheckCircle className="w-3 h-3 mr-1" />确认此用户已付款
                                   </Button>
@@ -1161,12 +1079,8 @@ export default function AdminShippingInfoPanel({
                             <Button size="sm" className="bg-lime-600 hover:bg-lime-700 w-full"
                               onClick={async () => {
                                 setConfirmingSaving(true);
-                                const payload = { status: "ready_to_ship", payment_status: "unpaid", admin_confirmed_payment: false };
-                                await shippingPoolApi.update(pool.id, payload);
-                                await Promise.all((pool.order_ids || []).map(id => updateOrder(id, { order_status: "ready_to_ship" })));
-                                setPool(p => ({ ...p, ...payload }));
-                                setConfirmingSaving(false);
-                                onPoolUpdated?.({ ...pool, ...payload });
+                                const payload = { status: "ready_to_ship", payment_status: "unpaid", admin_confirmed_payment: false, order_status: "ready_to_ship" };
+                                await updatePool(payload, { setLoading: setConfirmingSaving });
                               }}
                               disabled={confirmingSaving}>
                               <CheckCircle className="w-3.5 h-3.5 mr-1.5" />
@@ -1175,13 +1089,9 @@ export default function AdminShippingInfoPanel({
                             <Button size="sm" className="bg-red-600 hover:bg-red-700 w-full"
                               onClick={async () => {
                                 setConfirmingSaving(true);
-                                const payload = { status: "shipped", payment_status: "unpaid", admin_confirmed_payment: false, shipped_date: new Date().toISOString().split("T")[0] };
+                                const payload = { status: "shipped", payment_status: "unpaid", admin_confirmed_payment: false, shipped_date: new Date().toISOString().split("T")[0], order_status: "shipped" };
                                 if (trackingNumber) payload.tracking_number = trackingNumber;
-                                await shippingPoolApi.update(pool.id, payload);
-                                await Promise.all((pool.order_ids || []).map(id => updateOrder(id, { order_status: "shipped" })));
-                                setPool(p => ({ ...p, ...payload }));
-                                setConfirmingSaving(false);
-                                onPoolUpdated?.({ ...pool, ...payload });
+                                await updatePool(payload, { setLoading: setConfirmingSaving });
                               }}
                               disabled={confirmingSaving || !trackingNumber.trim()}
                               title={!trackingNumber.trim() ? "需填写运单号" : ""}>
