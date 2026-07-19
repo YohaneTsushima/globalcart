@@ -27,6 +27,9 @@ import OrderDetailPanel from "@/components/shippingpool/OrderDetailPanel";
 import TransitShippedPanel from "@/components/shippingpool/TransitShippedPanel";
 import UserGroupHeader from "@/components/shippingpool/UserGroupHeader";
 import MessageThread from "@/components/common/MessageThread";
+import { useCurrentUser } from "@/hooks/useCurrentUser";
+import { toast } from "sonner";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 
 import { STATUS_CONFIG, METHOD_LABELS } from "./shippingFormConstants";
 import AddressForm, { EMPTY_ADDRESS_FORM, serializeAddressToText, isAddressFormValid } from "@/components/common/AddressForm";
@@ -67,6 +70,8 @@ export default function ShippingPoolDetailModal({ pool: initialPool, isAdmin, cu
   const [selectedMethodMeta, setSelectedMethodMeta] = useState(null);
   const [generatingAlipay, setGeneratingAlipay] = useState(false);
   const [alipayUrl, setAlipayUrl] = useState(null);
+  const [showAlipayConfirm, setShowAlipayConfirm] = useState(false);
+  const [alipayFormData, setAlipayFormData] = useState(null);
   const [uploadingProof, setUploadingProof] = useState(false);
   const [confirmingDelivery, setConfirmingDelivery] = useState(false);
   const [exchangeRates, setExchangeRates] = useState(null);
@@ -110,6 +115,10 @@ export default function ShippingPoolDetailModal({ pool: initialPool, isAdmin, cu
   const [convertSavedAddresses, setConvertSavedAddresses] = useState([]);
   const [convertSaveAddress, setConvertSaveAddress] = useState(false);
   const [submittingConvert, setSubmittingConvert] = useState(false);
+
+  const { user } = useCurrentUser();
+  
+  const subject = `${user?.displayName} - ${pool?.title}`;
 
   const openConvertToOther = async () => {
     setShowConvertToOther(true);
@@ -415,23 +424,53 @@ export default function ShippingPoolDetailModal({ pool: initialPool, isAdmin, cu
   // User: generate Alipay payment link for shipping fee
   const handleGenerateAlipay = async () => {
     setGeneratingAlipay(true);
-    const res = await base44.functions.invoke("generateAlipayShippingPoolPayment", {
-      poolId: pool.id
+    const res = await base44.functions.invoke("alipay/shipping-pool/pay", {
+      pool_id: pool.id,
+      subject: subject,
+      payment_type: "ship",
     });
-    const url = res.data?.paymentUrl;
-    setAlipayUrl(url);
-    setGeneratingAlipay(false);
-    if (url) {
-      window.open(url, "_blank");
-      // 已发货的池子补付时不改变发货状态
-      const keepStatus = ["ready_to_ship", "shipped", "delivered"].includes(pool.status);
-      await shippingPoolApi.update(pool.id, {
-        payment_status: "awaiting_confirmation",
-        payment_method: "alipay",
-        ...(keepStatus ? {} : { status: "awaiting_payment_confirmation" }),
-      });
-      setPool((p) => ({ ...p, payment_status: "awaiting_confirmation", payment_method: "alipay", ...(keepStatus ? {} : { status: "awaiting_payment_confirmation" }) }));
+
+    if(!res?.data?.success) {
+      toast.error(`下单失败: ${res?.data?.result}`);
+      setGeneratingAlipay(false);
+      return;
     }
+
+    const formData = res?.data?.form;
+    setGeneratingAlipay(false);
+
+    if (formData && typeof formData === 'string') {
+      setAlipayFormData(formData);
+      setShowAlipayConfirm(true);
+    }
+  };
+
+  const submitToAlipay = () => {
+    if (!alipayFormData) return;
+
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(alipayFormData, 'text/html');
+    const form = doc.querySelector('form');
+    if (!form) return;
+
+    const realForm = document.createElement('form');
+    realForm.method = form.method || 'POST';
+    realForm.action = form.action;
+    realForm.target = '_blank';
+
+    form.querySelectorAll('input').forEach(el => {
+      const field = document.createElement('input');
+      field.type = 'hidden';
+      field.name = el.name;
+      field.value = el.value;
+      realForm.appendChild(field);
+    });
+
+    document.body.appendChild(realForm);
+    realForm.submit();
+    realForm.remove();
+    setShowAlipayConfirm(false);
+    setAlipayFormData(null);
   };
 
   // User: upload payment proof (non-alipay)
@@ -1996,6 +2035,21 @@ export default function ShippingPoolDetailModal({ pool: initialPool, isAdmin, cu
             </div>
           </div>
         }
+
+        <AlertDialog open={showAlipayConfirm} onOpenChange={setShowAlipayConfirm}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>确认支付</AlertDialogTitle>
+              <AlertDialogDescription>
+                点击下方按钮将跳转到支付宝完成付款
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel onClick={() => { setShowAlipayConfirm(false); setAlipayFormData(null); }}>取消</AlertDialogCancel>
+              <AlertDialogAction onClick={submitToAlipay}>前往支付宝付款</AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     </div>);
 

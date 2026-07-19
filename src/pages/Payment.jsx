@@ -15,6 +15,7 @@ import { t } from "@/lib/i18n";
 import PaymentMethodSelector from "@/components/common/PaymentMethodSelector";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { toast } from "sonner";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 
 const IS_DEV_MOCK = import.meta.env.VITE_DEV_MOCK === 'true';
 
@@ -84,6 +85,8 @@ export default function Payment() {
   const [copied, setCopied] = useState(false);
   const [loading, setLoading] = useState(true);
   const [generatingLink, setGeneratingLink] = useState(false);
+  const [showAlipayConfirm, setShowAlipayConfirm] = useState(false);
+  const [alipayFormData, setAlipayFormData] = useState(null);
 
   const method = selectedMethod || order?.payment_method || "alipay";
   // Server-computed payment data (avoids client-side re-derivation bugs)
@@ -93,7 +96,6 @@ export default function Payment() {
   const { user } = useCurrentUser();
 
   const subject = `${user?.displayName} - ${order?.product_name}`;
-  console.log(subject)
 
   const loadPaymentData = (payMethodKey = null) => {
     if (!orderId) {
@@ -232,25 +234,41 @@ export default function Payment() {
       return;
     }
     
-    const payWindow = window.open('', '_blank');
     const formData = res?.data?.form;
     setGeneratingLink(false);
 
-    // 后端返回 HTML 表单，在新窗口渲染并自动提交到支付宝
-    if (payWindow && formData && typeof formData === 'string') {
-      payWindow.document.write(formData);
-      payWindow.document.close();
+    if (formData && typeof formData === 'string') {
+      setAlipayFormData(formData);
+      setShowAlipayConfirm(true);
     }
+  };
 
-    // 同时开始轮询（在另一个页面或定时器）
-    // const timer = setInterval(async () => {
-    //   const queryRes = await base44.functions.invoke('alipay/query', { outTradeNo: res?.data?.outTradeNo });
-    //   if (queryRes.data === 'TRADE_SUCCESS') {
-    //     clearInterval(timer);
-    //     localStorage.removeItem('pendingOrder');
-    //     navigate(`/${locale}/MyOrders`);
-    //   }
-    // }, 5000);
+  const submitToAlipay = () => {
+    if (!alipayFormData) return;
+
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(alipayFormData, 'text/html');
+    const form = doc.querySelector('form');
+    if (!form) return;
+
+    const realForm = document.createElement('form');
+    realForm.method = form.method || 'POST';
+    realForm.action = form.action;
+    realForm.target = '_blank';
+
+    form.querySelectorAll('input').forEach(el => {
+      const field = document.createElement('input');
+      field.type = 'hidden';
+      field.name = el.name;
+      field.value = el.value;
+      realForm.appendChild(field);
+    });
+
+    document.body.appendChild(realForm);
+    realForm.submit();
+    realForm.remove();
+    setShowAlipayConfirm(false);
+    setAlipayFormData(null);
   };
 
   const handleCopy = (text) => {
@@ -677,6 +695,21 @@ export default function Payment() {
           </Alert>
         )
       )}
+
+      <AlertDialog open={showAlipayConfirm} onOpenChange={setShowAlipayConfirm}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>确认支付</AlertDialogTitle>
+            <AlertDialogDescription>
+              点击下方按钮将跳转到支付宝完成付款
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => { setShowAlipayConfirm(false); setAlipayFormData(null); }}>取消</AlertDialogCancel>
+            <AlertDialogAction onClick={submitToAlipay}>前往支付宝付款</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
