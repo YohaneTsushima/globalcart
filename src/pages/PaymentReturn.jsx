@@ -22,7 +22,7 @@ export default function PaymentReturn() {
     //     window.opener.postMessage({ type: "alipay_payment_done", tradeNo: outTradeNo }, "*");
     //   } catch (_) {}
     // }
-
+debugger
     // 确认支付状态
     if (tradeStatus === "TRADE_SUCCESS" || tradeStatus === "TRADE_FINISHED") {
       setStatus("success");
@@ -31,6 +31,7 @@ export default function PaymentReturn() {
       setStatus("fail");
       setMessage("支付未完成");
     } else {
+      debugger
       if (outTradeNo) {
         base44.functions.invoke("alipay/query", { outTradeNo })
           .then((r) => {
@@ -55,6 +56,7 @@ export default function PaymentReturn() {
   }, []);
 
   const handleGo = (target) => {
+    debugger
     const url = target === "home"
       ? `/${locale}/home`
       : createPageUrl("MyOrders");

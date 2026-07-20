@@ -423,11 +423,55 @@ export default function ShippingPoolDetailModal({ pool: initialPool, isAdmin, cu
 
   // User: generate Alipay payment link for shipping fee
   const handleGenerateAlipay = async () => {
+    const method = paymentMethodRef.current;
+    const payCurrency = selectedMethodMeta?.payment_currency || "JPY";
+
+    // Compute user's fee in JPY (reuse the same logic from currency conversion display)
+    const amountJpy = (() => {
+      const supplements = pool.supplement_amount_per_user || [];
+      const mySupplement = supplements.find(s => s.user_email === currentUser?.email);
+      if (mySupplement) return Math.round(mySupplement.supplement_jpy || 0);
+      const feeBreakdowns = pool.fee_breakdown_per_user || [];
+      const myBreakdown = currentUser?.email
+        ? feeBreakdowns.find(b => b.user_email === currentUser?.email)
+        : null;
+      if (myBreakdown) return Math.round(myBreakdown.total_jpy || 0);
+      if (feeBreakdowns.length > 0) return Math.round(feeBreakdowns[0].total_jpy || 0);
+      const boxFee = Math.round(parseFloat(pool.box_price_jpy) || 0);
+      const shippingFee = Math.round(parseFloat(pool.shipping_fee_jpy) || 0);
+      const packingFee = Math.round(parseFloat(pool.packing_fee_jpy) || 0);
+      return boxFee + shippingFee + packingFee;
+    })();
+
+    // Currency conversion
+    let amountToCharge = amountJpy;
+    let currencyToSend = "JPY";
+    if (payCurrency !== "JPY" && exchangeRates) {
+      const rate = exchangeRates[`jpy_${payCurrency.toLowerCase()}`];
+      if (rate) {
+        amountToCharge = Math.round(amountJpy * rate * 100) / 100;
+        currencyToSend = payCurrency;
+      }
+    }
+
+    const newMethod = {
+      payable_amount: amountToCharge,
+      method_name: method,
+      payment_currency: selectedMethodMeta?.payment_currency,
+      payment_currency_type: selectedMethodMeta?.payment_currency,
+      prepayment_rate_jpy_cny: exchangeRates?.[`jpy_${payCurrency.toLowerCase()}`],
+      provider_key: method
+    };
+
     setGeneratingAlipay(true);
+    
     const res = await base44.functions.invoke("alipay/shipping-pool/pay", {
       pool_id: pool.id,
+      user_id: user.id,
       subject: subject,
       payment_type: "ship",
+      paid_currency: currencyToSend,
+      payment_method: newMethod,
     });
 
     if(!res?.data?.success) {
