@@ -18,6 +18,16 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { CreditCard, Truck, CheckCircle, ExternalLink, X, MapPin, Copy } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import CustomsDeclarationDisplay from "@/components/shippingpool/CustomsDeclarationDisplay";
 import { getCountry, getCountryZone } from "@/lib/countries";
 import { calcFeeBreakdownPerUser } from "@/lib/shippingFeeCalc";
@@ -181,6 +191,8 @@ export default function AdminShippingInfoPanel({
   const [saving, setSaving] = useState(false);
   const [confirmingSaving, setConfirmingSaving] = useState(false);
   const [exchangeRates, setExchangeRates] = useState(exchangeRatesProp);
+  const [confirmPaymentDialogOpen, setConfirmPaymentDialogOpen] = useState(false);
+  const [confirmPaymentAndShipDialogOpen, setConfirmPaymentAndShipDialogOpen] = useState(false);
 
   // Sync exchange rates from parent prop
   useEffect(() => {
@@ -381,6 +393,7 @@ export default function AdminShippingInfoPanel({
 
   const updatePool = async (payload, { setLoading, successMsg } = {}) => {
     try {
+      debugger
       await shippingPoolApi.update(pool.id, payload);
       setPool(p => ({ ...p, ...payload }));
       onPoolUpdated?.({ ...pool, ...payload });
@@ -1102,13 +1115,13 @@ export default function AdminShippingInfoPanel({
                         ) : (
                           <>
                             <Button size="sm" className="bg-green-600 hover:bg-green-700 w-full"
-                              onClick={handleConfirmPayment}
+                              onClick={() => setConfirmPaymentDialogOpen(true)}
                               disabled={confirmingSaving || !paymentOk}>
                               <CheckCircle className="w-3.5 h-3.5 mr-1.5" />
                               {confirmingSaving ? "确认中..." : "全部确认收款，进入待发货"}
                             </Button>
                             <Button size="sm" className="bg-blue-600 hover:bg-blue-700 w-full"
-                              onClick={handleConfirmPaymentAndShip}
+                              onClick={() => setConfirmPaymentAndShipDialogOpen(true)}
                               disabled={confirmingSaving || !canShipDirectly}
                               title={!trackingNumber ? "需填写运单号" : !paymentOk ? "需全员付款" : ""}>
                               <Truck className="w-3.5 h-3.5 mr-1.5" />
@@ -1250,6 +1263,36 @@ export default function AdminShippingInfoPanel({
           </div>
         </div>
       )}
+
+      <AlertDialog open={confirmPaymentDialogOpen} onOpenChange={setConfirmPaymentDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>确认收款</AlertDialogTitle>
+            <AlertDialogDescription>
+              确认已收到全部款项，将发货池状态变更为「待发货」？
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogAction onClick={handleConfirmPayment}>确认</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={confirmPaymentAndShipDialogOpen} onOpenChange={setConfirmPaymentAndShipDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>确认收款并发货</AlertDialogTitle>
+            <AlertDialogDescription>
+              确认已收到全部款项并直接进入「已发货」状态？
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogAction onClick={handleConfirmPaymentAndShip}>确认</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

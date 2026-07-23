@@ -1982,7 +1982,6 @@ export default function ShippingPoolDetailModal({ pool: initialPool, isAdmin, cu
               currentUser={currentUser}
               isAdmin={isAdmin}
               userProfileMap={tenantUserMap}
-              onMessageSent={onUpdated}
               permissionKey="shipping"
             />
           </div>
