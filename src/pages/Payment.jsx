@@ -15,7 +15,7 @@ import { t } from "@/lib/i18n";
 import PaymentMethodSelector from "@/components/common/PaymentMethodSelector";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { toast } from "sonner";
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import ConfirmDialog from "@/components/common/ConfirmDialog";
 
 const IS_DEV_MOCK = import.meta.env.VITE_DEV_MOCK === 'true';
 
@@ -696,20 +696,15 @@ export default function Payment() {
         )
       )}
 
-      <AlertDialog open={showAlipayConfirm} onOpenChange={setShowAlipayConfirm}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>确认支付</AlertDialogTitle>
-            <AlertDialogDescription>
-              点击下方按钮将跳转到支付宝完成付款
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => { setShowAlipayConfirm(false); setAlipayFormData(null); }}>取消</AlertDialogCancel>
-            <AlertDialogAction onClick={submitToAlipay}>前往支付宝付款</AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <ConfirmDialog
+        open={showAlipayConfirm}
+        onOpenChange={setShowAlipayConfirm}
+        title="确认支付"
+        description="点击下方按钮将跳转到支付宝完成付款"
+        confirmText="前往支付宝付款"
+        onConfirm={submitToAlipay}
+        onCancel={() => setAlipayFormData(null)}
+      />
     </div>
   );
 }

@@ -24,6 +24,7 @@ import ShippingEditModal from "@/components/shippingpool/ShippingEditModal";
 import ShippingPoolDetailModal from "@/components/shippingpool/ShippingPoolDetailModal";
 import { shippingPoolApi } from "@/lib/tenantApi";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import ConfirmDialog from "@/components/common/ConfirmDialog";
 import { Ticket } from "lucide-react";
 import MyTicketOrders from "@/components/tickets/MyTicketOrders";
 
@@ -485,6 +486,8 @@ export default function MyOrders() {
   const { pageSize, setPageSize, currentPage, setCurrentPage, resetPage, PAGE_SIZES } = usePageSize("my_orders_page_size", 20);
   const [pageData, setPageData] = useState({});
   const [pendingEditRequests, setPendingEditRequests] = useState([]);
+  const [archiveTargetOrder, setArchiveTargetOrder] = useState(null);
+  const [deliverTargetOrder, setDeliverTargetOrder] = useState(null);
 
   const fetchingRef = useRef(false);
   const fetchOrders = async (u) => {
@@ -617,27 +620,26 @@ export default function MyOrders() {
     else { setSortKey(key); setSortDir("asc"); }
   };
 
-  const handleConfirmDelivered = async (order) => {;
-    await base44.functions.invoke('updateTenantOrder', { order_id: order.id, order_status: "delivered" });
+  const handleConfirmDelivered = async (order) => {
+    await base44.functions.invoke('order/info/updateTenantOrder', [{ order_id: order.id, order_status: "delivered" }]);
     // Also mark the associated shipping pool as delivered
-    const orderId = String(order.id);
-    const pool = shippingPools.find(p => (p.order_ids || []).some(id => String(id) === orderId));
-    if (pool && pool.status === "shipped") {
-      await shippingPoolApi.update(pool.id, { status: "delivered" });
-    }
+    // const orderId = String(order.id);
+    // const pool = shippingPools.find(p => (p.order_ids || []).some(id => String(id) === orderId));
+    // if (pool && pool.status === "shipped") {
+    //   await shippingPoolApi.update(pool.id, { status: "delivered" });
+    // }
     fetchOrders(user);
   };
 
   const handleArchiveOrder = async (order) => {
-    await base44.functions.invoke('updateTenantOrder', { order_id: order.id, is_archived: true, archived_at: new Date().toISOString() });
+    await base44.functions.invoke('order/info/updateTenantOrder', [{ order_id: order.id, is_archived: true, archived_at: new Date().toISOString() }]);
     fetchOrders(user);
   };
 
   const handleBulkArchive = async () => {
     const deliveredSelected = filtered.filter(o => selectedIds.includes(o.id) && o.order_status === "delivered");
-    await Promise.all(deliveredSelected.map(o =>
-      base44.functions.invoke('updateTenantOrder', { order_id: o.id, is_archived: true, archived_at: new Date().toISOString() })
-    ));
+    const dtoList = deliveredSelected.map(o => ({ order_id: o.id, is_archived: true, archived_at: new Date().toISOString() }));
+    await base44.functions.invoke('order/info/updateTenantOrder', dtoList);
     setSelectedIds([]);
     fetchOrders(user);
   };
@@ -1044,7 +1046,7 @@ export default function MyOrders() {
                           ) : null;
                         })()}
                         <Button size="sm" className="h-7 text-xs bg-green-600 hover:bg-green-700"
-                          onClick={() => handleConfirmDelivered(order)}>
+                          onClick={() => setDeliverTargetOrder(order)}>
                           <CheckCircle className="w-3 h-3 mr-1" />收货
                         </Button>
                       </div>
@@ -1052,7 +1054,7 @@ export default function MyOrders() {
                   })()}
                   {order.order_status === "delivered" && !order.is_archived && canArchiveOrder && (
                     <Button size="sm" variant="outline" className="h-7 text-xs px-2 text-gray-500"
-                      onClick={() => handleArchiveOrder(order)}>
+                      onClick={() => setArchiveTargetOrder(order)}>
                       <Archive className="w-3 h-3 mr-1" />存档
                     </Button>
                   )}
@@ -1204,6 +1206,24 @@ export default function MyOrders() {
           </div>
         </div>
       )}
+
+      <ConfirmDialog
+        open={!!deliverTargetOrder}
+        onOpenChange={open => { if (!open) setDeliverTargetOrder(null); }}
+        title="确认收货"
+        description="是否确认收货？确认后订单状态将变为已签收。"
+        confirmText="是"
+        onConfirm={() => { handleConfirmDelivered(deliverTargetOrder); setDeliverTargetOrder(null); }}
+      />
+
+      <ConfirmDialog
+        open={!!archiveTargetOrder}
+        onOpenChange={open => { if (!open) setArchiveTargetOrder(null); }}
+        title="确认存档"
+        description={`是否将订单 ${archiveTargetOrder?.order_number} 存档？存档后将从列表中隐藏。`}
+        confirmText="是"
+        onConfirm={() => { handleArchiveOrder(archiveTargetOrder); setArchiveTargetOrder(null); }}
+      />
       </TabsContent>
       </Tabs>
     </div>

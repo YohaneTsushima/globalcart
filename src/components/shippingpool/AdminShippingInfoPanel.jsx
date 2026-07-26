@@ -18,16 +18,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { CreditCard, Truck, CheckCircle, ExternalLink, X, MapPin, Copy } from "lucide-react";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
+import ConfirmDialog from "@/components/common/ConfirmDialog";
 import CustomsDeclarationDisplay from "@/components/shippingpool/CustomsDeclarationDisplay";
 import { getCountry, getCountryZone } from "@/lib/countries";
 import { calcFeeBreakdownPerUser } from "@/lib/shippingFeeCalc";
@@ -393,7 +384,7 @@ export default function AdminShippingInfoPanel({
 
   const updatePool = async (payload, { setLoading, successMsg } = {}) => {
     try {
-      debugger
+      
       await shippingPoolApi.update(pool.id, payload);
       setPool(p => ({ ...p, ...payload }));
       onPoolUpdated?.({ ...pool, ...payload });
@@ -407,7 +398,7 @@ export default function AdminShippingInfoPanel({
   };
 
   const handleSaveInfoOnly = async () => {
-    debugger
+    
     setSaving(true);
     await updatePool(buildUpdatePayload(), { setLoading: setSaving, successMsg: "保存成功" });
   };
@@ -1264,35 +1255,23 @@ export default function AdminShippingInfoPanel({
         </div>
       )}
 
-      <AlertDialog open={confirmPaymentDialogOpen} onOpenChange={setConfirmPaymentDialogOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>确认收款</AlertDialogTitle>
-            <AlertDialogDescription>
-              确认已收到全部款项，将发货池状态变更为「待发货」？
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>取消</AlertDialogCancel>
-            <AlertDialogAction onClick={handleConfirmPayment}>确认</AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <ConfirmDialog
+        open={confirmPaymentDialogOpen}
+        onOpenChange={setConfirmPaymentDialogOpen}
+        title="确认收款"
+        description="确认已收到全部款项，将发货池状态变更为「待发货」？"
+        confirmText="确认"
+        onConfirm={handleConfirmPayment}
+      />
 
-      <AlertDialog open={confirmPaymentAndShipDialogOpen} onOpenChange={setConfirmPaymentAndShipDialogOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>确认收款并发货</AlertDialogTitle>
-            <AlertDialogDescription>
-              确认已收到全部款项并直接进入「已发货」状态？
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>取消</AlertDialogCancel>
-            <AlertDialogAction onClick={handleConfirmPaymentAndShip}>确认</AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <ConfirmDialog
+        open={confirmPaymentAndShipDialogOpen}
+        onOpenChange={setConfirmPaymentAndShipDialogOpen}
+        title="确认收款并发货"
+        description="确认已收到全部款项并直接进入「已发货」状态？"
+        confirmText="确认"
+        onConfirm={handleConfirmPaymentAndShip}
+      />
     </div>
   );
 }

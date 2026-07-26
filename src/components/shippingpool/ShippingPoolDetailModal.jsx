@@ -29,7 +29,7 @@ import UserGroupHeader from "@/components/shippingpool/UserGroupHeader";
 import MessageThread from "@/components/common/MessageThread";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { toast } from "sonner";
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import ConfirmDialog from "@/components/common/ConfirmDialog";
 
 import { STATUS_CONFIG, METHOD_LABELS } from "./shippingFormConstants";
 import AddressForm, { EMPTY_ADDRESS_FORM, serializeAddressToText, isAddressFormValid } from "@/components/common/AddressForm";
@@ -74,6 +74,7 @@ export default function ShippingPoolDetailModal({ pool: initialPool, isAdmin, cu
   const [alipayFormData, setAlipayFormData] = useState(null);
   const [uploadingProof, setUploadingProof] = useState(false);
   const [confirmingDelivery, setConfirmingDelivery] = useState(false);
+  const [showConfirmDeliveryDialog, setShowConfirmDeliveryDialog] = useState(false);
   const [exchangeRates, setExchangeRates] = useState(null);
   const [userCredit, setUserCredit] = useState(null); // {credit_enabled, credit_balance_jpy, credit_limit_jpy}
 
@@ -1594,7 +1595,7 @@ export default function ShippingPoolDetailModal({ pool: initialPool, isAdmin, cu
                 )}
                 <Button
                   className="w-full bg-emerald-600 hover:bg-emerald-700"
-                  onClick={handleConfirmDelivery}
+                  onClick={() => setShowConfirmDeliveryDialog(true)}
                   disabled={confirmingDelivery}>
                   <CheckCircle className="w-4 h-4 mr-2" />
                   {confirmingDelivery ? "确认中..." : "确认收货"}
@@ -2079,20 +2080,24 @@ export default function ShippingPoolDetailModal({ pool: initialPool, isAdmin, cu
           </div>
         }
 
-        <AlertDialog open={showAlipayConfirm} onOpenChange={setShowAlipayConfirm}>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>确认支付</AlertDialogTitle>
-              <AlertDialogDescription>
-                点击下方按钮将跳转到支付宝完成付款
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel onClick={() => { setShowAlipayConfirm(false); setAlipayFormData(null); }}>取消</AlertDialogCancel>
-              <AlertDialogAction onClick={submitToAlipay}>前往支付宝付款</AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
+        <ConfirmDialog
+          open={showAlipayConfirm}
+          onOpenChange={setShowAlipayConfirm}
+          title="确认支付"
+          description="点击下方按钮将跳转到支付宝完成付款"
+          confirmText="前往支付宝付款"
+          onConfirm={submitToAlipay}
+          onCancel={() => setAlipayFormData(null)}
+        />
+
+        <ConfirmDialog
+          open={showConfirmDeliveryDialog}
+          onOpenChange={setShowConfirmDeliveryDialog}
+          title="确认收货"
+          description="是否确认收货？确认后包裹状态将变为已签收。"
+          confirmText="是"
+          onConfirm={handleConfirmDelivery}
+        />
       </div>
     </div>);
 

@@ -5,7 +5,7 @@
 import { useState, useEffect } from "react";
 import { tenantEntity } from "@/lib/tenantApi";
 import { Plus, Trash2, Edit2, Check, X, Download, Info, GripVertical, Eye, EyeOff, ChevronUp, ChevronDown } from "lucide-react";
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import ConfirmDialog from "@/components/common/ConfirmDialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -602,18 +602,15 @@ export default function ShippingMethodManager({ initialData = null, itemSizeTemp
 
       <EstimateRateGlobalSetting settings={settings} />
 
-      <AlertDialog open={!!deleteTargetId} onOpenChange={open => { if (!open) setDeleteTargetId(null); }}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>确认删除</AlertDialogTitle>
-            <AlertDialogDescription>确认删除此运输方式？此操作不可撤销。</AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>取消</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDelete} className="bg-red-600 hover:bg-red-700">删除</AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <ConfirmDialog
+        open={!!deleteTargetId}
+        onOpenChange={open => { if (!open) setDeleteTargetId(null); }}
+        title="确认删除"
+        description="确认删除此运输方式？此操作不可撤销。"
+        confirmText="删除"
+        onConfirm={handleDelete}
+        confirmClassName="bg-red-600 hover:bg-red-700"
+      />
     </div>
   );
 }

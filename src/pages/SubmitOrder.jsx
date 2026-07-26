@@ -17,16 +17,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import {
-  AlertDialog,
-  AlertDialogContent,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogAction,
-  AlertDialogCancel,
-} from "@/components/ui/alert-dialog";
+import ConfirmDialog from "@/components/common/ConfirmDialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
 import { t, getLocale } from "@/lib/i18n";
@@ -865,26 +856,18 @@ export default function SubmitOrder() {
         </Card>
 
         {/* 确认提交订单弹窗 */}
-        <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>{t("是否提交订单？", locale)}</AlertDialogTitle>
-              <AlertDialogDescription>
-                {t("请确认商品信息无误，提交后将进入付款流程。", locale)}
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel disabled={submitting}>{t("否", locale)}</AlertDialogCancel>
-              <AlertDialogAction
-                disabled={submitting}
-                onClick={(e) => { e.preventDefault(); confirmSubmitOrder(); }}
-                className="bg-red-600 hover:bg-red-700 text-white"
-              >
-                {submitting ? t("提交中...", locale) : t("是", locale)}
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
+        <ConfirmDialog
+          open={confirmOpen}
+          onOpenChange={setConfirmOpen}
+          title={t("是否提交订单？", locale)}
+          description={t("请确认商品信息无误，提交后将进入付款流程。", locale)}
+          confirmText={submitting ? t("提交中...", locale) : t("是", locale)}
+          cancelText={t("否", locale)}
+          onConfirm={(e) => { e.preventDefault(); confirmSubmitOrder(); }}
+          confirmDisabled={submitting}
+          cancelDisabled={submitting}
+          confirmClassName="bg-red-600 hover:bg-red-700 text-white"
+        />
       </form>
     </div>
   );
