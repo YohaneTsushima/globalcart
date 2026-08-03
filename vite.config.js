@@ -19,15 +19,19 @@
 //   ]
 // });
 import react from '@vitejs/plugin-react'
-import { defineConfig } from 'vite'
-import path from 'path' // 新增path模块
+import { defineConfig, loadEnv } from 'vite'
+import path from 'path'
 import { fileURLToPath } from 'url'
 
 // https://vite.dev/config/
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
-export default defineConfig({
+export default defineConfig(({ mode }) => {
+  const env = loadEnv(mode, process.cwd(), '')
+  const backendUrl = env.VITE_BACKEND_URL || 'http://localhost:8080'
+
+  return {
   logLevel: 'info',
   // 手动配置@别名，替代原来base44插件自动处理的逻辑
   optimizeDeps: {
@@ -48,19 +52,19 @@ export default defineConfig({
         changeOrigin: true,
       },
       '/globalcart': {
-        target: 'http://localhost:8080',
+        target: backendUrl,
         changeOrigin: true,
       },
       '/oauth2': {
-        target: 'http://localhost:8080/globalcart',
+        target: backendUrl + '/globalcart',
         changeOrigin: true,
       },
       '/login': {
-        target: 'http://localhost:8080',
+        target: backendUrl,
         changeOrigin: true,
       },
       '/uploads': {
-        target: 'http://localhost:8080',
+        target: backendUrl,
         changeOrigin: true,
       }
     }
@@ -71,4 +75,5 @@ export default defineConfig({
     }
   },
   plugins: [react()]
+  }
 })

@@ -20,7 +20,7 @@ export default function Login() {
 	const { locale } = useLocale();
   const navigate = useNavigate()
   const [searchParams] = useSearchParams();
-  const { login, loginWithOAuth } = useAuth();
+  const { login, loginWithOAuth, isAuthenticated, isLoadingAuth } = useAuth();
   const { tenant } = useTenantBranding();
   const [phoneEmail, setPhone] = useState("");
   const [code, setCode] = useState("");
@@ -72,13 +72,12 @@ export default function Login() {
       return;
     }
 
-    // 如果已登录，直接跳转（尊重 next 参数）
-    const token = localStorage.getItem('token');
-    if(token) {
+    // 如果已登录且初始化完成，直接跳转（尊重 next 参数）
+    if(!isLoadingAuth && isAuthenticated) {
         const next = searchParams.get('next');
         navigate(next ? decodeURIComponent(next) : `/${locale}/home`, { replace: true });
     }
-  }, [navigate, searchParams, locale]);
+  }, [navigate, searchParams, locale, isAuthenticated, isLoadingAuth]);
 
   const handleLogin = async () => {
     setPhoneError(false);
