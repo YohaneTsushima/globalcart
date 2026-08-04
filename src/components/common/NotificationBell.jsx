@@ -1,7 +1,8 @@
 /**
  * 通知铃铛组件 - 显示未读通知数量和下拉菜单
+ * 支持 WebSocket 实时推送
  */
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { base44 } from "@/api/base44Client";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Bell, CheckCheck, DollarSign, ExternalLink } from "lucide-react";
@@ -10,17 +11,23 @@ import { Badge } from "@/components/ui/badge";
 import { format } from "date-fns";
 import { zhCN } from "date-fns/locale";
 import { createPageUrl } from "@/utils";
+import { on, off, send } from "@/lib/socket";
+import { usePermissions } from "@/hooks/usePermissions";
+import { Send } from "lucide-react";
 
 const iconMap = {
   Bell: Bell,
   DollarSign: DollarSign,
 };
 
+
+
 const typeColors = {
   payment: "bg-red-100 text-red-700",
   shipping_request: "bg-blue-100 text-blue-700",
   order_status: "bg-green-100 text-green-700",
   message: "bg-purple-100 text-purple-700",
+  cancellation: "bg-orange-100 text-orange-700",
   other: "bg-gray-100 text-gray-700",
   platform: "bg-indigo-100 text-indigo-700",
 };
@@ -28,38 +35,67 @@ const typeColors = {
 export default function NotificationBellComponent() {
   const [isOpen, setIsOpen] = useState(false);
   const queryClient = useQueryClient();
+  const { isAdmin, user } = usePermissions();
 
   const { data: unreadData, refetch: refetchUnread } = useQuery({
     queryKey: ['notification-unread-count'],
     queryFn: async () => {
-      // const res = await base44.functions.invoke('getUnreadNotificationCount', {});
-      const res = {data: ''};
+      const res = await base44.functions.invoke('notification/getUnreadNotificationCount', {});
       return res.data;
-    }
+    },
+    refetchInterval: false,
+    refetchOnWindowFocus: false,
   });
 
-  // 始终在后台预取最近通知（跟随未读数 30 秒轮询），点开铃铛时即刻显示，无需等待加载
   const { data: notificationsData } = useQuery({
     queryKey: ['notification-recent-unread'],
     queryFn: async () => {
-      // const res = await base44.functions.invoke('getUserNotifications', { limit: 7, skip: 0 });
-      const res = {data: ''};
+      const res = await base44.functions.invoke('notification/getUserNotifications', { limit: 7, skip: 0 });
       return res.data;
     },
-    staleTime: 25000
+    refetchInterval: false,
+    refetchOnWindowFocus: false,
   });
 
   const markAsReadMutation = useMutation({
     mutationFn: async ({ notification_id, mark_all_read = false }) => {
-      // const res = await base44.functions.invoke('markNotificationAsRead', { notification_id, mark_all_read });
-      const res = {data: ''};
-      return res.data;
+      send('mark_read', { notification_id, mark_all_read });
+      return { ok: true };
     },
-    onSuccess: () => {
-      refetchUnread();
-      queryClient.invalidateQueries({ queryKey: ['notification-recent-unread'] });
+    onMutate: ({ notification_id, mark_all_read }) => {
+      if (mark_all_read) {
+        queryClient.setQueryData(['notification-unread-count'], { unread_count: 0 });
+        queryClient.setQueryData(['notification-recent-unread'], (old) => {
+          if (!old?.notifications) return old;
+          return { ...old, notifications: old.notifications.map(n => ({ ...n, is_read: true })) };
+        });
+      } else if (notification_id) {
+        queryClient.setQueryData(['notification-unread-count'], (old) => ({
+          unread_count: Math.max(0, (old?.unread_count || 1) - 1)
+        }));
+        queryClient.setQueryData(['notification-recent-unread'], (old) => {
+          if (!old?.notifications) return old;
+          return { ...old, notifications: old.notifications.map(n => n.id === notification_id ? { ...n, is_read: true } : n) };
+        });
+      }
     },
   });
+
+  // WebSocket 实时监听
+  const handleNewNotification = useCallback((notification) => {
+    queryClient.setQueryData(['notification-unread-count'], (old) => ({
+      unread_count: (old?.unread_count || 0) + 1
+    }));
+    queryClient.setQueryData(['notification-recent-unread'], (old) => {
+      if (!old?.notifications) return { notifications: [notification] };
+      return { ...old, notifications: [notification, ...old.notifications].slice(0, 7) };
+    });
+  }, [queryClient]);
+
+  useEffect(() => {
+    on('notification', handleNewNotification);
+    return () => off('notification', handleNewNotification);
+  }, [handleNewNotification]);
 
   const unreadCount = unreadData?.unread_count || 0;
   const notifications = notificationsData?.notifications || [];
@@ -82,6 +118,17 @@ export default function NotificationBellComponent() {
   const handleViewAll = () => {
     setIsOpen(false);
     window.location.href = createPageUrl('Notifications');
+  };
+
+  const handleTestSend = () => {
+    send('send_notification', {
+      user_email: user?.email,
+      notification_type: 'payment',
+      notification_subtype: 'order_payment_required',
+      title: '订单需付款',
+      content: `${user?.displayName || user?.full_name || '用户'}的订单已创建，等待付款`,
+      related_url: '/zhcn/MyOrders',
+    });
   };
 
   return (
@@ -167,11 +214,16 @@ export default function NotificationBellComponent() {
               )}
             </div>
 
-            <div className="px-4 py-3 border-t border-gray-100 bg-gray-50">
-              <Button variant="outline" size="sm" className="w-full" onClick={() => { setIsOpen(false); window.location.href = createPageUrl('Notifications'); }}>
+            <div className="px-4 py-3 border-t border-gray-100 bg-gray-50 flex gap-2">
+              <Button variant="outline" size="sm" className="flex-1" onClick={() => { setIsOpen(false); window.location.href = createPageUrl('Notifications'); }}>
                 <ExternalLink className="w-3.5 h-3.5 mr-1.5" />
                 查看全部通知
               </Button>
+              {!isAdmin && (
+                <Button variant="outline" size="sm" className="h-8 px-2" onClick={handleTestSend} title="测试：发送通知给管理员">
+                  <Send className="w-3.5 h-3.5" />
+                </Button>
+              )}
             </div>
           </div>
         </>

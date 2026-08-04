@@ -16,8 +16,8 @@ export function usePermissions() {
   // Admins always have full access — no need to check granular perms
   const isAdmin = user?.role === 'platform_admin' ||
     user?.role === 'admin' ||
-    user?.role === 'tenant_admin';
-
+    user?.role === 'tenant_admin' || 
+    user?.role === 'ROLE_ADMIN';
   /**
    * Check if the user has a specific permission.
    * @param {string} permissionId  e.g. "order:update"
@@ -54,5 +54,5 @@ export function usePermissions() {
     return permissionIds.some(p => can(p));
   };
 
-  return { can, canAny, blocked, permissions, isAdmin };
+  return { can, canAny, blocked, permissions, isAdmin, user };
 }

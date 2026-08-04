@@ -4,6 +4,7 @@ import { createPageUrl } from "@/utils";
 import { base44 } from "@/api/base44Client";
 import { useAuth } from "@/lib/AuthContext";
 import { fetchTenantConfig } from "@/lib/tenantApi";
+import { connect, disconnect } from "@/lib/socket";
 import { 
   ShoppingBag, Package, Truck, User, Settings, 
   Bell, LogOut, Menu, X, Shield, Globe,
@@ -40,6 +41,14 @@ export default function Layout({ children, currentPageName }) {
     window.addEventListener('localeChanged', handler);
     return () => window.removeEventListener('localeChanged', handler);
   }, []);
+
+  // WebSocket 连接管理
+  useEffect(() => {
+    if (user) {
+      connect();
+      return () => disconnect();
+    }
+  }, [user]);
 
   useEffect(() => {
     if (tenant?.favicon_url) {
@@ -96,7 +105,7 @@ export default function Layout({ children, currentPageName }) {
   );
 
   const isPlatformAdmin = user?.role === "platform_admin";
-  const isTenantAdmin = user?.role === "admin" || user?.role === "tenant_admin";
+  const isTenantAdmin = user?.role === "admin" || user?.role === "tenant_admin" || user?.role === "ROLE_ADMIN";
   const isStaff = user?.role === "staff";
   const isTenantUser = user?.role === "user";
   const isAdmin = isPlatformAdmin || isTenantAdmin;

@@ -66,6 +66,11 @@ export default defineConfig(({ mode }) => {
       '/uploads': {
         target: backendUrl,
         changeOrigin: true,
+      },
+      '/globalcart/ws': {
+        target: backendUrl.replace('http', 'ws') + '/globalcart',
+        ws: true,
+        changeOrigin: true,
       }
     }
   },

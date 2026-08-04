@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
+import ConfirmDialog from "@/components/common/ConfirmDialog";
 
 const notificationCategories = [
   {
@@ -72,13 +73,14 @@ export default function UserNotificationSettings() {
   const [globalInApp, setGlobalInApp] = useState(true);
   const [globalEmail, setGlobalEmail] = useState(true);
   const [subtypeSettings, setSubtypeSettings] = useState({});
+  const [showConfirmDialog, setShowConfirmDialog] = useState(false);
 
   // Fetch preferences
   const { data, isLoading, refetch } = useQuery({
     queryKey: ['notification-preferences'],
     queryFn: async () => {
-      const res = await base44.functions.invoke('getNotificationPreferences', {});
-      return res.data;
+      const res = await base44.functions.invoke('notification/preference/getNotificationPreferences', {});
+      return res.data?.settings;
     },
   });
 
@@ -96,7 +98,7 @@ export default function UserNotificationSettings() {
   // Update preferences mutation
   const updateMutation = useMutation({
     mutationFn: async (settings) => {
-      const res = await base44.functions.invoke('updateNotificationPreferences', settings);
+      const res = await base44.functions.invoke('notification/preference/updateNotificationPreferences', settings);
       return res.data;
     },
     onSuccess: () => {
@@ -106,6 +108,11 @@ export default function UserNotificationSettings() {
   });
 
   const handleSave = () => {
+    setShowConfirmDialog(true);
+  };
+
+  const handleConfirmSave = () => {
+    setShowConfirmDialog(false);
     updateMutation.mutate({
       in_app_enabled: globalInApp,
       email_enabled: globalEmail,
@@ -240,6 +247,17 @@ export default function UserNotificationSettings() {
           {updateMutation.isPending ? '保存中...' : '保存设置'}
         </Button>
       </div>
+
+      <ConfirmDialog
+        open={showConfirmDialog}
+        onOpenChange={setShowConfirmDialog}
+        title="保存通知设置"
+        description="确定要保存当前的通知偏好设置吗？"
+        confirmText="确认保存"
+        cancelText="取消"
+        onConfirm={handleConfirmSave}
+        onCancel={() => setShowConfirmDialog(false)}
+      />
     </div>
   );
 }

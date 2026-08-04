@@ -1,7 +1,7 @@
 /**
  * Notifications - 通知中心页面
  */
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useSearchParams } from "react-router-dom";
 import { base44 } from "@/api/base44Client";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -12,6 +12,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { format } from "date-fns";
 import { zhCN } from "date-fns/locale";
 import { createPageUrl } from "@/utils";
+import { on, off, send } from "@/lib/socket";
 
 const iconMap = { Bell, DollarSign, Package, MessageSquare, Info, AlertCircle };
 
@@ -42,23 +43,47 @@ export default function NotificationsPage() {
     queryKey: ['notifications', selectedType],
     queryFn: async () => {
       const payload = selectedType !== 'all' ? { limit: 50, skip: 0, type: selectedType } : { limit: 50, skip: 0 };
-      const res = await base44.functions.invoke('getUserNotifications', payload);
+      const res = await base44.functions.invoke('notification/getUserNotifications', payload);
       return res.data;
     },
   });
 
   const markAsReadMutation = useMutation({
     mutationFn: async ({ notification_id, mark_all_read = false }) => {
-      const res = await base44.functions.invoke('markNotificationAsRead', { notification_id, mark_all_read });
-      return res.data;
+      send('mark_read', { notification_id, mark_all_read });
+      return { ok: true };
     },
-    onSuccess: () => {
-      refetch();
+    onMutate: ({ notification_id, mark_all_read }) => {
+      if (mark_all_read) {
+        queryClient.setQueryData(['notifications', selectedType], (old) => {
+          if (!old?.notifications) return old;
+          return { ...old, notifications: old.notifications.map(n => ({ ...n, is_read: true })) };
+        });
+      } else if (notification_id) {
+        queryClient.setQueryData(['notifications', selectedType], (old) => {
+          if (!old?.notifications) return old;
+          return { ...old, notifications: old.notifications.map(n => n.id === notification_id ? { ...n, is_read: true } : n) };
+        });
+      }
       queryClient.invalidateQueries({ queryKey: ['notification-unread-count'] });
     },
   });
 
   const notifications = data?.notifications || [];
+
+  // WebSocket 实时监听
+  const handleNewNotification = useCallback((notification) => {
+    queryClient.setQueryData(['notifications', selectedType], (old) => {
+      if (!old?.notifications) return { notifications: [notification] };
+      return { ...old, notifications: [notification, ...old.notifications] };
+    });
+    queryClient.invalidateQueries({ queryKey: ['notification-unread-count'] });
+  }, [queryClient, selectedType]);
+
+  useEffect(() => {
+    on('notification', handleNewNotification);
+    return () => off('notification', handleNewNotification);
+  }, [handleNewNotification]);
 
   const handleMarkAllRead = () => {
     markAsReadMutation.mutate({ mark_all_read: true });
