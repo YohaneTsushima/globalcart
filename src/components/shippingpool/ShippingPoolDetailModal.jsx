@@ -6,6 +6,7 @@
 import { useState, useEffect, useRef } from "react";
 import { X, Package, Edit2, Save, MoreVertical, ArrowRight, RotateCcw, Loader2, Search, Trash2, AlertCircle, CheckCircle, XCircle, CreditCard, ExternalLink, Upload, Truck, MapPin, PlusCircle, MoveRight, Star, ChevronDown, ChevronUp, Layers, Tag } from "lucide-react";
 import { base44 } from "@/api/base44Client";
+import { openAlipayPopup } from "@/lib/alipayUtils";
 import { usePermissions } from "@/hooks/usePermissions";
 import { updateOrder, tenantEntity, shippingPoolApi, userPrefApi, fetchTenantConfig } from "@/lib/tenantApi";
 // exchangeRates now provided by getShippingPoolDetail response
@@ -491,29 +492,7 @@ export default function ShippingPoolDetailModal({ pool: initialPool, isAdmin, cu
   };
 
   const submitToAlipay = () => {
-    if (!alipayFormData) return;
-
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(alipayFormData, 'text/html');
-    const form = doc.querySelector('form');
-    if (!form) return;
-
-    const realForm = document.createElement('form');
-    realForm.method = form.method || 'POST';
-    realForm.action = form.action;
-    realForm.target = '_blank';
-
-    form.querySelectorAll('input').forEach(el => {
-      const field = document.createElement('input');
-      field.type = 'hidden';
-      field.name = el.name;
-      field.value = el.value;
-      realForm.appendChild(field);
-    });
-
-    document.body.appendChild(realForm);
-    realForm.submit();
-    realForm.remove();
+    openAlipayPopup(alipayFormData);
     setShowAlipayConfirm(false);
     setAlipayFormData(null);
   };

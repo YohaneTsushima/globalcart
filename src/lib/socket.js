@@ -74,7 +74,6 @@ function connect() {
 
   ws.onerror = () => {
     console.warn('[WebSocket] backend not available, running without real-time');
-    stopped = true;
     clearInterval(heartbeatTimer);
     clearTimeout(reconnectTimer);
     ws = null;

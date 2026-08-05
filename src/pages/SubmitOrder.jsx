@@ -453,7 +453,6 @@ export default function SubmitOrder() {
       }
 
       let paymentUrl = `/Payment?order_id=${order.id}&method=${pendingForm.payment_method || "other"}&pay_currency=${pendingForm.prepayment_currency}`;
-      console.log(paymentUrl);
 
       navigate(paymentUrl);
     } catch (error) {

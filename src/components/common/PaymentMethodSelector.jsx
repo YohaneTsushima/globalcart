@@ -10,13 +10,14 @@ import { base44 } from "@/api/base44Client";
 // No hardcoded fallbacks — only show what the tenant has configured
 
 /**
- * @param {string}   value       - currently selected method value (provider_key or method_name)
- * @param {function} onChange    - called with (method) where method = { value, label, payment_description, payment_qr_code }
- * @param {string}   className   - extra class for the grid wrapper
- * @param {Array}    prefetched  - optional pre-fetched methods list (skip fetching)
- * @param {string}   activeColor - tailwind classes for active border, e.g. "border-blue-500 bg-blue-50 text-blue-700"
+ * @param {string}   value           - currently selected method value (provider_key or method_name)
+ * @param {function} onChange        - called with (method) where method = { value, label, payment_description, payment_qr_code }
+ * @param {string}   className       - extra class for the grid wrapper
+ * @param {Array}    prefetched      - optional pre-fetched methods list (skip fetching)
+ * @param {string}   activeColor     - tailwind classes for active border, e.g. "border-blue-500 bg-blue-50 text-blue-700"
+ * @param {function} onMethodsLoaded - callback when methods list is loaded, receives the full list
  */
-export default function PaymentMethodSelector({ value, onChange, className = "", prefetched = null, activeColor = "border-blue-500 bg-blue-50 text-blue-700 ring-2 ring-blue-200" }) {
+export default function PaymentMethodSelector({ value, onChange, className = "", prefetched = null, activeColor = "border-blue-500 bg-blue-50 text-blue-700 ring-2 ring-blue-200", onMethodsLoaded }) {
   const [methods, setMethods] = useState(prefetched ?? null);
   const [loading, setLoading] = useState(prefetched === null);
 
@@ -24,12 +25,15 @@ export default function PaymentMethodSelector({ value, onChange, className = "",
     if (prefetched !== null) {
       setMethods(prefetched);
       setLoading(false);
+      onMethodsLoaded?.(prefetched);
       return;
     }
     setLoading(true);
     base44.functions.invoke('config/page/getPaymentMethod', { action: 'list' })
       .then(r => {
-        setMethods(r.data?.payment_methods || []);
+        const list = r.data?.payment_methods || [];
+        setMethods(list);
+        onMethodsLoaded?.(list);
       })
       .catch(() => setMethods([]))
       .finally(() => setLoading(false));

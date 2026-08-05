@@ -4,13 +4,15 @@
  * Alipay: auto-generates signed link, user clicks pay, callback updates status automatically.
  * Other: upload proof manually.
  */
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import QRCode from 'qrcode';
 import { X, CreditCard, ExternalLink, CheckCircle, Loader2, Lock } from "lucide-react";
 import FileDropzone from "@/components/common/FileDropzone";
+import ConfirmDialog from "@/components/common/ConfirmDialog";
 import { base44 } from "@/api/base44Client";
+import { openAlipayPopup } from "@/lib/alipayUtils";
 import { usePermissions } from "@/hooks/usePermissions";
 import { updateOrder } from "@/lib/tenantApi";
 import { Button } from "@/components/ui/button";
@@ -19,6 +21,7 @@ import { Input } from "@/components/ui/input";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import PaymentMethodSelector from "@/components/common/PaymentMethodSelector";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
+import { toast } from "sonner";
 
 /**
  * @param {object}   order
@@ -57,9 +60,9 @@ export default function PaymentModal({ order, mode = "prepay", onClose, onSucces
 
   const defaultAmount = roundAmount(rawAmount, cur);
 
-  const isFullPay = '';
+  const isFullPay = order?.payment_mode === 'fullpay_once';
 
-  const title = isSupp ? "补款" : isShipping ? "运费付款" : "预付款";
+  const title = isSupp ? "补款" : isShipping ? "运费付款" : isFullPay ? "付款" : "预付款";
   const amountLabel = cur === "JPY"
     ? `${title}金额：${Math.round(defaultAmount).toLocaleString()} yen`
     : cur === "CNY"
@@ -70,6 +73,7 @@ export default function PaymentModal({ order, mode = "prepay", onClose, onSucces
   const [selectedMethodMeta, setSelectedMethodMeta] = useState(null); // { value, label, payment_note, image_url, payment_currency }
   const [paidAmount, setPaidAmount] = useState(String(defaultAmount));
   const [rates, setRates] = useState(null);
+  const [paymentMethods, setPaymentMethods] = useState([]);
   // Store as state so async handlers (handleProofUploaded) capture the latest value
   const [snapshotRate, setSnapshotRate] = useState(null); // { payCurrency, rate } when non-JPY method selected
   // Surcharge from backend (computed per selected payment method)
@@ -78,7 +82,23 @@ export default function PaymentModal({ order, mode = "prepay", onClose, onSucces
 
   // Fetch exchange rates once on mount
   useEffect(() => {
-    setRates(base44.functions.feetchRate());
+    const DEFAULT_RATES = { JPY: 1, CNY: 0.049, USD: 0.0067, TWD: 0.21, HKD: 0.052, EUR: 0.0061, GBP: 0.0053, AUD: 0.01, SGD: 0.009 };
+    base44.functions.invoke("config/page/fetchExchangeRates", {})
+      .then(r => {
+        if (r && r.data) {
+          let data = r.data;
+          let rs = {
+            JPY: 1,
+            CNY: data.jpy.cny || DEFAULT_RATES.CNY,
+            USD: data.jpy.usd || DEFAULT_RATES.USD,
+            TWD: data.jpy.twd || DEFAULT_RATES.TWD,
+            TWD: data.jpy.hkd || DEFAULT_RATES.HKD
+          };
+
+          setRates(rs);
+        }
+      })
+      .catch(() => {});
   }, []);
 
   // When method changes (for prepay mode), reload surcharge from backend
@@ -101,14 +121,12 @@ export default function PaymentModal({ order, mode = "prepay", onClose, onSucces
     }
   }, [method]);
 
-  // 监听支付宝付款完成的 postMessage
+  // 监听支付宝回调的 postMessage（PaymentClose 发送）
   useEffect(() => {
     const handleMessage = (e) => {
       if (e.data?.type === "alipay_payment_done") {
-        setSubmitting(false);
-        onSuccess?.();
-        setPaying('')
-        setGenerating(false)
+        toast.success('支付成功');
+        onSuccessRef.current?.();
       }
       if (e.data?.type === "alipay_payment_navigate" && e.data.url) {
         window.location.href = e.data.url;
@@ -116,7 +134,7 @@ export default function PaymentModal({ order, mode = "prepay", onClose, onSucces
     };
     window.addEventListener("message", handleMessage);
     return () => window.removeEventListener("message", handleMessage);
-  }, [onSuccess]);
+  }, []);
 
   // Currency conversion helpers
   const CURRENCY_SYMBOLS = { JPY: "¥", CNY: "¥", USD: "$", TWD: "NT$", HKD: "HK$", EUR: "€", SGD: "S$" };
@@ -149,6 +167,13 @@ export default function PaymentModal({ order, mode = "prepay", onClose, onSucces
   // Alipay
   const [generating, setGenerating] = useState(false);
   const [paying, setPaying] = useState('');
+  const [showAlipayConfirm, setShowAlipayConfirm] = useState(false);
+  const [alipayFormData, setAlipayFormData] = useState(null);
+  const onSuccessRef = useRef(onSuccess);
+
+  useEffect(() => {
+    onSuccessRef.current = onSuccess;
+  }, [onSuccess]);
 
   // Manual
   const [proofUrl, setProofUrl] = useState("");
@@ -172,30 +197,47 @@ export default function PaymentModal({ order, mode = "prepay", onClose, onSucces
       currencyToSend = payCurrency;
     }
 
+    const selectedObj = paymentMethods.find(m => (m.provider_key || m.id) === method);
+
+    //用于更新Payment Method
+    const newMethod = {
+      payable_amount: amountToCharge,
+      method_name: method,
+      payment_currency: selectedObj?.payment_currency,
+      payment_currency_type: selectedObj?.payment_currency,
+      prepayment_rate_jpy_cny: rates[payCurrency],
+      provider_key: method
+    }
+
     const payParam = {
       orderId: order.id,
       amount: amountToCharge,
       currency: currencyToSend,
       subject,
       paymentType: isShipping ? "shipping" : "order",
-      aa: selectedMethodMeta
+      payment_method: newMethod,
+      popup_mode: true
     };
 
-    return;
-
     const res = await base44.functions.invoke("alipay/pay", payParam);
+    console.log(res)
+    if(!res?.data?.success) {
+      toast.error(`下单失败: ${res?.data?.result}`);
+      setGenerating(false);
+      return;
+    }
+
     const formData = res?.data?.form;
 
-    // setGenerating(false);
-    setPaying('正在付款......')
-    // 后端返回的是 HTML 表单，在新窗口渲染并自动提交到支付宝
-    // if (formData && typeof formData === 'string') {
-    //   const newWindow = window.open('', '_blank');
-    //   if (newWindow) {
-    //     newWindow.document.write(formData);
-    //     newWindow.document.close();
-    //   }
-    // }
+    setGenerating(false);
+    setAlipayFormData(formData);
+    setShowAlipayConfirm(true);
+  };
+
+  const submitToAlipay = () => {
+    openAlipayPopup(alipayFormData);
+    setShowAlipayConfirm(false);
+    setAlipayFormData(null);
   };
 
   // Build actual-currency fields when paying in a non-JPY currency.
@@ -281,6 +323,7 @@ export default function PaymentModal({ order, mode = "prepay", onClose, onSucces
   };
 
   return (
+    <>
     <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onMouseDown={onClose}>
       <div className="bg-white rounded-xl shadow-xl w-full max-w-md" onMouseDown={e => e.stopPropagation()}>
         {/* Header */}
@@ -377,6 +420,7 @@ export default function PaymentModal({ order, mode = "prepay", onClose, onSucces
             <PaymentMethodSelector
               value={method}
               onChange={m => { setMethod(m.value); setSelectedMethodMeta(m); setProofUrl(""); }}
+              onMethodsLoaded={setPaymentMethods}
               disabled={!canPayment}
             />
           </div>
@@ -436,5 +480,16 @@ export default function PaymentModal({ order, mode = "prepay", onClose, onSucces
         </div>
       </div>
     </div>
+
+      <ConfirmDialog
+        open={showAlipayConfirm}
+        onOpenChange={setShowAlipayConfirm}
+        title="确认付款"
+        description="点击下方按钮将跳转到支付宝完成付款"
+        confirmText="前往支付宝付款"
+        onConfirm={submitToAlipay}
+        onCancel={() => setAlipayFormData(null)}
+      />
+    </>
   );
 }

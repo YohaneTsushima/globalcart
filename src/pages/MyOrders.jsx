@@ -587,23 +587,6 @@ export default function MyOrders() {
     return () => clearTimeout(timer);
   }, [isAlipayReturn, user?.email]);
 
-  // Listen for postMessage from Alipay popup tab after payment completes
-  useEffect(() => {
-    const handleMessage = (e) => {
-      if (e.data?.type === "alipay_payment_done" && user) {
-        setAlipayReturnMsg(`支付宝付款已提交${e.data.tradeNo ? `（单号: ${e.data.tradeNo}）` : ''}，系统将在数分钟内自动确认订单状态。`);
-        fetchOrders(user);
-        setTimeout(() => fetchOrders(user), 3000);
-      }
-      if (e.data?.type === "alipay_payment_navigate" && e.data.url) {
-        debugger
-        window.location.href = e.data.url;
-      }
-    };
-    window.addEventListener("message", handleMessage);
-    return () => window.removeEventListener("message", handleMessage);
-  }, [user?.email]);
-
   const handleColumnsChange = (newCols) => {
     setColumns(newCols);
     localStorage.setItem(STORAGE_KEY, JSON.stringify(newCols.map(c => ({

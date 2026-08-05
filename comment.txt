@@ -2,3 +2,5 @@ Ver0.1.0 comment
 1，登录没打钩同意协议和政策的情况下，点击登录就弹出提示
 2，费用预付款（可能是SubmitOrder）不要小数点
 3，支付后跳转出错
+4，PaymentModal支付宝支付出错
+5，SubmitOrder图片上传失败 (fixed)

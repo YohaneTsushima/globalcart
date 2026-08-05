@@ -50,6 +50,7 @@ import AdminAnnouncements from '@/pages/AdminAnnouncements';
 import AdminSettings from '@/pages/AdminSettings';
 import Payment from '@/pages/Payment';
 import PaymentReturn from '@/pages/PaymentReturn';
+import PaymentClose from '@/pages/PaymentClose';
 import TermsOfService from '@/pages/TermsOfService';
 import PrivacyPolicy from '@/pages/PrivacyPolicy';
 import ConsolidationPool from '@/pages/ConsolidationPool';
@@ -175,6 +176,7 @@ const AuthenticatedApp = () => {
         <Route path="/:locale/AdminSettings" element={<LayoutWrapper currentPageName="AdminSettings"><AdminSettings /></LayoutWrapper>} />
         <Route path="/:locale/Payment" element={<LayoutWrapper currentPageName="Payment"><Payment /></LayoutWrapper>} />
         <Route path="/:locale/PaymentReturn" element={<PaymentReturn />} />
+        <Route path="/:locale/PaymentClose" element={<PaymentClose />} />
         <Route path="/:locale/TermsOfService" element={<LayoutWrapper currentPageName="TermsOfService"><TermsOfService /></LayoutWrapper>} />
         <Route path="/:locale/PrivacyPolicy" element={<LayoutWrapper currentPageName="PrivacyPolicy"><PrivacyPolicy /></LayoutWrapper>} />
         <Route path="/:locale/ConsolidationPool" element={<LayoutWrapper currentPageName="ConsolidationPool"><ConsolidationPool /></LayoutWrapper>} />

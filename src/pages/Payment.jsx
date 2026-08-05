@@ -16,6 +16,7 @@ import PaymentMethodSelector from "@/components/common/PaymentMethodSelector";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { toast } from "sonner";
 import ConfirmDialog from "@/components/common/ConfirmDialog";
+import { openAlipayPopup } from "@/lib/alipayUtils";
 
 const IS_DEV_MOCK = import.meta.env.VITE_DEV_MOCK === 'true';
 
@@ -176,7 +177,6 @@ export default function Payment() {
   // 监听支付宝付款完成的 postMessage
   useEffect(() => {
     const handleMessage = (e) => {
-      debugger
       if (e.data?.type === "alipay_payment_done") {
         // loadPaymentData();
         const url = createPageUrl("MyOrders");
@@ -223,7 +223,8 @@ export default function Payment() {
       currency: currencyToSend,
       subject,
       paymentType: "order",
-      payment_method: newMethod
+      payment_method: newMethod,
+      popup_mode: true
     };
 
     const res = await base44.functions.invoke('alipay/pay', payParam);
@@ -244,29 +245,7 @@ export default function Payment() {
   };
 
   const submitToAlipay = () => {
-    if (!alipayFormData) return;
-
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(alipayFormData, 'text/html');
-    const form = doc.querySelector('form');
-    if (!form) return;
-
-    const realForm = document.createElement('form');
-    realForm.method = form.method || 'POST';
-    realForm.action = form.action;
-    realForm.target = '_blank';
-
-    form.querySelectorAll('input').forEach(el => {
-      const field = document.createElement('input');
-      field.type = 'hidden';
-      field.name = el.name;
-      field.value = el.value;
-      realForm.appendChild(field);
-    });
-
-    document.body.appendChild(realForm);
-    realForm.submit();
-    realForm.remove();
+    openAlipayPopup(alipayFormData);
     setShowAlipayConfirm(false);
     setAlipayFormData(null);
   };
