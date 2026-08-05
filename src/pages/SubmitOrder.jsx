@@ -405,7 +405,6 @@ export default function SubmitOrder() {
 
       // 弹窗确认，确认后才调后端
       setPendingForm(submitForm);
-      console.log(submitForm)
       setConfirmOpen(true);
     } catch (error) {
       toast.error(t('提交失败：', locale) + error.message);

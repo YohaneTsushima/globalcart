@@ -48,7 +48,7 @@ export default function NotificationBellComponent() {
     queryFn: async () => {
       // const res = await base44.functions.invoke('notification/getUnreadNotificationCount', {});
       // return res.data;
-      return { unread_count: 3 };
+      return { unread_count: 4 };
     },
     refetchInterval: false,
     refetchOnWindowFocus: false,
@@ -99,6 +99,15 @@ export default function NotificationBellComponent() {
             is_read: false,
             created_date: new Date(Date.now() - 1000 * 60 * 60 * 5).toISOString(),
             icon: 'MessageSquare',
+            related_url: '/zhcn/MyOrders',
+          },{
+            id: 'mock-5',
+            title: '订单已入库',
+            content: '您的订单 #12345 已入库，物流单号：SF1234567890',
+            notification_type: 'order_status',
+            is_read: false,
+            created_date: new Date(Date.now() - 1000 * 60 * 60 * 5).toISOString(),
+            icon: 'Package',
             related_url: '/zhcn/MyOrders',
           },
         ],
@@ -172,7 +181,7 @@ export default function NotificationBellComponent() {
   };
 
   const handleTestSend = () => {
-    send('send_notification', {
+    send('send_notification_test', {
       user_email: user?.email,
       notification_type: 'payment',
       notification_subtype: 'order_payment_required',
@@ -236,6 +245,7 @@ export default function NotificationBellComponent() {
               ) : (
                 <div className="divide-y divide-gray-100">
                   {notifications.map((notification) => {
+                    console.log(notifications)
                     const IconComponent = iconMap[notification.icon] || Bell;
                     const typeColor = typeColors[notification.notification_type] || typeColors.other;
                     return (

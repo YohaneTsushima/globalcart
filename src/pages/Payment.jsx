@@ -134,11 +134,9 @@ export default function Payment() {
 
     base44.functions.invoke('payment/getPaymentPageData', { order_id: orderId, ...(payMethodKey ? { payment_method_key: payMethodKey } : {}) })
       .then(r => {
-        console.log(user)
         clearTimeout(timeoutId);
         const data = r.data || {};
 
-        console.log(data)
         if (!data) {
           setOrder(null); 
         } else {

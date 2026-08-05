@@ -1,5 +1,7 @@
 FROM docker.1ms.run/library/node:22-alpine AS builder
 WORKDIR /app
+ARG VITE_BACKEND_URL
+ENV VITE_BACKEND_URL=$VITE_BACKEND_URL
 COPY package*.json ./
 RUN npm ci
 COPY . .

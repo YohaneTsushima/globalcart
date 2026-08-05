@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { t, getLocale } from "@/lib/i18n";
+import { refreshAndReconnect } from "@/lib/socket";
 
 // 后端地址写环境变量
 const api = axios.create({
@@ -96,6 +97,9 @@ api.interceptors.response.use(
 
       localStorage.setItem('token', newToken);
       if (newRefreshToken) localStorage.setItem('refresh_token', newRefreshToken);
+
+      // 刷新 WebSocket 连接
+      refreshAndReconnect();
 
       // 创建新请求（不复用 originalRequest，避免 headers 冻结问题）
       const retryConfig = { ...originalRequest, headers: { ...originalRequest.headers, Authorization: `Bearer ${newToken}` } };
