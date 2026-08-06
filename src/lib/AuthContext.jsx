@@ -27,6 +27,23 @@ const clearAuthCache = () => {
   localStorage.removeItem(AUTH_CACHE_KEY);
 };
 
+// 判断是否为网络不可达错误（后端未启动、断网等）
+const isNetworkError = (err) => {
+  if (!err) return false;
+  if (err.code === 'ERR_NETWORK' || err.code === 'ERR_CONNECTION_REFUSED') return true;
+  if (err.message && /network|failed to fetch|networkerror/i.test(err.message)) return true;
+  return false;
+};
+
+// 跳转到登录页
+const redirectToLogin = () => {
+  const path = window.location.pathname;
+  if (path.includes('/Login')) return;
+  const lang = path.split('/')[1] || 'zhcn';
+  const next = encodeURIComponent(path + window.location.search);
+  window.location.href = `/${lang}/Login?next=${next}`;
+};
+
 // 后端驼峰 → 前端期望的字段名（全局统一适配）
 const normalizeUser = (raw) => {
   if (!raw) return null;
@@ -73,21 +90,86 @@ export const AuthProvider = ({ children }) => {
       });
     }
 
+    // 启动时验证 token + 后端连通性（而非仅读 localStorage 缓存）
     const token = localStorage.getItem('token');
-    
     if (token) {
-      const cache = readAuthCache();
-      if (cache) {
-        setUser(cache.user || null);
-        setPermissions(Array.isArray(cache.permissions) ? cache.permissions : []);
-        setAssignedRoles(Array.isArray(cache.assigned_roles) ? cache.assigned_roles : []);
-        if (cache.is_active === false) {
-          setAuthError({ type: 'account_suspended', message: '您的账户已被停用，请联系管理员。' });
-        }
-        setIsAuthenticated(true);
-      }
+      base44.auth.me()
+        .then(res => {
+          const d = res?.data ?? res ?? {};
+          const u = normalizeUser(d);
+          const perms = Array.isArray(d.permissions) ? d.permissions : [];
+          const roles = Array.isArray(d.assigned_roles) ? d.assigned_roles : [];
+          const isActive = d.isActive ?? d.is_active ?? true;
+
+          setUser(u);
+          setPermissions(perms);
+          setAssignedRoles(roles);
+          setIsAuthenticated(true);
+          writeAuthCache({ user: u, permissions: perms, assigned_roles: roles, is_active: isActive });
+
+          if (isActive === false) {
+            setAuthError({ type: 'account_suspended', message: '您的账户已被停用，请联系管理员。' });
+          }
+        })
+        .catch(err => {
+          // 网络不可达（后端没启动 / 断连）：清除状态，跳登录
+          if (isNetworkError(err)) {
+            console.warn('[Auth] 后端不可达，跳转登录页');
+            clearAuthCache();
+            setIsAuthenticated(false);
+            setUser(null);
+            redirectToLogin();
+            return;
+          }
+          // 其他错误（401 等）由 axios 拦截器处理，此处不做额外操作
+        })
+        .finally(() => {
+          setIsLoadingAuth(false);
+        });
+    } else {
+      setIsLoadingAuth(false);
     }
-    setIsLoadingAuth(false);
+
+    // --- visibilitychange: 用户切回 tab 时重新验证后端连通性 ---
+    const handleVisibilityChange = () => {
+      if (document.visibilityState !== 'visible') return;
+      const currentToken = localStorage.getItem('token');
+      if (!currentToken) return;
+
+      base44.auth.me()
+        .then(res => {
+          const d = res?.data ?? res ?? {};
+          const u = normalizeUser(d);
+          const isActive = d.isActive ?? d.is_active ?? true;
+
+          setUser(u);
+          setIsAuthenticated(true);
+          writeAuthCache({
+            user: u,
+            permissions: Array.isArray(d.permissions) ? d.permissions : [],
+            assigned_roles: Array.isArray(d.assigned_roles) ? d.assigned_roles : [],
+            is_active: isActive,
+          });
+
+          if (isActive === false) {
+            setAuthError({ type: 'account_suspended', message: '您的账户已被停用，请联系管理员。' });
+          }
+        })
+        .catch(err => {
+          if (isNetworkError(err)) {
+            console.warn('[Auth] 后端不可达，清除登录状态');
+            clearAuthCache();
+            setIsAuthenticated(false);
+            setUser(null);
+            redirectToLogin();
+          }
+        });
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
   }, []);
 
   const login = async (username, verifyCode) => {

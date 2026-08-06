@@ -13,6 +13,8 @@ import { format } from "date-fns";
 import { zhCN } from "date-fns/locale";
 import { createPageUrl } from "@/utils";
 import { on, off, send } from "@/lib/socket";
+import PaginationBar from "@/components/common/PaginationBar";
+import { showDesktopNotification } from "@/lib/notification";
 
 const iconMap = { Bell, DollarSign, Package, MessageSquare, Info, AlertCircle };
 
@@ -37,12 +39,17 @@ const typeLabels = {
 export default function NotificationsPage() {
   const [searchParams] = useSearchParams();
   const [selectedType, setSelectedType] = useState(searchParams.get('type') || 'all');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
   const queryClient = useQueryClient();
 
   const { data, isLoading, refetch } = useQuery({
-    queryKey: ['notifications', selectedType],
+    queryKey: ['notifications', selectedType, currentPage, pageSize],
     queryFn: async () => {
-      const payload = selectedType !== 'all' ? { limit: 50, skip: 0, type: selectedType } : { limit: 50, skip: 0 };
+      const payload = { page: currentPage, pageSize, unreadOnly: false };
+      if (selectedType !== 'all') {
+        payload.notification_type = selectedType;
+      }
       const res = await base44.functions.invoke('notification/getUserNotifications', payload);
       return res.data;
     },
@@ -55,12 +62,12 @@ export default function NotificationsPage() {
     },
     onMutate: ({ notification_id, mark_all_read }) => {
       if (mark_all_read) {
-        queryClient.setQueryData(['notifications', selectedType], (old) => {
+        queryClient.setQueryData(['notifications', selectedType, currentPage, pageSize], (old) => {
           if (!old?.notifications) return old;
           return { ...old, notifications: old.notifications.map(n => ({ ...n, is_read: true })) };
         });
       } else if (notification_id) {
-        queryClient.setQueryData(['notifications', selectedType], (old) => {
+        queryClient.setQueryData(['notifications', selectedType, currentPage, pageSize], (old) => {
           if (!old?.notifications) return old;
           return { ...old, notifications: old.notifications.map(n => n.id === notification_id ? { ...n, is_read: true } : n) };
         });
@@ -70,15 +77,23 @@ export default function NotificationsPage() {
   });
 
   const notifications = data?.notifications || [];
+  const total = data?.total || 0;
 
   // WebSocket 实时监听
   const handleNewNotification = useCallback((notification) => {
-    queryClient.setQueryData(['notifications', selectedType], (old) => {
-      if (!old?.notifications) return { notifications: [notification] };
+    if (!notification || typeof notification !== 'object') return;
+    queryClient.setQueryData(['notifications', selectedType, currentPage, pageSize], (old) => {
+      if (!old?.notifications) return { ...old, notifications: [notification] };
       return { ...old, notifications: [notification, ...old.notifications] };
     });
     queryClient.invalidateQueries({ queryKey: ['notification-unread-count'] });
-  }, [queryClient, selectedType]);
+    // 弹出桌面通知
+    showDesktopNotification(
+      notification.title || '新通知',
+      notification.content || '',
+      notification.related_url ? () => { window.location.href = notification.related_url; } : undefined
+    );
+  }, [queryClient, selectedType, currentPage, pageSize]);
 
   useEffect(() => {
     on('notification', handleNewNotification);
@@ -91,6 +106,7 @@ export default function NotificationsPage() {
 
   const handleNotificationClick = (notification) => {
     if (!notification.is_read) {
+      debugger
       markAsReadMutation.mutate({ notification_id: notification.id });
     }
     if (notification.related_url) {
@@ -119,7 +135,7 @@ export default function NotificationsPage() {
       </div>
 
       {/* Tabs */}
-      <Tabs value={selectedType} onValueChange={setSelectedType}>
+      <Tabs value={selectedType} onValueChange={(v) => { setSelectedType(v); setCurrentPage(1); }}>
         <TabsList className="grid w-full grid-cols-6">
           <TabsTrigger value="all">全部</TabsTrigger>
           <TabsTrigger value="payment">付款通知</TabsTrigger>
@@ -140,6 +156,7 @@ export default function NotificationsPage() {
               <p className="text-sm">暂无通知</p>
             </div>
           ) : (
+            <>
             <div className="space-y-3">
               {notifications.map((notification) => {
                 const IconComponent = iconMap[notification.icon] || Bell;
@@ -181,6 +198,15 @@ export default function NotificationsPage() {
                 );
               })}
             </div>
+            <PaginationBar
+              total={total}
+              pageSize={pageSize}
+              currentPage={currentPage}
+              onPageChange={setCurrentPage}
+              onPageSizeChange={(size) => { setPageSize(size); setCurrentPage(1); }}
+              className="mt-4"
+            />
+            </>
           )}
         </TabsContent>
       </Tabs>

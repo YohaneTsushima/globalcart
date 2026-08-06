@@ -13,6 +13,7 @@ import { zhCN } from "date-fns/locale";
 import { createPageUrl } from "@/utils";
 import { on, off, send } from "@/lib/socket";
 import { usePermissions } from "@/hooks/usePermissions";
+import { requestNotificationPermission, showDesktopNotification } from "@/lib/notification";
 import { Send } from "lucide-react";
 
 const iconMap = {
@@ -143,6 +144,7 @@ export default function NotificationBellComponent() {
 
   // WebSocket 实时监听
   const handleNewNotification = useCallback((notification) => {
+    if (!notification || typeof notification !== 'object') return;
     queryClient.setQueryData(['notification-unread-count'], (old) => ({
       unread_count: (old?.unread_count || 0) + 1
     }));
@@ -150,6 +152,12 @@ export default function NotificationBellComponent() {
       if (!old?.notifications) return { notifications: [notification] };
       return { ...old, notifications: [notification, ...old.notifications].slice(0, 7) };
     });
+    // 弹出桌面通知
+    showDesktopNotification(
+      notification.title || '新通知',
+      notification.content || '',
+      notification.related_url ? () => { window.location.href = notification.related_url; } : undefined
+    );
   }, [queryClient]);
 
   useEffect(() => {
@@ -197,7 +205,10 @@ export default function NotificationBellComponent() {
         variant="ghost"
         size="sm"
         className="relative h-9 px-2 hover:bg-gray-100"
-        onClick={() => setIsOpen(!isOpen)}
+        onClick={() => {
+          setIsOpen(!isOpen);
+          requestNotificationPermission();
+        }}
       >
         <Bell className="w-4 h-4 text-gray-600" />
         {unreadCount > 0 && (
@@ -245,7 +256,6 @@ export default function NotificationBellComponent() {
               ) : (
                 <div className="divide-y divide-gray-100">
                   {notifications.map((notification) => {
-                    console.log(notifications)
                     const IconComponent = iconMap[notification.icon] || Bell;
                     const typeColor = typeColors[notification.notification_type] || typeColors.other;
                     return (

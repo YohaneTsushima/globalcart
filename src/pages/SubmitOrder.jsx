@@ -399,6 +399,7 @@ export default function SubmitOrder() {
             payment_status: isCredit ? "paid" : "awaiting_payment",
             user_note: form.user_note || "",
             payment_rate_jpy_cny: selectedCurrency === 'CNY' ? (rates?.jpy_cny || null) : null,
+            notice_key: 'order_created',
             selected_addon_ids: selectedAddons,
             selected_addons: selectedAddonObjects.map((a) => ({ id: a.id, service_name: a.service_name, fee: parseFloat(a.fee) || 0, fee_currency: a.fee_currency || "JPY" }))
       };
