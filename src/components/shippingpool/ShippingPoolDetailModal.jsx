@@ -728,7 +728,7 @@ export default function ShippingPoolDetailModal({ pool: initialPool, isAdmin, cu
     pool.payment_status !== "paid" && feeNotified;
 
   return (
-    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onMouseDown={onClose}>
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
       <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto" onMouseDown={e => e.stopPropagation()}>
         {/* Header */}
         <div className="flex items-start justify-between px-6 py-4 border-b sticky top-0 bg-white z-10">

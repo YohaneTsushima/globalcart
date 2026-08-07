@@ -47,9 +47,10 @@ export default function NotificationBellComponent() {
   const { data: unreadData, refetch: refetchUnread } = useQuery({
     queryKey: ['notification-unread-count'],
     queryFn: async () => {
-      // const res = await base44.functions.invoke('notification/getUnreadNotificationCount', {});
-      // return res.data;
-      return { unread_count: 4 };
+      const res = await base44.functions.invoke('notification/getUnreadNotificationCount', {});
+      let un_read = {unread_count: res.data};
+      return un_read;
+      // return { unread_count: 4 };
     },
     refetchInterval: false,
     refetchOnWindowFocus: false,
@@ -58,61 +59,62 @@ export default function NotificationBellComponent() {
   const { data: notificationsData } = useQuery({
     queryKey: ['notification-recent-unread'],
     queryFn: async () => {
-      // const res = await base44.functions.invoke('notification/getUserNotifications', { limit: 7, skip: 0 });
-      // return res.data;
-      return {
-        notifications: [
-          {
-            id: 'mock-1',
-            title: '订单需付款',
-            content: '您的订单 #12345 已创建，请在24小时内完成付款',
-            notification_type: 'payment',
-            is_read: false,
-            created_date: new Date(Date.now() - 1000 * 60 * 5).toISOString(),
-            icon: 'DollarSign',
-            related_url: '/zhcn/MyOrders',
-          },
-          {
-            id: 'mock-2',
-            title: '订单已发货',
-            content: '您的订单 #12345 已发货，物流单号：SF1234567890',
-            notification_type: 'shipping_request',
-            is_read: false,
-            created_date: new Date(Date.now() - 1000 * 60 * 30).toISOString(),
-            icon: 'Bell',
-            related_url: '/zhcn/MyOrders',
-          },
-          {
-            id: 'mock-3',
-            title: '订单已签收',
-            content: '您的订单 #12345 已被签收，如有问题请联系客服',
-            notification_type: 'order_status',
-            is_read: true,
-            created_date: new Date(Date.now() - 1000 * 60 * 60 * 2).toISOString(),
-            icon: 'Bell',
-            related_url: '/zhcn/MyOrders',
-          },
-          {
-            id: 'mock-4',
-            title: '新消息',
-            content: '您收到一条来自卖家的消息',
-            notification_type: 'message',
-            is_read: false,
-            created_date: new Date(Date.now() - 1000 * 60 * 60 * 5).toISOString(),
-            icon: 'MessageSquare',
-            related_url: '/zhcn/MyOrders',
-          },{
-            id: 'mock-5',
-            title: '订单已入库',
-            content: '您的订单 #12345 已入库，物流单号：SF1234567890',
-            notification_type: 'order_status',
-            is_read: false,
-            created_date: new Date(Date.now() - 1000 * 60 * 60 * 5).toISOString(),
-            icon: 'Package',
-            related_url: '/zhcn/MyOrders',
-          },
-        ],
-      };
+      const res = await base44.functions.invoke('notification/getUnReadUserNotifications', { limit: 7, skip: 0 });
+      let notifications = {'notifications': res?.data };
+      return notifications;
+      // return {
+      //   notifications: [
+      //     {
+      //       id: 'mock-1',
+      //       title: '订单需付款',
+      //       content: '您的订单 #12345 已创建，请在24小时内完成付款',
+      //       notification_type: 'payment',
+      //       is_read: false,
+      //       created_date: new Date(Date.now() - 1000 * 60 * 5).toISOString(),
+      //       icon: 'DollarSign',
+      //       related_url: '/zhcn/MyOrders',
+      //     },
+      //     {
+      //       id: 'mock-2',
+      //       title: '订单已发货',
+      //       content: '您的订单 #12345 已发货，物流单号：SF1234567890',
+      //       notification_type: 'shipping_request',
+      //       is_read: false,
+      //       created_date: new Date(Date.now() - 1000 * 60 * 30).toISOString(),
+      //       icon: 'Bell',
+      //       related_url: '/zhcn/MyOrders',
+      //     },
+      //     {
+      //       id: 'mock-3',
+      //       title: '订单已签收',
+      //       content: '您的订单 #12345 已被签收，如有问题请联系客服',
+      //       notification_type: 'order_status',
+      //       is_read: true,
+      //       created_date: new Date(Date.now() - 1000 * 60 * 60 * 2).toISOString(),
+      //       icon: 'Bell',
+      //       related_url: '/zhcn/MyOrders',
+      //     },
+      //     {
+      //       id: 'mock-4',
+      //       title: '新消息',
+      //       content: '您收到一条来自卖家的消息',
+      //       notification_type: 'message',
+      //       is_read: false,
+      //       created_date: new Date(Date.now() - 1000 * 60 * 60 * 5).toISOString(),
+      //       icon: 'MessageSquare',
+      //       related_url: '/zhcn/MyOrders',
+      //     },{
+      //       id: 'mock-5',
+      //       title: '订单已入库',
+      //       content: '您的订单 #12345 已入库，物流单号：SF1234567890',
+      //       notification_type: 'order_status',
+      //       is_read: false,
+      //       created_date: new Date(Date.now() - 1000 * 60 * 60 * 5).toISOString(),
+      //       icon: 'Package',
+      //       related_url: '/zhcn/MyOrders',
+      //     },
+      //   ],
+      // };
     },
     refetchInterval: false,
     refetchOnWindowFocus: false,

@@ -41,6 +41,7 @@ const notificationCategories = [
     subtypes: [
       { key: "order_created", label: "订单创建", default_off: true },
       { key: "order_payment_confirmed", label: "订单付款已被确认" },
+      { key: "shipping_payment_confirmed", label: "运费付款已被确认" },
       { key: "order_purchased", label: "订单已下单" },
       { key: "order_in_warehouse", label: "订单已入库" },
       { key: "order_added_to_pool", label: "订单已添加至发货申请", default_off: true },

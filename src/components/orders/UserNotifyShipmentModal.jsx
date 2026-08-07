@@ -23,6 +23,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 // Shared with CreateShippingPoolModal — edit shippingFormConstants.js to sync both
 import { SHIPPING_METHODS, CONSOLIDATION_TIMEOUT_ACTIONS as TIMEOUT_ACTIONS } from "@/components/shippingpool/shippingFormConstants";
+import ConfirmDialog from "@/components/common/ConfirmDialog";
 
 function clampYear(dateStr) {
   if (!dateStr) return dateStr;
@@ -281,6 +282,7 @@ export default function UserNotifyShipmentModal({ order, orders, initialData, on
   );
   const [shippingMethods, setShippingMethods] = useState(initialData?.shippingMethods || []);
   const [methodError, setMethodError] = useState(null);
+  const [showConfirm, setShowConfirm] = useState(false);
 
   useEffect(() => {
     // If initialData was provided by the parent page, use it directly — skip all self-fetches
@@ -543,6 +545,7 @@ export default function UserNotifyShipmentModal({ order, orders, initialData, on
       join_existing_pool: effectiveJoinExisting,
       is_private: isPrivate,
       shared_with_emails: sharedWithEmails,
+      notice_key: 'shipping_request_sent',
       customs_declaration: hasCustoms ? customsData : null,
     };
 
@@ -561,7 +564,8 @@ export default function UserNotifyShipmentModal({ order, orders, initialData, on
   };
 
   return (
-    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onMouseDown={onClose}>
+    <>
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
       <div className="bg-white rounded-xl shadow-xl w-full max-w-xl max-h-[90vh] overflow-y-auto" onMouseDown={e => e.stopPropagation()}>
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b">
@@ -1114,7 +1118,7 @@ export default function UserNotifyShipmentModal({ order, orders, initialData, on
           <Button
              size="sm"
              className="bg-red-600 hover:bg-red-700"
-             onClick={handleSubmit}
+             onClick={() => setShowConfirm(true)}
              disabled={
                (!method && !joinDirectPool && !isJoiningPool) || submitting ||
                (method && !isJoiningPool && getMethodError()) ||
@@ -1135,5 +1139,15 @@ export default function UserNotifyShipmentModal({ order, orders, initialData, on
         </div>
       </div>
     </div>
+    <ConfirmDialog
+      open={showConfirm}
+      onOpenChange={setShowConfirm}
+      title="确认通知发货"
+      description="确定要通知发货吗？提交后将通知仓库处理您的订单。"
+      confirmText="确认通知"
+      cancelText="取消"
+      onConfirm={() => { setShowConfirm(false); handleSubmit(); }}
+    />
+    </>
   );
 }

@@ -106,7 +106,6 @@ export default function NotificationsPage() {
 
   const handleNotificationClick = (notification) => {
     if (!notification.is_read) {
-      debugger
       markAsReadMutation.mutate({ notification_id: notification.id });
     }
     if (notification.related_url) {
