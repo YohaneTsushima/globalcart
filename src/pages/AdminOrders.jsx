@@ -541,7 +541,7 @@ export default function AdminOrders() {
             ) : (() => {
               const renderData = groupBy === "none" ? orders : filtered;
               const renderOrderRow = (order) => {
-                const pendingEdit = pendingEditRequests.find(r => r.order_id === order.id);
+                const pendingEdit = pendingEditRequests.find(r => r.order_id === parseInt(order.id));
                 return (
                   <tr key={order.id} className={`hover:bg-gray-50 cursor-pointer ${pendingEdit ? "bg-orange-50/60" : ""}`} onClick={() => handleStatusClick(order)}>
                     <td className="px-3 py-3" onClick={e => e.stopPropagation()}>

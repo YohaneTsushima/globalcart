@@ -545,7 +545,6 @@ export default function UserNotifyShipmentModal({ order, orders, initialData, on
       join_existing_pool: effectiveJoinExisting,
       is_private: isPrivate,
       shared_with_emails: sharedWithEmails,
-      notice_key: 'shipping_request_sent',
       customs_declaration: hasCustoms ? customsData : null,
     };
 
@@ -553,6 +552,7 @@ export default function UserNotifyShipmentModal({ order, orders, initialData, on
     try {
       await base44.functions.invoke('shipping/createShippingPool', {
         order_ids: orderIds,
+        notice_key: 'shipping_request_sent',
         payload: shipmentPayload,
       });
       onSuccess?.();

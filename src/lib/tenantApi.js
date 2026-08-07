@@ -70,7 +70,7 @@ export async function fetchAnnouncements() {
 
 async function mutate(entity, action, opts = {}) {
   const res = await base44.functions.invoke(`mutateTenantEntity/${entity}/${action}`, { entity, action, ...opts });
-  if (res.data?.error) throw new Error(res.data.error);
+  if (res.data?.error) throw new Error(res.data.error?.[0] || JSON.stringify(res.data.error));
   return res.data;
 }
 

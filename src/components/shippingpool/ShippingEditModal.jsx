@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import ConfirmDialog from "@/components/common/ConfirmDialog";
 
 export default function ShippingEditModal({ order, currentPool, currentUser, onClose, onSuccess }) {
   const [editType, setEditType] = useState("cancel_shipment");
@@ -24,12 +25,15 @@ export default function ShippingEditModal({ order, currentPool, currentUser, onC
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState(false);
   const [isInstant, setIsInstant] = useState(false);
+  const [showConfirmDialog, setShowConfirmDialog] = useState(false);
+  const [apiError, setApiError] = useState("");
 
   useEffect(() => {
     // Check if within 5 minutes of the pool's creation
     if (currentPool?.created_date) {
-      const age = Date.now() - new Date(currentPool.created_date).getTime();
-      setIsInstant(age < 5 * 60 * 1000);
+      const age = Math.abs(Date.now() - new Date(currentPool.created_date).getTime());
+      const isInstant = (age < 5 * 60 * 1000);
+      setIsInstant(isInstant);
     }
 
     fetchShippingPools()
@@ -51,73 +55,149 @@ export default function ShippingEditModal({ order, currentPool, currentUser, onC
       (p.title || "").toLowerCase().includes(q);
   });
 
+  const updateShippingPool = async (status, w, orderIds, editRequest) => {
+
+    let param = {
+      order_ids: orderIds,
+      total_weight_g: Math.max(0, (currentPool.total_weight_g || 0) - w),
+      order_status: status,
+      handle_request: true,
+      edit_request: editRequest
+    };
+
+    const res = await base44.functions.invoke('mutateTenantEntity/ShippingPool/update', {
+      entity: 'ShippingPool',
+      action: 'update',
+      id: currentPool.id,
+      data: param
+    });
+
+    if (res.data?.code === 500 || res.data?.error) {
+      return { error: res.data?.msg || res.data?.error || '操作失败' };
+    }
+    return { result: res.data?.result || res.data };
+  }
+
   const handleSubmit = async () => {
     if (editType === "move_pool" && !targetPoolId) return;
     setSubmitting(true);
+    const w = order.weight_g || 0;
+    let updatedIds = [];
+    let editRequest = {};
+    let status = 'in_warehouse';
+    const res = {};
 
     if (isInstant) {
       // Apply immediately
       if (editType === "cancel_shipment") {
-        const updatedIds = (currentPool.order_ids || []).filter(id => id !== order.id);
-        await Promise.all([
-          shippingPoolApi.update(currentPool.id, {
-            order_ids: updatedIds,
-            total_weight_g: Math.max(0, (currentPool.total_weight_g || 0) - (order.weight_g || 0)),
-          }),
-          updateOrder(order.id, { order_status: "in_warehouse", consolidation_pool_id: "" }),
-        ]);
+        updatedIds = (currentPool.order_ids || []).filter(id => id !== order.id);
+        // await Promise.all([
+        //   shippingPoolApi.update(currentPool.id, {
+        //     order_ids: updatedIds,
+        //     total_weight_g: Math.max(0, (currentPool.total_weight_g || 0) - (order.weight_g || 0)),
+        //   }),
+        //   updateOrder(order.id, { order_status: "in_warehouse", consolidation_pool_id: "" }),
+        // ]);
       } else if (editType === "move_pool") {
         const targetPool = availablePools.find(p => p.id === targetPoolId);
-        const w = order.weight_g || 0;
-        await Promise.all([
-          shippingPoolApi.update(currentPool.id, {
-            order_ids: (currentPool.order_ids || []).filter(id => id !== order.id),
-            total_weight_g: Math.max(0, (currentPool.total_weight_g || 0) - w),
-          }),
-          shippingPoolApi.update(targetPoolId, {
-            order_ids: [...new Set([...(targetPool.order_ids || []), order.id])],
-            total_weight_g: (targetPool.total_weight_g || 0) + w,
-          }),
-          updateOrder(order.id, { consolidation_pool_id: targetPoolId }),
-        ]);
+        updatedIds = [...new Set([...(targetPool.order_ids || []), order.id])];
+        status = '';
+        // await Promise.all([
+        //   shippingPoolApi.update(currentPool.id, {
+        //     order_ids: (currentPool.order_ids || []).filter(id => id !== order.id),
+        //     total_weight_g: Math.max(0, (currentPool.total_weight_g || 0) - w),
+        //   }),
+        //   shippingPoolApi.update(targetPoolId, {
+        //     order_ids: [...new Set([...(targetPool.order_ids || []), order.id])],
+        //     total_weight_g: (targetPool.total_weight_g || 0) + w,
+        //   }),
+        //   updateOrder(order.id, { consolidation_pool_id: targetPoolId }),
+        // ]);
       }
 
-      await tenantEntity.create('ShippingEditRequest', {
-        order_id: order.id, pool_id: currentPool.id, user_email: currentUser.email,
-        edit_type: editType, target_pool_id: editType === "move_pool" ? targetPoolId : "",
-        user_note: userNote, status: "auto_applied", is_instant: true,
-      });
+      editRequest = {
+        order_id: order.id, 
+        pool_id: currentPool.id, 
+        user_email: currentUser.email,
+        edit_type: editType, 
+        target_pool_id: editType === "move_pool" ? targetPoolId : "",
+        user_note: userNote, 
+        status: "auto_applied", 
+        is_instant: true,
+      }
+
+      // await tenantEntity.create('ShippingEditRequest', {
+      //   order_id: order.id, pool_id: currentPool.id, user_email: currentUser.email,
+      //   edit_type: editType, target_pool_id: editType === "move_pool" ? targetPoolId : "",
+      //   user_note: userNote, status: "auto_applied", is_instant: true,
+      // });
+
+      editRequest = {
+        order_id: order.id, 
+        pool_id: currentPool.id, 
+        user_email: currentUser.email,
+        edit_type: editType, 
+        target_pool_id: editType === "move_pool" ? targetPoolId : "",
+        user_note: userNote,
+        status: "pending", 
+        is_instant: false,
+      }
+
+      res = await updateShippingPool(status, w, updatedIds, editRequest);
+      
+      
     } else {
-      await tenantEntity.create('ShippingEditRequest', {
-        order_id: order.id, pool_id: currentPool.id, user_email: currentUser.email,
-        edit_type: editType, target_pool_id: editType === "move_pool" ? targetPoolId : "",
-        user_note: userNote, status: "pending", is_instant: false,
-      });
+
+      try {
+        await tenantEntity.create('ShippingEditRequest', {
+          order_id: order.id, pool_id: currentPool.id, user_email: currentUser.email,
+          edit_type: editType, target_pool_id: editType === "move_pool" ? targetPoolId : "",
+          user_note: userNote, status: "pending", is_instant: false,
+        });
+      } catch (e) {
+        const errObj = JSON.parse(e.message);
+
+        for(const error of errObj.errors) {
+          setApiError(error?.errorMessage);
+        }
+        
+      }
+      
     }
 
-    setSubmitting(false);
     setDone(true);
-    setTimeout(() => {
-      onSuccess?.();
-    }, 1500);
+    // setTimeout(() => {
+    //   onSuccess?.();
+    // }, 1500);
   };
 
   if (done) {
     return (
-      <div className="fixed inset-0 bg-black/40 z-[60] flex items-center justify-center p-4">
+    <div className="fixed inset-0 bg-black/40 z-[50] flex items-center justify-center p-4">
         <div className="bg-white rounded-xl shadow-xl w-full max-w-sm p-8 text-center space-y-3" onMouseDown={e => e.stopPropagation()}>
-          <CheckCircle className="w-12 h-12 text-green-500 mx-auto" />
-          <p className="font-semibold text-gray-800">
-            {isInstant ? "已即刻生效" : "申请已提交，等待管理员审批"}
-          </p>
-          {!isInstant && <p className="text-xs text-gray-400">管理员审批后变更将生效</p>}
+          {apiError ? (
+            <>
+              <AlertCircle className="w-12 h-12 text-red-500 mx-auto" />
+              <p className="font-semibold text-gray-800">{apiError}</p>
+            </>
+          ) : (
+            <>
+              <CheckCircle className="w-12 h-12 text-green-500 mx-auto" />
+              <p className="font-semibold text-gray-800">
+                {isInstant ? "已即刻生效" : "申请已提交，等待管理员审批"}
+              </p>
+              {!isInstant && <p className="text-xs text-gray-400">管理员审批后变更将生效</p>}
+            </>
+          )}
+          <Button size="sm" className="mt-4" onClick={() => onSuccess?.()}>关闭</Button>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="fixed inset-0 bg-black/40 z-[60] flex items-center justify-center p-4">
+    <>
+    <div className="fixed inset-0 bg-black/40 z-[50] flex items-center justify-center p-4">
       <div className="bg-white rounded-xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto" onMouseDown={e => e.stopPropagation()}>
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b">
@@ -221,7 +301,7 @@ export default function ShippingEditModal({ order, currentPool, currentUser, onC
         <div className="px-5 py-3 border-t flex gap-2 justify-end">
           <Button variant="outline" size="sm" onClick={onClose}>取消</Button>
           <Button size="sm" className="bg-red-600 hover:bg-red-700"
-            onClick={handleSubmit}
+            onClick={() => setShowConfirmDialog(true)}
             disabled={submitting || (editType === "move_pool" && !targetPoolId)}>
             <Truck className="w-3.5 h-3.5 mr-1.5" />
             {submitting ? "提交中..." : isInstant ? "确认修改（即刻生效）" : "提交修改申请"}
@@ -229,5 +309,20 @@ export default function ShippingEditModal({ order, currentPool, currentUser, onC
         </div>
       </div>
     </div>
+
+
+      <ConfirmDialog
+        open={showConfirmDialog}
+        onOpenChange={setShowConfirmDialog}
+        title="确认提交"
+        description={isInstant ? "此操作将即刻生效，确定要继续吗？" : "此操作需等待管理员审批，确定要提交吗？"}
+        confirmText={isInstant ? "确认修改" : "提交申请"}
+        onConfirm={() => {
+          setShowConfirmDialog(false);
+          handleSubmit();
+        }}
+        onCancel={() => setShowConfirmDialog(false)}
+      />
+    </>
   );
 }

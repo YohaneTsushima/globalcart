@@ -1081,6 +1081,7 @@ export default function ShippingPoolDetailModal({ pool: initialPool, isAdmin, cu
               return (
                 <div className="space-y-3">
                   {grouped.map(({ email, orders: groupOrders }) => {
+                    console.log(pendingEdits)
                     const userData = tenantUserMap[email] || {};
                     const displayName = userData.display_name || userData.full_name || email;
                     const groupWeight = groupOrders.reduce((s, o) => s + (o.weight_g || 0), 0);

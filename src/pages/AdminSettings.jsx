@@ -287,8 +287,6 @@ export default function AdminSettings() {
           settingsData = refreshed.data?.settings || [];
         }
       }
-
-      console.log(settingsData)
       
       setSettings(settingsData);
       setAddons(data.addons || []);
@@ -334,7 +332,7 @@ export default function AdminSettings() {
     }
   }, [activeTab]);  // 仅在 tab 切换时触发，不依赖 addons（避免编辑时重复触发）
 
-  const isTenantAdmin = user?.role === "admin" || user?.role === "tenant_admin";
+  const isTenantAdmin = user?.role === "admin" || user?.role === "tenant_admin" || user?.role === "ROLE_ADMIN";
   const isPlatformAdmin = user?.role === "platform_admin";
 
   useEffect(() => { load(); }, [load]);
