@@ -276,7 +276,7 @@ export default function NotificationBellComponent() {
                             </p>
                             <p className="text-xs text-gray-500 truncate mt-0.5">{notification.content}</p>
                             <p className="text-xs text-gray-400 mt-1">
-                              {format(new Date(notification.created_date), 'MM-dd HH:mm', { locale: zhCN })}
+                              {format(new Date(notification.updated_date.replace('Z', '')), 'yyyy-MM-dd HH:mm', { locale: zhCN })}
                             </p>
                           </div>
                         </div>

@@ -654,6 +654,14 @@ export default function ShippingPoolDetailModal({ pool: initialPool, isAdmin, cu
   // Approve or reject a pending ShippingEditRequest
   const handleEditRequest = async (req, action) => {
     setProcessingEditId(req.id);
+    let edit_request = {};
+    let source_shipping_pool = {};
+    let target_shipping_pool = {};
+    let order_info = {};
+
+    let editStatus = '';
+    let notice_key = '';
+
     if (action === 'approve') {
       const targetOrderId = req.order_id;
       const w = orders.find((o) => o.id === targetOrderId)?.weight_g || 0;
@@ -663,15 +671,24 @@ export default function ShippingPoolDetailModal({ pool: initialPool, isAdmin, cu
         const rewarehouseFee = req.is_rewarehouse_request
           ? (parseFloat(rewarehouseFeeInputs[req.id] ?? req.rewarehouse_fee_jpy ?? 0) || 0)
           : 0;
-        const orderUpdate = { order_status: 'in_warehouse', consolidation_pool_id: '' };
+        const orderUpdate = { id: targetOrderId, order_status: 'in_warehouse', consolidation_pool_id: '' };
         if (rewarehouseFee > 0) orderUpdate.rewarehouse_fee_jpy = rewarehouseFee;
-        await Promise.all([
-        shippingPoolApi.update(pool.id, {
+        
+        source_shipping_pool = {
+          id: pool.id,
           order_ids: updatedIds,
           total_weight_g: Math.max(0, (pool.total_weight_g || 0) - w)
-        }),
-        updateOrder(targetOrderId, orderUpdate)]
-        );
+        };
+
+        order_info = orderUpdate;
+
+        // await Promise.all([
+        // shippingPoolApi.update(pool.id, {
+        //   order_ids: updatedIds,
+        //   total_weight_g: Math.max(0, (pool.total_weight_g || 0) - w)
+        // }),
+        // updateOrder(targetOrderId, orderUpdate)]
+        // );
         setPool((p) => ({ ...p, order_ids: updatedIds, total_weight_g: Math.max(0, (p.total_weight_g || 0) - w) }));
         setOrders((prev) => prev.filter((o) => o.id !== targetOrderId));
       } else if (req.edit_type === 'move_pool' && req.target_pool_id) {
@@ -679,36 +696,89 @@ export default function ShippingPoolDetailModal({ pool: initialPool, isAdmin, cu
         const targetPool = (allPoolsRes.data?.pools || []).find((p) => p.id === req.target_pool_id);
         if (targetPool) {
           const updatedIds = (pool.order_ids || []).filter((id) => id !== targetOrderId);
-          await Promise.all([
-          shippingPoolApi.update(pool.id, {
+
+          source_shipping_pool = {
+            id: pool.id,
             order_ids: updatedIds,
             total_weight_g: Math.max(0, (pool.total_weight_g || 0) - w)
-          }),
-          shippingPoolApi.update(req.target_pool_id, {
+          }
+
+          target_shipping_pool = {
+            id: req.target_pool_id,
             order_ids: [...new Set([...(targetPool.order_ids || []), targetOrderId])],
             total_weight_g: (targetPool.total_weight_g || 0) + w
-          }),
-          updateOrder(targetOrderId, { consolidation_pool_id: req.target_pool_id })]
-          );
+          }
+
+          order_info = {
+            id: targetOrderId,
+            consolidation_pool_id: req.target_pool_id
+          }
+
+          // await Promise.all([
+          // shippingPoolApi.update(pool.id, {
+          //   order_ids: updatedIds,
+          //   total_weight_g: Math.max(0, (pool.total_weight_g || 0) - w)
+          // }),
+          // shippingPoolApi.update(req.target_pool_id, {
+          //   order_ids: [...new Set([...(targetPool.order_ids || []), targetOrderId])],
+          //   total_weight_g: (targetPool.total_weight_g || 0) + w
+          // }),
+          // updateOrder(targetOrderId, { consolidation_pool_id: req.target_pool_id })]
+          // );
           setPool((p) => ({ ...p, order_ids: updatedIds, total_weight_g: Math.max(0, (p.total_weight_g || 0) - w) }));
           setOrders((prev) => prev.filter((o) => o.id !== targetOrderId));
         }
       } else if (req.edit_type === 'add_to_pool') {
         // Add order into this pool
         const updatedIds = [...new Set([...(pool.order_ids || []), targetOrderId])];
-        await Promise.all([
-          shippingPoolApi.update(pool.id, {
-            order_ids: updatedIds,
-            total_weight_g: (pool.total_weight_g || 0) + w
-          }),
-          updateOrder(targetOrderId, { order_status: 'notified_shipment', consolidation_pool_id: pool.id }),
-        ]);
+
+        source_shipping_pool = {
+          id: pool.id,
+          order_ids: updatedIds,
+          total_weight_g: (pool.total_weight_g || 0) + w
+        }
+
+        order_info = {
+          id: targetOrderId,
+          order_status: 'notified_shipment',
+          consolidation_pool_id: pool.id
+        }
+
+        // await Promise.all([
+        //   shippingPoolApi.update(pool.id, {
+        //     order_ids: updatedIds,
+        //     total_weight_g: (pool.total_weight_g || 0) + w
+        //   }),
+        //   updateOrder(targetOrderId, { order_status: 'notified_shipment', consolidation_pool_id: pool.id }),
+        // ]);
         setPool((p) => ({ ...p, order_ids: updatedIds, total_weight_g: (p.total_weight_g || 0) + w }));
       }
-      await tenantEntity.update('ShippingEditRequest', req.id, { status: 'approved' });
+      // await tenantEntity.update('ShippingEditRequest', req.id, { status: 'approved' });
+      editStatus = 'approved';
+      notice_key = 'order_request_edit_approved';
     } else {
-      await tenantEntity.update('ShippingEditRequest', req.id, { status: 'rejected' });
+      // await tenantEntity.update('ShippingEditRequest', req.id, { status: 'rejected' });
+      editStatus = 'rejected';
+      notice_key = 'order_request_edit_rejected';
     }
+
+    edit_request = {
+      id: req.id,
+      status: editStatus,
+      edit_type: req.edit_type
+    }
+
+    let handleUpdateParams = {
+      edit_request: edit_request,
+      source_shipping_pool: source_shipping_pool,
+      target_shipping_pool: target_shipping_pool,
+      order_info: order_info,
+      notice_key: notice_key,
+      display_name: currentUser.displayName
+    };
+
+    await tenantEntity.update('ShippingEditRequest', req.id, handleUpdateParams);
+
     setPendingEdits((prev) => prev.filter((r) => r.id !== req.id));
     setProcessingEditId(null);
     onUpdated?.();
@@ -1081,7 +1151,6 @@ export default function ShippingPoolDetailModal({ pool: initialPool, isAdmin, cu
               return (
                 <div className="space-y-3">
                   {grouped.map(({ email, orders: groupOrders }) => {
-                    console.log(pendingEdits)
                     const userData = tenantUserMap[email] || {};
                     const displayName = userData.display_name || userData.full_name || email;
                     const groupWeight = groupOrders.reduce((s, o) => s + (o.weight_g || 0), 0);

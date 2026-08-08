@@ -122,8 +122,7 @@ export default function OrderDetailPanel({ order, onClose, onRefresh, userProfil
   const statusColor = getStatusColor(order.order_status, isAdmin ? "admin" : "user");
 
   return (
-    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4 overflow-y-auto" 
-      onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4 overflow-y-auto">
       <div className="bg-white rounded-xl shadow-xl w-full max-w-4xl my-8" onClick={e => e.stopPropagation()}>
         {/* Header */}
         <div className="flex items-start justify-between px-6 py-4 border-b sticky top-0 bg-white rounded-t-xl z-10">

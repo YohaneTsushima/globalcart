@@ -21,6 +21,7 @@ import { getStatusLabel, getStatusColor } from "@/lib/orderStatus";
 import MessageThread from "@/components/common/MessageThread";
 import OrderCancellationModule from "@/components/orders/OrderCancellationModule";
 import { toast } from "sonner";
+import ConfirmDialog from "@/components/common/ConfirmDialog";
 
 // All statuses admin can manually set (escape hatch)
 const ALL_STATUSES = [
@@ -99,6 +100,8 @@ export default function AdminOrderEditModal({ order, initialItemSizeTemplates, o
 
   // Post-warehouse state (for pre_shipment pool creation result)
   const [warehouseDone, setWarehouseDone] = useState(null); // { poolId, isOfficialPool } or null
+  const [showWarehouseConfirm, setShowWarehouseConfirm] = useState(false);
+  const [warehouseConfirmAndOpen, setWarehouseConfirmAndOpen] = useState(false);
 
   // Split order state
   const [splitting, setSplitting] = useState(false);
@@ -257,6 +260,7 @@ export default function AdminOrderEditModal({ order, initialItemSizeTemplates, o
       order_status: "purchased",
       purchased_date: new Date().toISOString().split("T")[0],
       admin_note: form.admin_note,
+      notice_key: 'order_purchased'
     };
 
     if (purchaseScreenshot) updates.purchase_screenshot_url = purchaseScreenshot;
@@ -272,6 +276,7 @@ export default function AdminOrderEditModal({ order, initialItemSizeTemplates, o
       order_status: "in_warehouse",
       storage_time: new Date().toISOString().split("T")[0],
       admin_note: form.admin_note,
+      notice_key: 'order_in_warehouse'
     };
     if (arrivalPhoto) updates.storage_image = arrivalPhoto;
     if (form.weight_g) updates.weight_g = parseFloat(form.weight_g);
@@ -284,6 +289,10 @@ export default function AdminOrderEditModal({ order, initialItemSizeTemplates, o
         updates.item_size_fee_currency = selectedTemplate.fee_currency;
       }
     }
+
+    // console.log(updates)
+    // setSaving(false);
+    // return ;
     await updateOrder(order.id, updates);
 
     // If order has pre_shipment, trigger pool creation
@@ -882,17 +891,17 @@ export default function AdminOrderEditModal({ order, initialItemSizeTemplates, o
                   ) : order.pre_shipment ? (
                     <div className="flex gap-2">
                       <Button size="sm" variant="outline" className="flex-1 text-xs text-teal-600 border-teal-300"
-                        onClick={() => handleMarkInWarehouse()} disabled={saving || !canWarehouseIn}>
+                        onClick={() => { setWarehouseConfirmAndOpen(false); setShowWarehouseConfirm(true); }} disabled={saving || !canWarehouseIn}>
                         {saving ? <><Loader2 className="w-3 h-3 animate-spin mr-1" />处理中...</> : "✓ 确认入库"}
                       </Button>
                       <Button size="sm" className="flex-1 bg-teal-600 hover:bg-teal-700 text-xs"
-                        onClick={() => handleMarkInWarehouse({ andOpenPool: true })} disabled={saving || !canWarehouseIn}>
+                        onClick={() => { setWarehouseConfirmAndOpen(true); setShowWarehouseConfirm(true); }} disabled={saving || !canWarehouseIn}>
                         {saving ? <><Loader2 className="w-3 h-3 animate-spin mr-1" />处理中...</> : <><Zap className="w-3 h-3 mr-1" />确认入库并查看发货申请</>}
                       </Button>
                     </div>
                   ) : (
                     <Button size="sm" className="w-full bg-teal-600 hover:bg-teal-700 text-xs"
-                      onClick={() => handleMarkInWarehouse()} disabled={saving || !canWarehouseIn}>
+                      onClick={() => { setWarehouseConfirmAndOpen(false); setShowWarehouseConfirm(true); }} disabled={saving || !canWarehouseIn}>
                       {order.split_index === -1 ? "✓ 父订单确认入库（-00 单）" : "✓ 确认入库"}
                     </Button>
                   )}
@@ -1369,6 +1378,18 @@ export default function AdminOrderEditModal({ order, initialItemSizeTemplates, o
           )}
         </div>
       </div>
+      <ConfirmDialog
+        open={showWarehouseConfirm}
+        onOpenChange={setShowWarehouseConfirm}
+        title="确认入库"
+        description={`确定将订单"${order.product_name}"标记为已入库吗？`}
+        confirmText="确认入库"
+        cancelText="取消"
+        onConfirm={() => {
+          setShowWarehouseConfirm(false);
+          handleMarkInWarehouse({ andOpenPool: warehouseConfirmAndOpen });
+        }}
+      />
     </div>
   );
 }

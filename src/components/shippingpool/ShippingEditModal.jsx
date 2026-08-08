@@ -15,6 +15,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import ConfirmDialog from "@/components/common/ConfirmDialog";
+import { format } from "date-fns";
 
 export default function ShippingEditModal({ order, currentPool, currentUser, onClose, onSuccess }) {
   const [editType, setEditType] = useState("cancel_shipment");
@@ -25,15 +26,34 @@ export default function ShippingEditModal({ order, currentPool, currentUser, onC
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState(false);
   const [isInstant, setIsInstant] = useState(false);
+  const [remainingMs, setRemainingMs] = useState(0);
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   const [apiError, setApiError] = useState("");
 
   useEffect(() => {
-    // Check if within 5 minutes of the pool's creation
-    if (currentPool?.created_date) {
-      const age = Math.abs(Date.now() - new Date(currentPool.created_date).getTime());
-      const isInstant = (age < 5 * 60 * 1000);
-      setIsInstant(isInstant);
+    // Countdown: check if within 5 minutes of the pool's last update
+    let timer;
+    if (currentPool?.updated_date) {
+      
+      // currentPool.updated_date = '2026-08-08T17:55:58.285';
+
+      const FIVE_MIN = 5 * 60 * 1000;
+      const updatedTime = new Date(currentPool.updated_date).getTime();
+
+      const tick = () => {
+        const age = Date.now() - updatedTime;
+        const remaining = FIVE_MIN - age;
+        if (remaining <= 0) {
+          setIsInstant(false);
+          setRemainingMs(0);
+        } else {
+          setIsInstant(true);
+          setRemainingMs(remaining);
+        }
+      };
+
+      tick();
+      timer = setInterval(tick, 1000);
     }
 
     fetchShippingPools()
@@ -45,7 +65,9 @@ export default function ShippingEditModal({ order, currentPool, currentUser, onC
         setAvailablePools(eligible);
       })
       .catch(() => {});
-  }, []);
+
+    return () => { if (timer) clearInterval(timer); };
+  }, [currentPool?.updated_date]);
 
   const filteredPools = availablePools.filter(p => {
     if (!poolSearch) return true;
@@ -132,18 +154,7 @@ export default function ShippingEditModal({ order, currentPool, currentUser, onC
       //   user_note: userNote, status: "auto_applied", is_instant: true,
       // });
 
-      editRequest = {
-        order_id: order.id, 
-        pool_id: currentPool.id, 
-        user_email: currentUser.email,
-        edit_type: editType, 
-        target_pool_id: editType === "move_pool" ? targetPoolId : "",
-        user_note: userNote,
-        status: "pending", 
-        is_instant: false,
-      }
-
-      res = await updateShippingPool(status, w, updatedIds, editRequest);
+      await updateShippingPool(status, w, updatedIds, editRequest);
       
       
     } else {
@@ -152,7 +163,7 @@ export default function ShippingEditModal({ order, currentPool, currentUser, onC
         await tenantEntity.create('ShippingEditRequest', {
           order_id: order.id, pool_id: currentPool.id, user_email: currentUser.email,
           edit_type: editType, target_pool_id: editType === "move_pool" ? targetPoolId : "",
-          user_note: userNote, status: "pending", is_instant: false,
+          user_note: userNote, status: "pending", is_instant: false,notice_key: 'order_request_edit_created'
         });
       } catch (e) {
         const errObj = JSON.parse(e.message);
@@ -213,7 +224,7 @@ export default function ShippingEditModal({ order, currentPool, currentUser, onC
           {isInstant ? (
             <div className="flex items-center gap-2 bg-green-50 border border-green-200 rounded-lg px-3 py-2 text-sm text-green-700">
               <CheckCircle className="w-4 h-4 flex-shrink-0" />
-              发货申请刚提交不久，编辑将即刻生效
+              发货申请刚提交不久，编辑将即刻生效（剩余 {Math.ceil(remainingMs / 1000)} 秒）
             </div>
           ) : (
             <div className="flex items-center gap-2 bg-yellow-50 border border-yellow-200 rounded-lg px-3 py-2 text-sm text-yellow-700">

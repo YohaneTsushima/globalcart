@@ -8,14 +8,14 @@
  */
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
-import { X, Truck, Package, MapPin, Lock, Users, Search, Star } from "lucide-react";
+import { X, Truck, Package, MapPin, Lock, Users, Search, Star, Loader2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import CustomsDeclarationForm from "@/components/orders/CustomsDeclarationForm";
 import { serializeAddressToText, isAddressFormValid, EMPTY_ADDRESS_FORM } from "@/components/common/AddressForm";
 import AddressBlock from "@/components/orders/AddressBlock";
 import { getCountry } from "@/lib/countries";
 import { base44 } from "@/api/base44Client";
-import { tenantEntity, userPrefApi, fetchShippingPools } from "@/lib/tenantApi";
+import { tenantEntity, userPrefApi, fetchShippingPools, shippingPoolApi } from "@/lib/tenantApi";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -233,6 +233,7 @@ export default function UserNotifyShipmentModal({ order, orders, initialData, on
   const [timeoutMethod, setTimeoutMethod] = useState("");
   const [note, setNote] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [consolidationPoolId, setConsolidationPoolId] = useState(null);
 
   // Address & transit
   const [savedAddresses, setSavedAddresses] = useState([]);
@@ -266,6 +267,7 @@ export default function UserNotifyShipmentModal({ order, orders, initialData, on
   const [selectedDirectPoolId, setSelectedDirectPoolId] = useState("");
   const [directPools, setDirectPools] = useState([]);
   const [currentUser, setCurrentUser] = useState(null);
+  const [loadingPool, setLoadingPool] = useState(false);
 
   // Customs declaration (single shipment only)
   const [poolTitle, setPoolTitle] = useState("");
@@ -285,6 +287,7 @@ export default function UserNotifyShipmentModal({ order, orders, initialData, on
   const [showConfirm, setShowConfirm] = useState(false);
 
   useEffect(() => {
+    console.log(initialData)
     // If initialData was provided by the parent page, use it directly — skip all self-fetches
     if (initialData) {
       const pref = initialData.userPreference;
@@ -312,6 +315,41 @@ export default function UserNotifyShipmentModal({ order, orders, initialData, on
         );
         setDirectPools(directShipPools);
       }).catch(() => {});
+
+      // 根据 consolidation_pool_id 查询 pool 并预填表单
+      let poolId = order.consolidation_pool_id;
+      setConsolidationPoolId(poolId);
+      if(poolId) {
+        setLoadingPool(true);
+        shippingPoolApi.one(poolId).then(pool => {
+          setLoadingPool(false);
+          if (!pool) return;
+          setMethod(pool.shipping_method || "");
+          setConsType(pool.consolidation_type || "");
+          setPoolTitle(pool.title || "");
+          setNote(pool.user_note || "");
+          // 地址映射
+          if (pool.recipient_name || pool.address_line1) {
+            setNewAddress({
+              label: "来自发货申请",
+              recipient_name: pool.recipient_name || "",
+              country: pool.destination_country || pool.country || "",
+              addr1: pool.address_line1 || "",
+              addr2: pool.address_line2 || "",
+              addr3: pool.address_line3 || "",
+              state: pool.state || "",
+              phone: pool.recipient_phone || "",
+            });
+            // 自动进入新建地址模式
+            setAddressInputMode({ direct: true });
+          }
+
+          setCustomsData(pool.customs_declaration);
+        }).catch(() => {
+          setLoadingPool(false);
+        });
+      }
+
       return;
     }
 
@@ -528,6 +566,7 @@ export default function UserNotifyShipmentModal({ order, orders, initialData, on
 
     // Build the standard shipment payload
     const shipmentPayload = {
+      id: consolidationPoolId,
       consType: isJoiningPool ? (selectedPool?.consolidation_type || consType) : consType,
       shipping_method: isJoiningPool ? (selectedPool?.shipping_method || method) : method,
       scheduled_ship_date: deadline || '',
@@ -566,7 +605,15 @@ export default function UserNotifyShipmentModal({ order, orders, initialData, on
   return (
     <>
     <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-xl shadow-xl w-full max-w-xl max-h-[90vh] overflow-y-auto" onMouseDown={e => e.stopPropagation()}>
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-xl max-h-[90vh] overflow-y-auto relative" onMouseDown={e => e.stopPropagation()}>
+        {loadingPool && (
+          <div className="absolute inset-0 bg-white/80 z-20 flex items-center justify-center rounded-xl">
+            <div className="flex items-center gap-2 text-gray-500">
+              <Loader2 className="w-5 h-5 animate-spin" />
+              <span className="text-sm">加载发货申请数据...</span>
+            </div>
+          </div>
+        )}
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b">
           <div>

@@ -45,6 +45,9 @@ const notificationCategories = [
       { key: "order_purchased", label: "订单已下单" },
       { key: "order_in_warehouse", label: "订单已入库" },
       { key: "order_added_to_pool", label: "订单已添加至发货申请", default_off: true },
+      { key: "order_request_edit_created", label: "订单更改创建" },
+      { key: "order_request_edit_approved", label: "订单更改申请被批准" },
+      { key: "order_request_edit_rejected", label: "订单更改申请被拒绝" },
     ]
   },
   {
@@ -114,10 +117,19 @@ export default function UserNotificationSettings() {
 
   const handleConfirmSave = () => {
     setShowConfirmDialog(false);
+    const fullSettings = {};
+    notificationCategories.forEach(cat => {
+      cat.subtypes.forEach(sub => {
+        fullSettings[sub.key] = {
+          in_app: subtypeSettings[sub.key]?.in_app ?? !sub.default_off,
+          email: subtypeSettings[sub.key]?.email ?? false,
+        };
+      });
+    });
     updateMutation.mutate({
       in_app_enabled: globalInApp,
       email_enabled: globalEmail,
-      notification_settings: subtypeSettings,
+      notification_settings: fullSettings,
     });
   };
 

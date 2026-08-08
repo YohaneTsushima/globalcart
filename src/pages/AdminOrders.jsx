@@ -22,6 +22,8 @@ import { usePermissions } from "@/hooks/usePermissions";
 import { usePageSize } from "@/hooks/usePageSize";
 import PaginationBar from "@/components/common/PaginationBar";
 import { MOCK_ADMIN_ORDERS_DATA } from "@/mock/adminOrdersMock";
+import { updateOrder } from "@/lib/tenantApi";
+import ConfirmDialog from "@/components/common/ConfirmDialog";
 
 const STORAGE_KEY = "admin_orders_columns";
 
@@ -103,6 +105,7 @@ export default function AdminOrders() {
   const [settlementData, setSettlementData] = useState(null);
   const [actualWeight, setActualWeight] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
+  const [orderedConfirmOrder, setOrderedConfirmOrder] = useState(null);
 
   const fetchOrders = async () => {
     if (fetchingRef.current) return;
@@ -296,11 +299,19 @@ export default function AdminOrders() {
   };
 
   const handleQuickOrdered = async (order) => {
-    await base44.functions.invoke('updateTenantOrder', {
+
+    updateOrder(order.id, {
       order_id: order.id,
       order_status: "purchased",
       purchased_date: new Date().toISOString().split("T")[0],
+      notice_key: 'order_purchased'
     });
+    // await base44.functions.invoke('updateTenantOrder', {
+    //   order_id: order.id,
+    //   order_status: "purchased",
+    //   purchased_date: new Date().toISOString().split("T")[0],
+    //   notice_key: 'order_purchased'
+    // });
     fetchOrders();
   };
 
@@ -597,7 +608,7 @@ export default function AdminOrders() {
                                 查看详情
                               </Button>
                             : <Button size="sm" variant="outline" className="h-6 text-xs px-2 text-indigo-600 border-indigo-200"
-                                onClick={() => handleQuickOrdered(order)}>
+                                onClick={() => setOrderedConfirmOrder(order)}>
                                 已下单
                               </Button>
                         )}
@@ -626,6 +637,7 @@ export default function AdminOrders() {
                           const pool = getOrderPool(order);
                           if (!pool) return null;
                           if (order.order_status === "shipping_fee_pending") return null; // already shown above
+                          if (order.order_status !== "notified_shipment") return null;
                           const isConsolidation = pool.consolidation_type && pool.consolidation_type !== "";
                           const isOfficialPool = pool.is_admin_created === true;
                           return (
@@ -892,6 +904,20 @@ export default function AdminOrders() {
         </div>
       )}
       </TabsContent>
+      <ConfirmDialog
+        open={!!orderedConfirmOrder}
+        onOpenChange={(open) => { if (!open) setOrderedConfirmOrder(null); }}
+        title="确认已下单"
+        description={`确定将订单"${orderedConfirmOrder?.product_name}"标记为已下单吗？${orderedConfirmOrder?.has_uploaded_screenshot === false ? '\n\n⚠️ 尚未上传完成购买后上传截图' : ''}`}
+        confirmText="确认已下单"
+        cancelText="取消"
+        onConfirm={() => {
+          if (orderedConfirmOrder) {
+            handleQuickOrdered(orderedConfirmOrder);
+            setOrderedConfirmOrder(null);
+          }
+        }}
+      />
     </Tabs>
   );
 }

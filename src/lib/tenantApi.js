@@ -80,6 +80,7 @@ export const tenantEntity = {
   update: (entity, id, data)    => mutate(entity, 'update', { id, data }).then(r => r.result || r.data?.result || r),
   delete: (entity, id)          => mutate(entity, 'delete', { id }),
   sync: (entity, data) => mutate(entity, 'sync', {data}).then(r => r?.result || r?.data?.result || r),
+  one: (entity, id) => mutate(entity, 'one', { id })
 };
 
 // ─── ShippingPool shortcuts ───────────────────────────────────────────────────
@@ -89,6 +90,7 @@ export const shippingPoolApi = {
   create: (data)   => tenantEntity.create('ShippingPool', data),
   update: (id, d)  => tenantEntity.update('ShippingPool', id, d),
   delete: (id)     => tenantEntity.delete('ShippingPool', id),
+  one: (id) => tenantEntity.one('ShippingPool', id)
 };
 
 // ─── UserPreference shortcuts ─────────────────────────────────────────────────
