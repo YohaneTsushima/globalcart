@@ -184,6 +184,7 @@ export default function AdminShippingInfoPanel({
   const [exchangeRates, setExchangeRates] = useState(exchangeRatesProp);
   const [confirmPaymentDialogOpen, setConfirmPaymentDialogOpen] = useState(false);
   const [confirmPaymentAndShipDialogOpen, setConfirmPaymentAndShipDialogOpen] = useState(false);
+  const [confirmSetAwaitingPaymentDialogOpen, setConfirmSetAwaitingPaymentDialogOpen] = useState(false);
 
   // Sync exchange rates from parent prop
   useEffect(() => {
@@ -378,7 +379,12 @@ export default function AdminShippingInfoPanel({
   const handleSetAwaitingPayment = async () => {
     if (!shippingFeeJpy) return;
     setSaving(true);
-    const payload = { ...buildUpdatePayload(), status: "awaiting_payment", payment_status: "unpaid", order_status: "notified_shipment_fee_pending" };
+    // 已发货的池子补付时不改变发货状态
+    const keepStatus = ["ready_to_ship", "shipped", "delivered"].includes(pool.status);
+    let updateStatus = (keepStatus ? '' : "awaiting_payment_confirmation");
+    const payload = { ...buildUpdatePayload(), status: updateStatus, payment_status: "awaiting_confirmation", order_status: "notified_shipment_fee_pending",
+      notice_key: 'shipping_fee_required'
+     };
     await updatePool(payload, { setLoading: setSaving });
   };
 
@@ -952,7 +958,7 @@ export default function AdminShippingInfoPanel({
                   </div>
                 )}
                 <Button size="sm" className="bg-orange-600 hover:bg-orange-700 w-full"
-                  onClick={handleSetAwaitingPayment} disabled={saving || !shippingFeeJpy}>
+                  onClick={() => setConfirmSetAwaitingPaymentDialogOpen(true)} disabled={saving || !shippingFeeJpy}>
                   <CreditCard className="w-3.5 h-3.5 mr-1.5" />
                   {saving ? "保存中..." : `通知用户付款（合计 ¥${Math.round(grandTotalJpy).toLocaleString()} JPY）`}
                 </Button>
@@ -1271,6 +1277,15 @@ export default function AdminShippingInfoPanel({
         description="确认已收到全部款项并直接进入「已发货」状态？"
         confirmText="确认"
         onConfirm={handleConfirmPaymentAndShip}
+      />
+
+      <ConfirmDialog
+        open={confirmSetAwaitingPaymentDialogOpen}
+        onOpenChange={setConfirmSetAwaitingPaymentDialogOpen}
+        title="通知用户付款"
+        description={`确认通知用户付款？合计金额 ¥${Math.round(grandTotalJpy).toLocaleString()} JPY`}
+        confirmText="确认通知"
+        onConfirm={handleSetAwaitingPayment}
       />
     </div>
   );

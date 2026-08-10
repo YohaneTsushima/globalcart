@@ -334,12 +334,16 @@ export default function AdminOrderEditModal({ order, initialItemSizeTemplates, o
   // shipping_fee_pending/ready_to_ship → shipped
   const handleMarkShipped = async () => {
     setSaving(true);
-    await updateOrder(order.id, {
+
+    let pay_load = {
       order_status: "shipped",
       outbound_time: new Date().toISOString().split("T")[0],
       tracking_number: trackingNumber,
       admin_note: form.admin_note,
-    });
+      notice_key: 'order_shipped'
+    }
+    
+    await updateOrder(order.id, pay_load);
     onSaved();
   };
 
@@ -549,7 +553,7 @@ export default function AdminOrderEditModal({ order, initialItemSizeTemplates, o
                     {(order.selected_addons || []).length > 0
                       ? (order.selected_addons || []).map((a, i) => (
                           <div key={i} className="flex items-center justify-between text-xs">
-                            <span className="text-gray-700">{a.name || a.id}</span>
+                            <span className="text-gray-700">{a.service_name || a.id}</span>
                             <span className="font-medium text-purple-700">+{a.fee_currency || "JPY"} {a.fee_currency === "JPY" ? Math.round(parseFloat(a.fee || 0)) : a.fee}</span>
                           </div>
                         ))
@@ -1191,6 +1195,24 @@ export default function AdminOrderEditModal({ order, initialItemSizeTemplates, o
                   </div>
                 );
               })()}
+
+              {/* notified_shipment_fee_paid → 已付运费，可以发货 */}
+              {status === "notified_shipment_fee_paid" && (
+                <div className="space-y-3 border border-lime-100 rounded-xl p-3 bg-lime-50">
+                  <div className="text-sm font-medium text-lime-800">
+                    已付运费 — 填写运单号后发出
+                  </div>
+                  <div>
+                    <Label className="text-xs">运单号</Label>
+                    <Input className="mt-1" value={trackingNumber}
+                      onChange={e => setTrackingNumber(e.target.value)} />
+                  </div>
+                  <Button size="sm" className="w-full bg-lime-600 hover:bg-lime-700 text-xs"
+                    onClick={handleMarkShipped} disabled={!trackingNumber || saving}>
+                    ✓ 确认已发出
+                  </Button>
+                </div>
+              )}
 
               {/* shipping_fee_pending / ready_to_ship → shipped */}
               {(status === "shipping_fee_pending" || status === "ready_to_ship") && (

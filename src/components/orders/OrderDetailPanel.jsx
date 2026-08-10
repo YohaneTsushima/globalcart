@@ -696,6 +696,13 @@ export default function OrderDetailPanel({ order, onClose, onRefresh, userProfil
             </div>
           )}
         </div>
+
+        {/* 底部关闭按钮 */}
+        <div className="sticky bottom-0 bg-white border-t px-6 py-3 flex justify-end rounded-b-xl">
+          <Button variant="outline" onClick={onClose}>
+            关闭
+          </Button>
+        </div>
       </div>
     </div>
   );

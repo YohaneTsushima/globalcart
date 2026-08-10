@@ -119,7 +119,15 @@ export default function ShippingPoolDetailModal({ pool: initialPool, isAdmin, cu
   const [submittingConvert, setSubmittingConvert] = useState(false);
 
   const { user } = useCurrentUser();
-  
+  const onSuccessRef = useRef(null);
+
+  useEffect(() => {
+    onSuccessRef.current = () => {
+      onUpdated?.();
+      onClose?.();
+    };
+  }, [onUpdated, onClose]);
+
   const subject = `${user?.displayName} - ${pool?.title}`;
 
   const openConvertToOther = async () => {
@@ -287,6 +295,21 @@ export default function ShippingPoolDetailModal({ pool: initialPool, isAdmin, cu
       shippingPoolApi.update(pool.id, { unread_roles: newRoles }).catch(() => {});
       setPool((p) => ({ ...p, unread_roles: newRoles }));
     }
+  }, []);
+
+  // 监听支付宝回调的 postMessage（PaymentClose 发送）
+  useEffect(() => {
+    const handleMessage = (e) => {
+      if (e.data?.type === "alipay_payment_done") {
+        toast.success('支付成功');
+        onSuccessRef.current?.();
+      }
+      if (e.data?.type === "alipay_payment_navigate" && e.data.url) {
+        window.location.href = e.data.url;
+      }
+    };
+    window.addEventListener("message", handleMessage);
+    return () => window.removeEventListener("message", handleMessage);
   }, []);
 
   // Fetch other pools for moving orders
@@ -474,6 +497,7 @@ export default function ShippingPoolDetailModal({ pool: initialPool, isAdmin, cu
       payment_type: "ship",
       paid_currency: currencyToSend,
       payment_method: newMethod,
+      popup_mode: true
     });
 
     if(!res?.data?.success) {
@@ -760,6 +784,10 @@ export default function ShippingPoolDetailModal({ pool: initialPool, isAdmin, cu
       // await tenantEntity.update('ShippingEditRequest', req.id, { status: 'rejected' });
       editStatus = 'rejected';
       notice_key = 'order_request_edit_rejected';
+
+      order_info = {
+        id: req.order_id
+      }
     }
 
     edit_request = {
@@ -891,7 +919,7 @@ export default function ShippingPoolDetailModal({ pool: initialPool, isAdmin, cu
                 {(pool.selected_addons || []).length > 0 ?
               pool.selected_addons.map((a, i) =>
               <div key={i} className="flex items-center justify-between text-xs">
-                        <span className="text-gray-700">{a.name || a.id}</span>
+                        <span className="text-gray-700">{a.service_name || a.id}</span>
                         {parseFloat(a.fee) > 0 &&
                 <span className="font-medium text-yellow-700">+{a.fee_currency || "JPY"} {Math.round(parseFloat(a.fee))}</span>
                 }
@@ -2147,6 +2175,13 @@ export default function ShippingPoolDetailModal({ pool: initialPool, isAdmin, cu
           confirmText="是"
           onConfirm={handleConfirmDelivery}
         />
+
+        {/* 底部关闭按钮 */}
+        <div className="sticky bottom-0 bg-white border-t px-6 py-3 flex justify-end">
+          <Button variant="outline" onClick={onClose}>
+            关闭
+          </Button>
+        </div>
       </div>
     </div>);
 

@@ -637,7 +637,7 @@ export default function AdminOrders() {
                           const pool = getOrderPool(order);
                           if (!pool) return null;
                           if (order.order_status === "shipping_fee_pending") return null; // already shown above
-                          if (order.order_status !== "notified_shipment") return null;
+                          if (!["notified_shipment", "ready_to_ship", "notified_shipment_fee_paid"].includes(order.order_status)) return null;
                           const isConsolidation = pool.consolidation_type && pool.consolidation_type !== "";
                           const isOfficialPool = pool.is_admin_created === true;
                           return (

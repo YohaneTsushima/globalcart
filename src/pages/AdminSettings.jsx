@@ -447,10 +447,11 @@ export default function AdminSettings() {
   const handleEditAddon = (a) => {
     setEditingAddon(a.id);
     setEditAddonFields({
-      name: a.name, description: a.description || "", fee: String(a.fee),
+      service_name: a.service_name, user_description: a.user_description || "", fee: String(a.fee),
       fee_currency: a.fee_currency || "JPY", addon_type: a.addon_type || "order",
       is_user_customizable: a.is_user_customizable || false,
-      min_fee: a.min_fee || 0, max_fee: a.max_fee || 0
+      min_fee: a.min_fee || 0, max_fee: a.max_fee || 0,
+      is_active: a.is_active
     });
   };
 
@@ -459,14 +460,22 @@ export default function AdminSettings() {
       ...editAddonFields,
       fee: parseFloat(editAddonFields.fee) || 0,
       fee_min: parseFloat(editAddonFields.fee_min) || 0,
-      fee_max: parseFloat(editAddonFields.fee_max) || 0
+      fee_max: parseFloat(editAddonFields.fee_max) || 0,
+      is_active: editAddonFields.is_active
     });
     setEditingAddon(null);
     await load();
   };
 
   const toggleAddon = async (a) => {
-    await tenantEntity.update('AddonOption', a.id, { is_active: !a.is_active });
+    let param = {
+      ...editAddonFields,
+      fee: parseFloat(editAddonFields.fee) || 0,
+      fee_min: parseFloat(editAddonFields.fee_min) || 0,
+      fee_max: parseFloat(editAddonFields.fee_max) || 0,
+      is_active: editAddonFields.is_active, is_active: !a.is_active
+    };
+    await tenantEntity.update('AddonOption', a.id, param);
     await load();
   };
 

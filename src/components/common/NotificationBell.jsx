@@ -41,6 +41,9 @@ const typeColors = {
 
 export default function NotificationBellComponent() {
   const [isOpen, setIsOpen] = useState(false);
+  const [showNewNotificationTip, setShowNewNotificationTip] = useState(false);
+  const [lastNotification, setLastNotification] = useState(null);
+  const [, forceUpdate] = useState(0);
   const queryClient = useQueryClient();
   const { isAdmin, user } = usePermissions();
 
@@ -56,7 +59,7 @@ export default function NotificationBellComponent() {
     refetchOnWindowFocus: false,
   });
 
-  const { data: notificationsData } = useQuery({
+  const { data: notificationsData, refetch: refetchNotifications } = useQuery({
     queryKey: ['notification-recent-unread'],
     queryFn: async () => {
       const res = await base44.functions.invoke('notification/getUnReadUserNotifications', { limit: 7, skip: 0 });
@@ -147,6 +150,7 @@ export default function NotificationBellComponent() {
   // WebSocket 实时监听
   const handleNewNotification = useCallback((notification) => {
     if (!notification || typeof notification !== 'object') return;
+    
     queryClient.setQueryData(['notification-unread-count'], (old) => ({
       unread_count: (old?.unread_count || 0) + 1
     }));
@@ -154,13 +158,29 @@ export default function NotificationBellComponent() {
       if (!old?.notifications) return { notifications: [notification] };
       return { ...old, notifications: [notification, ...old.notifications].slice(0, 7) };
     });
+    
+    // 强制重新获取数据（触发组件重新渲染）
+    Promise.all([refetchUnread(), refetchNotifications()]).then(() => {
+      // 强制组件重新渲染
+      forceUpdate(prev => prev + 1);
+    });
+    
+    // 刷新当前页面的所有数据
+    queryClient.invalidateQueries({ refetchType: 'all' });
+    // 特别刷新订单查询
+    queryClient.invalidateQueries({ queryKey: ['my-orders'] });
+    
+    // 显示新通知提示
+    setLastNotification(notification);
+    setShowNewNotificationTip(true);
+    
     // 弹出桌面通知
     showDesktopNotification(
       notification.title || '新通知',
       notification.content || '',
       notification.related_url ? () => { window.location.href = notification.related_url; } : undefined
     );
-  }, [queryClient]);
+  }, [queryClient, refetchUnread, refetchNotifications]);
 
   useEffect(() => {
     on('notification', handleNewNotification);
@@ -209,6 +229,7 @@ export default function NotificationBellComponent() {
         className="relative h-9 px-2 hover:bg-gray-100"
         onClick={() => {
           setIsOpen(!isOpen);
+          setShowNewNotificationTip(false);
           requestNotificationPermission();
         }}
       >
@@ -219,6 +240,28 @@ export default function NotificationBellComponent() {
           </Badge>
         )}
       </Button>
+      
+      {/* 新通知提示 */}
+      {showNewNotificationTip && !isOpen && (
+        <div 
+          className="absolute right-0 top-full mt-2 w-72 bg-white rounded-lg shadow-lg border border-gray-200 z-50 cursor-pointer hover:shadow-xl transition-shadow"
+          onClick={() => {
+            setIsOpen(true);
+            setShowNewNotificationTip(false);
+          }}
+        >
+          <div className="px-3 py-2 bg-blue-50 border-b border-blue-100 rounded-t-lg">
+            <p className="text-xs font-medium text-blue-700">新通知</p>
+          </div>
+          <div className="px-3 py-2">
+            <p className="text-sm font-medium text-gray-900 truncate">{lastNotification?.title || '新通知'}</p>
+            <p className="text-xs text-gray-500 truncate mt-0.5">{lastNotification?.content || ''}</p>
+          </div>
+          <div className="px-3 py-2 border-t border-gray-100 bg-gray-50 rounded-b-lg">
+            <p className="text-xs text-blue-600">点击查看详情</p>
+          </div>
+        </div>
+      )}
 
       {isOpen && (
         <>

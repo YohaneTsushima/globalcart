@@ -85,7 +85,7 @@ export function calcFeeBreakdownPerUser({
     const userAddons = [];
     for (const o of userOrders) {
       for (const a of (o.selected_addons || [])) {
-        const key = a.id || a.name;
+        const key = a.id || a.service_name;
         if (key && !seenAddonKeys.has(key)) {
           seenAddonKeys.add(key);
           userAddons.push(a);

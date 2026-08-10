@@ -53,7 +53,7 @@ function AddonRow({ a, editingId, editFields, onEdit, onCancel, onSave, onToggle
             <div>
               <Label className="text-xs text-gray-500">名称</Label>
               <Input className="mt-0.5 h-7 text-sm" value={editFields.service_name}
-                onChange={e => setEditFields(p => ({ ...p, name: e.target.value }))} />
+                onChange={e => setEditFields(p => ({ ...p, service_name: e.target.value }))} />
             </div>
             <div>
               <Label className="text-xs text-gray-500">说明</Label>
@@ -229,7 +229,7 @@ export default function AddonManager({ addons, editingAddon, editAddonFields, ne
             </div>
           </div>
         </div>
-        <Button size="sm" variant="outline" onClick={onAdd} disabled={!newAddon.name || newAddon.fee === ""}>
+        <Button size="sm" variant="outline" onClick={onAdd} disabled={!newAddon.service_name || newAddon.fee === ""}>
           <Plus className="w-3.5 h-3.5 mr-1" />添加
         </Button>
       </div>
