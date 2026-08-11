@@ -604,7 +604,7 @@ export default function MyOrders() {
   };
 
   const handleConfirmDelivered = async (order) => {
-    await base44.functions.invoke('order/info/updateTenantOrder', [{ order_id: order.id, order_status: "delivered" }]);
+    await base44.functions.invoke('order/info/updateTenantOrder', [{ order_id: order.id, order_status: "delivered", notice_key: 'order_delivered' }]);
     // Also mark the associated shipping pool as delivered
     // const orderId = String(order.id);
     // const pool = shippingPools.find(p => (p.order_ids || []).some(id => String(id) === orderId));

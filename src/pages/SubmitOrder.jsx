@@ -25,44 +25,6 @@ import { t, getLocale } from "@/lib/i18n";
 // Default prepay rate fallback
 const DEFAULT_PREPAY_RATE = 0.80;
 
-// ─── DEV MOCK ───────────────────────────────────────────────────────────────
-const IS_DEV_MOCK = import.meta.env.VITE_DEV_MOCK === 'true';
-
-const MOCK_PAGE_DATA = {
-  addons: [
-    // { id: 'addon-1', name: '商品拍照', fee: 300, feeCurrency: 'JPY', description: '入库时拍摄商品实物照片', isUserCustomizable: false },
-    // { id: 'addon-2', name: '代缴消费税', fee: 0, feeCurrency: 'JPY', description: '代垫消费税金额（自定义）', isUserCustomizable: true, min_fee: 100, max_fee: 50000 },
-    // { id: 'addon-3', name: '逗你玩的', fee: 111110, feeCurrency: 'JPY', description: '我也不知道（自定义）', isUserCustomizable: true, min_fee: 100, max_fee: 50000 }
-  ],
-  rates: { 
-    //jpy_cny: 0.049, jpy_usd: 0.0067, jpy_twd: 0.21 
-  },
-  activeRule: {
-    // id: 'rule-dev', name: '标准服务费 8%', mode: 'simple', simple_rate: 8, simple_fixed_fee: 0,
-    // min_fee: 0, max_fee: 0, round_mode: 'round', round_unit: 1, version: 1,
-  },
-  settings: {
-    // prepay_enabled: 'false',
-    // prepay_rate: '80',
-    // service_fee_rate: '8',
-    // pre_shipment_enabled: 'true',
-    // product_url_tips: '输入日本商城的商品链接，支持多个链接',
-  }
-};
-
-const MOCK_PAYMENT_METHODS = {
-  methods: [
-    // { id: 'pm-1', name: '支付宝', provider_key: 'alipay', payment_currency: 'CNY', icon: '💰', color: 'bg-blue-100 text-blue-700', is_active: true, sort_order: 0, surcharge_rate: 0, surcharge_fixed_jpy: 0 },
-    // { id: 'pm-2', name: '银行转账', provider_key: '', payment_currency: 'JPY', icon: '🏦', color: 'bg-gray-100 text-gray-700', is_active: true, sort_order: 1, surcharge_rate: 0, surcharge_fixed_jpy: 0 },
-  ],
-};
-
-const MOCK_SHIPPING_METHODS = {
-  methods: [
-    // { id: 'sm-1', name: 'EMS', code: 'EMS', transit_days: '5-10个工作日', is_active: true },
-    // { id: 'sm-2', name: 'SAL', code: 'SAL', transit_days: '2-3个月', is_active: true },
-  ],
-};
 // ────────────────────────────────────────────────────────────────────────────
 
 export default function SubmitOrder() {
@@ -102,21 +64,10 @@ export default function SubmitOrder() {
   const [userCredit, setUserCredit] = useState(null);
   const [creditDowngradeMsg, setCreditDowngradeMsg] = useState(null);
   const [shippingMethods, setShippingMethods] = useState([]);
+  const [pageDataLoading, setPageDataLoading] = useState(true);
 
   useEffect(() => {
-    
-    if (IS_DEV_MOCK) {
-      const data = MOCK_PAGE_DATA;
-      setAddonOptions(data.addons);
-      setRates(data.rates);
-      setActiveRule(data.active_rule);
-      setSettings(data.settings);
-      setPaymentMode(data.settings.prepay_enabled !== 'false' ? "prepay" : "fullpay");
-      setUserCredit(null);
-      setPaymentMethods(MOCK_PAYMENT_METHODS.methods);
-      setShippingMethods(MOCK_SHIPPING_METHODS.methods);
-      return;
-    }
+    setPageDataLoading(true);
 
     const timer = timePage('SubmitOrder');
     Promise.all([
@@ -129,15 +80,21 @@ export default function SubmitOrder() {
       const parsed = {};
       Object.entries(data.settings || {}).forEach(([k, v]) => { parsed[k] = v; });
       setSettings(parsed);
-      const prepayOn = parsed.prepay_enabled !== 'false';
+      const prepayOn = parsed.prepay_enabled;
       setPaymentMode(prepayOn ? "prepay" : "fullpay");
       setUserCredit(null);
       timer.done('data ready');
-    }).catch((err) => { console.error('SubmitOrder data load failed:', err); });
+
+      setPaymentMethods(r?.data?.payment_methods || []);
+      setPageDataLoading(false);
+    }).catch((err) => {
+      console.error('SubmitOrder data load failed:', err);
+      setPageDataLoading(false);
+    });
     
-    base44.functions.invoke('config/page/getPaymentMethod', {})
-      .then((r) => { setPaymentMethods(r?.data?.payment_methods || []); })
-      .catch(() => {});
+    // base44.functions.invoke('config/page/getPaymentMethod', {})
+    //   .then((r) => { setPaymentMethods(r?.data?.payment_methods || []); })
+    //   .catch(() => {});
     
     base44.functions.invoke('shipping/getTenantShippingPools', { action: 'list_shipping_methods' })
       .then((r) => { setShippingMethods(r.data?.methods || []); })
@@ -161,7 +118,7 @@ export default function SubmitOrder() {
     const jpy = parseFloat(form.estimated_jpy);
     if (!jpy || jpy <= 0) { setCalculated(null); return; }
     
-    const prepayEnabled = settings.prepay_enabled !== 'false';
+    const prepayEnabled = settings.prepay_enabled;
     let prepayRatePct = parseFloat(settings.prepay_rate);
     if (isNaN(prepayRatePct) || prepayRatePct <= 0 || prepayRatePct > 100) prepayRatePct = DEFAULT_PREPAY_RATE * 100;
     const prepayRate = prepayEnabled ? prepayRatePct / 100 : 1.0;
@@ -569,7 +526,7 @@ export default function SubmitOrder() {
         </Alert>
       )}
 
-      {settings.prepay_enabled !== 'false' && (
+      {settings.prepay_enabled && (
         <Alert className="border-blue-200 bg-blue-50">
           <Info className="w-4 h-4 text-blue-600" />
           <AlertDescription className="text-blue-800 text-sm">
@@ -699,10 +656,17 @@ export default function SubmitOrder() {
             </div>
 
             {/* 增值服务 - 可折叠 */}
-            {addonOptions.length > 0 && canSelectOrderAddons && (
+            {(pageDataLoading || addonOptions.length > 0) && canSelectOrderAddons && (
               <div className="border-t border-gray-100 pt-3">
                 <Label className="text-sm font-medium mb-2 block">{t("增值服务（可选）", locale)}</Label>
-                <div className="space-y-2">
+                {pageDataLoading ? (
+                  <div className="space-y-2">
+                    {[1, 2, 3].map(i => (
+                      <div key={i} className="h-16 rounded-lg border border-gray-100 bg-gray-50 animate-pulse" />
+                    ))}
+                  </div>
+                ) : (
+                <div className="space-y-2 max-h-[280px] overflow-y-auto">
                   {addonOptions.map((opt) => {
                     const isSelected = selectedAddons.includes(opt.id);
                     const isCustomizable = opt.is_user_customizable;
@@ -756,6 +720,7 @@ export default function SubmitOrder() {
                     );
                   })}
                 </div>
+                )}
               </div>
             )}
 
@@ -802,6 +767,15 @@ export default function SubmitOrder() {
         <FeeCalculator calculated={calculated} settings={settings} />
 
         {/* 付款方式 */}
+        {pageDataLoading ? (
+          <div className="space-y-3">
+            <div className="text-sm font-semibold text-gray-700">付款方式</div>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="h-11 rounded-lg border-2 border-gray-100 bg-gray-50 animate-pulse" />
+              <div className="h-11 rounded-lg border-2 border-gray-100 bg-gray-50 animate-pulse" />
+            </div>
+          </div>
+        ) : (
         <PaymentSection
           paymentMode={paymentMode}
           setPaymentMode={setPaymentMode}
@@ -816,11 +790,12 @@ export default function SubmitOrder() {
           userCredit={userCredit}
           calculated={calculated}
         />
+        )}
 
         {/* 提交按钮 */}
         {canSubmitOrder && (
           <div className="space-y-2">
-            {settings.pre_shipment_enabled !== 'false' && (
+            {settings.pre_shipment_enabled && (
             <Button
               type="button"
               variant="outline"

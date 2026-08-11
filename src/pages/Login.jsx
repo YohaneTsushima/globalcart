@@ -10,6 +10,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { toast } from "sonner";
 import { useAuth } from "@/lib/AuthContext";
 import { createPageUrl } from "@/utils";
+import ConfirmDialog from "@/components/common/ConfirmDialog";
 import googleIcon from "@/assets/icons/google.svg";
 import alipayIcon from "@/assets/icons/alipay.svg";
 import wechatIcon from "@/assets/icons/wechat.svg";
@@ -28,6 +29,8 @@ export default function Login() {
   const [codeError, setCodeError] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [agreed, setAgreed] = useState(false);
+  const [showAgreedDialog, setShowAgreedDialog] = useState(false);
+  const [pendingLoginType, setPendingLoginType] = useState(null);
   const popupRef = useRef(null);
   const messageHandlerRef = useRef(null);
 
@@ -79,7 +82,12 @@ export default function Login() {
     }
   }, [navigate, searchParams, locale, isAuthenticated, isLoadingAuth]);
 
-  const handleLogin = async () => {
+  const getRedirect = () => {
+    const next = searchParams.get('next');
+    return next ? `?next=${encodeURIComponent(next)}` : '';
+  };
+
+  const performLogin = async () => {
     setPhoneError(false);
     setCodeError(false);
     const isPhone = /^\d{11}$/.test(phoneEmail.trim());
@@ -109,6 +117,40 @@ export default function Login() {
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const handleLogin = async () => {
+    if (!agreed) {
+      setPendingLoginType('login');
+      setShowAgreedDialog(true);
+      return;
+    }
+    await performLogin();
+  };
+
+  const handleConfirmAgreement = async () => {
+    setAgreed(true);
+    setShowAgreedDialog(false);
+    
+    const redirect = getRedirect();
+    switch (pendingLoginType) {
+      case 'login':
+        await performLogin();
+        break;
+      case 'google':
+        window.location.href = `/oauth2/authorization/google${redirect}`;
+        break;
+      case 'alipay':
+        base44.auth.alipayLogin(redirect);
+        break;
+      case 'wechat':
+        window.location.href = `/oauth2/authorization/wechat${redirect}`;
+        break;
+      case 'qq':
+        window.location.href = `/oauth2/authorization/qq${redirect}`;
+        break;
+    }
+    setPendingLoginType(null);
   };
 
   const handleSendCode = async () => {
@@ -248,7 +290,7 @@ export default function Login() {
         <Button
           className="w-full bg-red-600 hover:bg-red-700 text-white h-10"
           onClick={handleLogin}
-          disabled={submitting || !agreed}
+          disabled={submitting}
         >
           {submitting ? t("登录中...", locale) : t("登录 / 注册")}
         </Button>
@@ -266,15 +308,17 @@ export default function Login() {
           <button
             type="button"
             onClick={() => {
-              if (submitting || !agreed) return;
-              const next = searchParams.get('next');
-              const redirect = next ? `?next=${encodeURIComponent(next)}` : '';
+              if (submitting) return;
+              if (!agreed) {
+                setPendingLoginType('google');
+                setShowAgreedDialog(true);
+                return;
+              }
+              const redirect = getRedirect();
               window.location.href = `/oauth2/authorization/google${redirect}`;
             }}
-            disabled={submitting || !agreed}
-            className={`w-12 h-12 rounded-xl flex items-center justify-center transition-all ${
-              agreed ? "bg-white border border-gray-200 hover:bg-gray-50 hover:shadow-md" : "bg-gray-50 border border-gray-200 cursor-not-allowed opacity-50"
-            }`}
+            disabled={submitting}
+            className="w-12 h-12 rounded-xl flex items-center justify-center transition-all bg-white border border-gray-200 hover:bg-gray-50 hover:shadow-md"
             title="Google"
           >
             <img src={googleIcon} alt="Google" className="w-6 h-6" />
@@ -284,16 +328,17 @@ export default function Login() {
           <button
             type="button"
             onClick={() => {
-              if (submitting || !agreed) return;
-              const next = searchParams.get('next');
-              const redirect = next ? `?next=${encodeURIComponent(next)}` : '';
-             
+              if (submitting) return;
+              if (!agreed) {
+                setPendingLoginType('alipay');
+                setShowAgreedDialog(true);
+                return;
+              }
+              const redirect = getRedirect();
               base44.auth.alipayLogin(redirect);
             }}
-            disabled={submitting || !agreed}
-            className={`w-12 h-12 rounded-xl flex items-center justify-center transition-all ${
-              agreed ? "bg-white border border-gray-200 hover:bg-gray-50 hover:shadow-md" : "bg-gray-50 border border-gray-200 cursor-not-allowed opacity-50"
-            }`}
+            disabled={submitting}
+            className="w-12 h-12 rounded-xl flex items-center justify-center transition-all bg-white border border-gray-200 hover:bg-gray-50 hover:shadow-md"
             title="支付宝"
           >
             <img src={alipayIcon} alt="支付宝" className="w-6 h-6" />
@@ -303,16 +348,17 @@ export default function Login() {
           <button
             type="button"
             onClick={() => {
-              if (submitting || !agreed) return;
-              const next = searchParams.get('next');
-              const redirect = next ? `?next=${encodeURIComponent(next)}` : '';
-              
+              if (submitting) return;
+              if (!agreed) {
+                setPendingLoginType('wechat');
+                setShowAgreedDialog(true);
+                return;
+              }
+              const redirect = getRedirect();
               window.location.href = `/oauth2/authorization/wechat${redirect}`;
             }}
-            disabled={submitting || !agreed}
-            className={`w-12 h-12 rounded-xl flex items-center justify-center transition-all ${
-              agreed ? "bg-white border border-gray-200 hover:bg-gray-50 hover:shadow-md" : "bg-gray-50 border border-gray-200 cursor-not-allowed opacity-50"
-            }`}
+            disabled={submitting}
+            className="w-12 h-12 rounded-xl flex items-center justify-center transition-all bg-white border border-gray-200 hover:bg-gray-50 hover:shadow-md"
             title="微信"
           >
             <img src={wechatIcon} alt="微信" className="w-6 h-6" />
@@ -322,15 +368,17 @@ export default function Login() {
           <button
             type="button"
             onClick={() => {
-              if (submitting || !agreed) return;
-              const next = searchParams.get('next');
-              const redirect = next ? `?next=${encodeURIComponent(next)}` : '';
+              if (submitting) return;
+              if (!agreed) {
+                setPendingLoginType('qq');
+                setShowAgreedDialog(true);
+                return;
+              }
+              const redirect = getRedirect();
               window.location.href = `/oauth2/authorization/qq${redirect}`;
             }}
-            disabled={submitting || !agreed}
-            className={`w-12 h-12 rounded-xl flex items-center justify-center transition-all ${
-              agreed ? "bg-white border border-gray-200 hover:bg-gray-50 hover:shadow-md" : "bg-gray-50 border border-gray-200 cursor-not-allowed opacity-50"
-            }`}
+            disabled={submitting}
+            className="w-12 h-12 rounded-xl flex items-center justify-center transition-all bg-white border border-gray-200 hover:bg-gray-50 hover:shadow-md"
             title="QQ"
           >
             <img src={qqIcon} alt="QQ" className="w-6 h-6" />
@@ -342,6 +390,23 @@ export default function Login() {
         )}
         
       </div>
+
+      <ConfirmDialog
+        open={showAgreedDialog}
+        onOpenChange={setShowAgreedDialog}
+        title="登录协议确认"
+        description={
+          <span>
+            登录即表示同意
+            <a href={createPageUrl("TermsOfService")} target="_blank" className="text-red-600 hover:underline">《用户协议》</a>
+            和
+            <a href={createPageUrl("PrivacyPolicy")} target="_blank" className="text-red-600 hover:underline">《隐私政策》</a>
+          </span>
+        }
+        confirmText="同意并登录"
+        cancelText="取消"
+        onConfirm={handleConfirmAgreement}
+      />
     </div>
   );
 }
