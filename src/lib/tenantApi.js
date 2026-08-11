@@ -62,8 +62,15 @@ export async function fetchTenantSettings() {
 // ─── Announcements ────────────────────────────────────────────────────────────
 
 export async function fetchAnnouncements() {
-  const config = await fetchTenantConfig();
-  return (config.announcements || []).filter(a => a.is_active);
+  // const config = await fetchTenantConfig();
+  // return (config.announcements || []).filter(a => a.is_active);
+  try {
+    const data = await tenantEntity.list('Announcement');
+    return (data || []).filter(a => a.is_active);
+  } catch (err) {
+    console.error("获取公告失败:", err);
+    return [];
+  }
 }
 
 // ─── Generic tenant-safe entity mutations ─────────────────────────────────────
@@ -75,7 +82,7 @@ async function mutate(entity, action, opts = {}) {
 }
 
 export const tenantEntity = {
-  list:   (entity, filter = {}) => mutate(entity, 'list', { filter }).then(r => r.results || r.data?.results || []),
+  list:   (entity, filter = {}) => mutate(entity, 'list', { filter }).then(r => r?.results || r?.data || r.data?.results || r || []),
   create: (entity, data)        => mutate(entity, 'create', { data }).then(r => r.result || r.data?.result || r),
   update: (entity, id, data)    => mutate(entity, 'update', { id, data }).then(r => r.result || r.data?.result || r),
   delete: (entity, id)          => mutate(entity, 'delete', { id }),

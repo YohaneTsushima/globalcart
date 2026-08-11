@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { tenantEntity } from "@/lib/tenantApi";
 import { usePermissions } from "@/hooks/usePermissions";
 import { Plus, Edit2, Trash2, Bell, RefreshCw, MonitorPlay } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -82,9 +83,9 @@ function PageSelector({ value = [], onChange }) {
 
 export default function AdminAnnouncements() {
   const { can, isAdmin } = usePermissions();
-  const canCreate = isAdmin || can("announcement:create_announcement");
-  const canEdit = isAdmin || can("announcement:edit_announcement");
-  const canDelete = isAdmin || can("announcement:delete_announcement");
+  const canCreate = isAdmin && can("announcement:create_announcement");
+  const canEdit = isAdmin && can("announcement:edit_announcement");
+  const canDelete = isAdmin && can("announcement:delete_announcement");
 
   const [announcements, setAnnouncements] = useState([]);
   const [showForm, setShowForm] = useState(false);
@@ -96,7 +97,7 @@ export default function AdminAnnouncements() {
 
   const load = async () => {
     const data = await tenantEntity.list('Announcement');
-    setAnnouncements(data);
+    setAnnouncements(data || []);
   };
 
   useEffect(() => { load(); }, []);
@@ -122,36 +123,58 @@ export default function AdminAnnouncements() {
 
   const handleSaveModal = async (formData) => {
     setSaving(true);
-    const payload = { ...formData, display_position: "modal" };
-    if (editingModal) {
-      await tenantEntity.update('Announcement', editingModal.id, payload);
-    } else {
-      await tenantEntity.create('Announcement', payload);
+    try {
+      const payload = { ...formData, display_position: "modal" };
+      if (editingModal) {
+        await tenantEntity.update('Announcement', editingModal.id, payload);
+        toast.success("弹窗公告已更新");
+      } else {
+        await tenantEntity.create('Announcement', payload);
+        toast.success("弹窗公告已发布");
+      }
+      await load();
+      setShowModalForm(false);
+      setEditingModal(null);
+    } catch (err) {
+      console.error("保存弹窗公告失败:", err);
+      toast.error("操作失败：" + (err?.message || "未知错误"));
+    } finally {
+      setSaving(false);
     }
-    await load();
-    setShowModalForm(false);
-    setEditingModal(null);
-    setSaving(false);
   };
 
   const handleSave = async () => {
     setSaving(true);
-    const payload = { ...form, ticker_interval: Number(form.ticker_interval) || 5 };
-    if (editing) {
-      await tenantEntity.update('Announcement', editing.id, payload);
-    } else {
-      await tenantEntity.create('Announcement', payload);
+    try {
+      const payload = { ...form, ticker_interval: Number(form.ticker_interval) || 5 };
+      if (editing) {
+        await tenantEntity.update('Announcement', editing.id, payload);
+        toast.success("公告已更新");
+      } else {
+        await tenantEntity.create('Announcement', payload);
+        toast.success("公告已发布");
+      }
+      await load();
+      setShowForm(false);
+      setEditing(null);
+      setForm(EMPTY_FORM);
+    } catch (err) {
+      console.error("保存公告失败:", err);
+      toast.error("操作失败：" + (err?.message || "未知错误"));
+    } finally {
+      setSaving(false);
     }
-    await load();
-    setShowForm(false);
-    setEditing(null);
-    setForm(EMPTY_FORM);
-    setSaving(false);
   };
 
   const handleDelete = async (id) => {
-    await tenantEntity.delete('Announcement', id);
-    await load();
+    try {
+      await tenantEntity.delete('Announcement', id);
+      toast.success("公告已删除");
+      await load();
+    } catch (err) {
+      console.error("删除公告失败:", err);
+      toast.error("删除失败：" + (err?.message || "未知错误"));
+    }
   };
 
   const handleToggle = async (a) => {

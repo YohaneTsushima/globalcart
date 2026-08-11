@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { usePermissions } from "@/hooks/usePermissions";
 import {
   Plus, Edit2, Trash2, Play, Star, Copy,
   CheckCircle2, Clock, PauseCircle, FileText,
@@ -91,6 +92,7 @@ function RuleCard({ rule, onEdit, onDuplicate, onDelete, onToggle, deleting, get
 
 export default function AdminFeeRules() {
   const { user } = useCurrentUser();
+  const { can, isAdmin } = usePermissions();
   const [rules, setRules] = useState([]);
   const [loading, setLoading] = useState(true);
   const [editingRule, setEditingRule] = useState(null); // null=closed, {}=new, rule=edit
@@ -99,7 +101,7 @@ export default function AdminFeeRules() {
   // For ticket rules, we use the same editor but pre-set is_ticket_rule=true
   const [isTicketRuleEditor, setIsTicketRuleEditor] = useState(false);
 
-  const isAdmin = user?.role === 'admin' || user?.role === 'platform_admin' || user?.role === 'tenant_admin';
+  // const isAdmin = user?.role === 'admin' || user?.role === 'platform_admin' || user?.role === 'tenant_admin';
 
   const load = async () => {
     setLoading(true);

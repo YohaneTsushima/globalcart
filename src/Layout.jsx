@@ -21,10 +21,11 @@ import { Button } from "@/components/ui/button";
 import { usePermissions } from "@/hooks/usePermissions";
 import { mergeNavTree, buildNav, navTreeHasPage } from "@/lib/navRegistry";
 import { t, getLocale } from "@/lib/i18n";
+import { tenantEntity } from "@/lib/tenantApi";
 
 export default function Layout({ children, currentPageName }) {
   const { user, tenantBranding, authError } = useAuth();
-  const { can } = usePermissions();
+  const { can, isAdmin } = usePermissions();
   const isSuspended = authError?.type === 'account_suspended';
   const tenant = tenantBranding?.tenant || null;
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -86,6 +87,12 @@ export default function Layout({ children, currentPageName }) {
   useEffect(() => {
     if (!user) return;
     fetchTenantConfig().then(applyTenantConfig).catch(() => {});
+    console.log(user?.role)
+
+    // 单独获取公告
+    tenantEntity.list('Announcement')
+    .then(data => setAnnouncements((data || []).filter(a => a.is_active)))
+    .catch(() => {});
   }, [user?.email]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Re-fetch when any part of the app invalidates the config cache (e.g. after saving navbar rate settings)
@@ -104,11 +111,10 @@ export default function Layout({ children, currentPageName }) {
     [transitLocations, user?.email]
   );
 
-  const isPlatformAdmin = user?.role === "platform_admin";
-  const isTenantAdmin = user?.role === "admin" || user?.role === "tenant_admin" || user?.role === "ROLE_ADMIN";
+  const isPlatformAdmin = user?.role === "platform_admin" || user?.role === "ROLE_ADMIN";
+  const isTenantAdmin = user?.role === "admin" || user?.role === "tenant_admin";
   const isStaff = user?.role === "staff";
   const isTenantUser = user?.role === "user";
-  const isAdmin = isPlatformAdmin || isTenantAdmin;
   
   const canAccessAdminSettings = isPlatformAdmin || isTenantAdmin || can("admin_settings:manage_backend_settings");
   const canAccessAdminDashboard = isPlatformAdmin || isTenantAdmin || can("view:admin_dashboard");

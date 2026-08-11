@@ -357,7 +357,7 @@ export default function Login() {
               const redirect = getRedirect();
               window.location.href = `/oauth2/authorization/wechat${redirect}`;
             }}
-            disabled={submitting}
+            disabled={true}
             className="w-12 h-12 rounded-xl flex items-center justify-center transition-all bg-white border border-gray-200 hover:bg-gray-50 hover:shadow-md"
             title="微信"
           >
@@ -377,7 +377,7 @@ export default function Login() {
               const redirect = getRedirect();
               window.location.href = `/oauth2/authorization/qq${redirect}`;
             }}
-            disabled={submitting}
+            disabled={true}
             className="w-12 h-12 rounded-xl flex items-center justify-center transition-all bg-white border border-gray-200 hover:bg-gray-50 hover:shadow-md"
             title="QQ"
           >

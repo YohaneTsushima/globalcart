@@ -1,5 +1,6 @@
 import AnnouncementTicker from "./AnnouncementTicker";
 import AnnouncementModal from "./AnnouncementModal";
+import { usePermissions } from "@/hooks/usePermissions";
 
 /**
  * Filters announcements by:
@@ -10,6 +11,7 @@ import AnnouncementModal from "./AnnouncementModal";
  * - not expired
  */
 function filterAnnouncements(all, position, currentPageName, userRole) {
+  const { can, isAdmin } = usePermissions();
   const now = new Date();
   return (all || []).filter(a => {
     if (!a.is_active) return false;
@@ -22,10 +24,13 @@ function filterAnnouncements(all, position, currentPageName, userRole) {
 
     // Audience
     if (a.target_audience === "admins") {
-      const isAdmin = ["admin", "tenant_admin", "platform_admin"].includes(userRole);
+      // const isAdmin = ["admin", "tenant_admin", "platform_admin", "ROLE_ADMIN"].includes(userRole);
       if (!isAdmin) return false;
     } else if (a.target_audience === "users") {
-      if (userRole !== "user") return false;
+      if (userRole !== "user" && userRole !== 'ROLE_USER') {
+        
+        return false;
+      }
     }
 
     // Expiry

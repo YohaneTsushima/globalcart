@@ -13,6 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
+import { tenantEntity } from "@/lib/tenantApi";
 
 const notificationTypes = [
   { value: "payment", label: "付款通知" },
@@ -63,12 +64,14 @@ export default function AdminNotificationTemplates() {
   const [editingTemplate, setEditingTemplate] = useState(null);
   const [isCreating, setIsCreating] = useState(false);
   const [selectedType, setSelectedType] = useState("all");
+  const [formData, setFormData] = useState({});
 
   const { data: templates } = useQuery({
     queryKey: ['notification-templates'],
     queryFn: async () => {
-      const res = await base44.functions.invoke('getNotificationTemplates', {});
-      return res.data.templates || [];
+      // const res = await base44.functions.invoke('getNotificationTemplates', {});
+      const res = await tenantEntity.list('NotificationTemplate');
+      return res || res?.data || res.data.templates || [];
     },
   });
 
@@ -88,28 +91,35 @@ export default function AdminNotificationTemplates() {
     },
   });
 
-  const handleSave = (templateData) => {
-    if (!templateData.notification_type || !templateData.notification_subtype) {
+  const handleSave = async () => {
+    if (!formData.notification_type || !formData.notification_subtype) {
       toast.error('请选择通知类型和子类型');
       return;
     }
-    if (!templateData.title_template || !templateData.content_template) {
+    if (!formData.title_template || !formData.content_template) {
       toast.error('请填写标题和内容模板');
       return;
     }
 
+    // 确保布尔值正确
+    const payload = {
+      ...formData,
+      default_in_app: formData.default_in_app !== false,
+      default_email: formData.default_email === true,
+    };
+
     if (editingTemplate) {
-      manageTemplateMutation.mutate({
-        action: 'update',
-        template_id: editingTemplate.id,
-        ...templateData
-      });
+      await tenantEntity.update('NotificationTemplate', editingTemplate.id, payload);
+      toast.success('模板已更新');
     } else {
-      manageTemplateMutation.mutate({
-        action: 'create',
-        ...templateData
-      });
+      await tenantEntity.create('NotificationTemplate', payload);
+      toast.success('模板已创建');
     }
+
+    queryClient.invalidateQueries({ queryKey: ['notification-templates'] });
+    setEditingTemplate(null);
+    setFormData({});
+    setIsCreating(false);
   };
 
   const handleDelete = (templateId) => {
@@ -131,7 +141,7 @@ export default function AdminNotificationTemplates() {
           <h1 className="text-2xl font-bold text-gray-900">通知模板管理</h1>
           <p className="text-sm text-gray-500 mt-1">自定义各类通知的标题和内容模板</p>
         </div>
-        <Button onClick={() => { setEditingTemplate(null); setIsCreating(true); }}>
+        <Button onClick={() => { setEditingTemplate(null); setFormData({}); setIsCreating(true); }}>
           <Plus className="w-4 h-4 mr-2" />
           新建模板
         </Button>
@@ -150,11 +160,11 @@ export default function AdminNotificationTemplates() {
               <div className="space-y-2">
                 <label className="text-sm font-medium text-gray-700">通知类型</label>
                 <Select
-                  value={editingTemplate?.notification_type || selectedType}
+                  value={formData.notification_type || ''}
                   onValueChange={(value) => {
                     setSelectedType(value);
-                    setEditingTemplate({ 
-                      ...editingTemplate, 
+                    setFormData({ 
+                      ...formData, 
                       notification_type: value,
                       notification_subtype: '' 
                     });
@@ -176,8 +186,8 @@ export default function AdminNotificationTemplates() {
               <div className="space-y-2">
                 <label className="text-sm font-medium text-gray-700">通知子类型</label>
                 <Select
-                  value={editingTemplate?.notification_subtype || ''}
-                  onValueChange={(value) => setEditingTemplate({ ...editingTemplate, notification_subtype: value })}
+                  value={formData.notification_subtype || ''}
+                  onValueChange={(value) => setFormData({ ...formData, notification_subtype: value })}
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="选择子类型" />
@@ -199,8 +209,8 @@ export default function AdminNotificationTemplates() {
               </label>
               <Input
                 placeholder="例如：订单 {'{{order_number}}'} 需要付款"
-                value={editingTemplate?.title_template || ''}
-                onChange={(e) => setEditingTemplate({ ...editingTemplate, title_template: e.target.value })}
+                value={formData.title_template || ''}
+                onChange={(e) => setFormData({ ...formData, title_template: e.target.value })}
               />
             </div>
 
@@ -210,8 +220,8 @@ export default function AdminNotificationTemplates() {
               </label>
               <Textarea
                 placeholder="例如：尊敬的 {'{{user_name}}'}，您的订单 {'{{order_number}}'} 金额为 {'{{amount}}'} JPY，请及时付款。"
-                value={editingTemplate?.content_template || ''}
-                onChange={(e) => setEditingTemplate({ ...editingTemplate, content_template: e.target.value })}
+                value={formData.content_template || ''}
+                onChange={(e) => setFormData({ ...formData, content_template: e.target.value })}
                 className="min-h-[120px]"
               />
             </div>
@@ -220,8 +230,8 @@ export default function AdminNotificationTemplates() {
               <label className="flex items-center gap-2">
                 <input
                   type="checkbox"
-                  checked={editingTemplate?.default_in_app !== false}
-                  onChange={(e) => setEditingTemplate({ ...editingTemplate, default_in_app: e.target.checked })}
+                  checked={formData.default_in_app !== false}
+                  onChange={(e) => setFormData({ ...formData, default_in_app: e.target.checked })}
                   className="h-4 w-4"
                 />
                 <span className="text-sm text-gray-700 flex items-center gap-1">
@@ -233,8 +243,8 @@ export default function AdminNotificationTemplates() {
               <label className="flex items-center gap-2">
                 <input
                   type="checkbox"
-                  checked={editingTemplate?.default_email || false}
-                  onChange={(e) => setEditingTemplate({ ...editingTemplate, default_email: e.target.checked })}
+                  checked={formData.default_email || false}
+                  onChange={(e) => setFormData({ ...formData, default_email: e.target.checked })}
                   className="h-4 w-4"
                 />
                 <span className="text-sm text-gray-700 flex items-center gap-1">
@@ -245,11 +255,14 @@ export default function AdminNotificationTemplates() {
             </div>
 
             <div className="flex gap-2 justify-end">
-              <Button variant="outline" onClick={() => { setEditingTemplate(null); setIsCreating(false); }}>
+              <Button variant="outline" onClick={() => { setEditingTemplate(null); setFormData({}); setIsCreating(false); }}>
                 <X className="w-4 h-4 mr-2" />
                 取消
               </Button>
-              <Button onClick={() => handleSave(editingTemplate)}>
+              <Button 
+                onClick={handleSave}
+                disabled={!formData.notification_type || !formData.notification_subtype || !formData.title_template || !formData.content_template}
+              >
                 <Save className="w-4 h-4 mr-2" />
                 保存
               </Button>
@@ -313,7 +326,15 @@ export default function AdminNotificationTemplates() {
                     </div>
                   </div>
                   <div className="flex gap-2">
-                    <Button size="sm" variant="outline" onClick={() => setEditingTemplate(template)}>
+                    <Button size="sm" variant="outline" onClick={() => {
+                      setEditingTemplate(template);
+                      setFormData({
+                        ...template,
+                        default_in_app: template.default_in_app === true || template.default_in_app === 't' || template.default_in_app === 'true',
+                        default_email: template.default_email === true || template.default_email === 't' || template.default_email === 'true',
+                      });
+                      setSelectedType(template.notification_type || 'all');
+                    }}>
                       <Edit2 className="w-4 h-4" />
                     </Button>
                     <Button size="sm" variant="outline" onClick={() => handleDelete(template.id)}>
