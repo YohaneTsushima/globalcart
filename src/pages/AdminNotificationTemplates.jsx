@@ -14,6 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
 import { tenantEntity } from "@/lib/tenantApi";
+import ConfirmDialog from "@/components/common/ConfirmDialog";
 
 const notificationTypes = [
   { value: "payment", label: "付款通知" },
@@ -59,12 +60,25 @@ const commonSubtypes = {
   ],
 };
 
+// 扁平化子类型映射：value -> label
+const subtypeLabelMap = Object.values(commonSubtypes)
+  .flat()
+  .reduce((acc, item) => {
+    acc[item.value] = item.label;
+    return acc;
+  }, {});
+
 export default function AdminNotificationTemplates() {
   const queryClient = useQueryClient();
   const [editingTemplate, setEditingTemplate] = useState(null);
   const [isCreating, setIsCreating] = useState(false);
   const [selectedType, setSelectedType] = useState("all");
   const [formData, setFormData] = useState({});
+  const [validationErrors, setValidationErrors] = useState({
+    title_template: false,
+    content_template: false,
+  });
+  const [deleteTargetId, setDeleteTargetId] = useState(null);
 
   const { data: templates } = useQuery({
     queryKey: ['notification-templates'],
@@ -91,6 +105,20 @@ export default function AdminNotificationTemplates() {
     },
   });
 
+  const validateTemplates = () => {
+    const errors = {
+      title_template: !formData.title_template?.includes('{{order_number}}'),
+      content_template: !formData.content_template?.includes('{{order_number}}'),
+    };
+    setValidationErrors(errors);
+
+    if (errors.title_template || errors.content_template) {
+      toast.error('模板中必须包含 {{order_number}} 变量');
+      return false;
+    }
+    return true;
+  };
+
   const handleSave = async () => {
     if (!formData.notification_type || !formData.notification_subtype) {
       toast.error('请选择通知类型和子类型');
@@ -100,6 +128,7 @@ export default function AdminNotificationTemplates() {
       toast.error('请填写标题和内容模板');
       return;
     }
+    if (!validateTemplates()) return;
 
     // 确保布尔值正确
     const payload = {
@@ -108,26 +137,48 @@ export default function AdminNotificationTemplates() {
       default_email: formData.default_email === true,
     };
 
-    if (editingTemplate) {
-      await tenantEntity.update('NotificationTemplate', editingTemplate.id, payload);
-      toast.success('模板已更新');
-    } else {
-      await tenantEntity.create('NotificationTemplate', payload);
-      toast.success('模板已创建');
-    }
+    try {
+      if (editingTemplate) {
+        await tenantEntity.update('NotificationTemplate', editingTemplate.id, payload);
+        toast.success('模板已更新');
+      } else {
+        await tenantEntity.create('NotificationTemplate', payload);
+        toast.success('模板已创建');
+      }
 
-    queryClient.invalidateQueries({ queryKey: ['notification-templates'] });
-    setEditingTemplate(null);
-    setFormData({});
-    setIsCreating(false);
+      queryClient.invalidateQueries({ queryKey: ['notification-templates'] });
+      setEditingTemplate(null);
+      setFormData({});
+      setIsCreating(false);
+    } catch (error) {
+      const serverMsg = error.response?.data?.message || error.message;
+      const subtypeMatch = serverMsg.match(/:\s*\{?\s*(\w+)\s*\}?/);
+      if (subtypeMatch && subtypeLabelMap[subtypeMatch[1]]) {
+        toast.error(`该通知子类型已存在：${subtypeLabelMap[subtypeMatch[1]]}`);
+      } else {
+        toast.error('保存失败：' + serverMsg);
+      }
+    }
   };
 
   const handleDelete = (templateId) => {
-    if (!confirm('确定要删除此模板吗？')) return;
-    manageTemplateMutation.mutate({
-      action: 'delete',
-      template_id: templateId
-    });
+    setDeleteTargetId(templateId);
+  };
+
+  const confirmDelete = async () => {
+    try {
+      await tenantEntity.delete('NotificationTemplate', deleteTargetId);
+      toast.success('模板已删除');
+      queryClient.invalidateQueries({ queryKey: ['notification-templates'] });
+      if (editingTemplate?.id === deleteTargetId) {
+        setEditingTemplate(null);
+        setFormData({});
+      }
+    } catch (error) {
+      toast.error('删除失败：' + (error.response?.data?.message || error.message));
+    } finally {
+      setDeleteTargetId(null);
+    }
   };
 
   const filteredTemplates = templates?.filter(t => selectedType === "all" || t.notification_type === selectedType) || [];
@@ -210,7 +261,13 @@ export default function AdminNotificationTemplates() {
               <Input
                 placeholder="例如：订单 {'{{order_number}}'} 需要付款"
                 value={formData.title_template || ''}
-                onChange={(e) => setFormData({ ...formData, title_template: e.target.value })}
+                onChange={(e) => {
+                  setFormData({ ...formData, title_template: e.target.value });
+                  if (validationErrors.title_template) {
+                    setValidationErrors(prev => ({ ...prev, title_template: false }));
+                  }
+                }}
+                className={validationErrors.title_template ? 'border-red-500 focus-visible:ring-red-500' : ''}
               />
             </div>
 
@@ -221,8 +278,13 @@ export default function AdminNotificationTemplates() {
               <Textarea
                 placeholder="例如：尊敬的 {'{{user_name}}'}，您的订单 {'{{order_number}}'} 金额为 {'{{amount}}'} JPY，请及时付款。"
                 value={formData.content_template || ''}
-                onChange={(e) => setFormData({ ...formData, content_template: e.target.value })}
-                className="min-h-[120px]"
+                onChange={(e) => {
+                  setFormData({ ...formData, content_template: e.target.value });
+                  if (validationErrors.content_template) {
+                    setValidationErrors(prev => ({ ...prev, content_template: false }));
+                  }
+                }}
+                className={`min-h-[120px] ${validationErrors.content_template ? 'border-red-500 focus-visible:ring-red-500' : ''}`}
               />
             </div>
 
@@ -311,7 +373,7 @@ export default function AdminNotificationTemplates() {
                       <Badge variant="outline" className="text-xs">
                         {notificationTypes.find(t => t.value === template.notification_type)?.label || template.notification_type}
                       </Badge>
-                      <span className="text-sm font-medium text-gray-600">{template.notification_subtype}</span>
+                      <span className="text-sm font-medium text-gray-600">{subtypeLabelMap[template.notification_subtype] || template.notification_subtype}</span>
                     </div>
                     <div className="flex items-center gap-3 text-xs text-gray-500">
                       <span className="flex items-center gap-1">
@@ -399,6 +461,16 @@ export default function AdminNotificationTemplates() {
           </div>
         </CardContent>
       </Card>
+
+      <ConfirmDialog
+        open={!!deleteTargetId}
+        onOpenChange={open => { if (!open) setDeleteTargetId(null); }}
+        title="删除模板"
+        description="确定要删除此通知模板吗？删除后无法恢复。"
+        confirmText="删除"
+        confirmClassName="bg-red-600 hover:bg-red-700"
+        onConfirm={confirmDelete}
+      />
     </div>
   );
 }

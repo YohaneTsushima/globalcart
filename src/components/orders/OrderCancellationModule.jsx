@@ -205,6 +205,10 @@ export default function OrderCancellationModule({ order, onSuccess, compact = fa
       updates.messages = [...(order.messages || []), systemMessage];
       updates.unread_roles = [...new Set([...(order.unread_roles || []), "user"])];
 
+      console.log(updates)
+
+      return;
+
       // 执行更新
       await updateOrder(order.id, updates);
 
@@ -382,7 +386,7 @@ export default function OrderCancellationModule({ order, onSuccess, compact = fa
         </div>
 
         {/* 第三行：退款金额输入框 + 退款按钮 */}
-        {hasRefund ? (
+        {hasRefund && order.order_status === 'paid' ? (
           <div className="flex items-center gap-2">
             <div className="flex-1 flex items-center gap-2">
               <Input
