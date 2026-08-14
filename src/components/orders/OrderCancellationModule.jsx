@@ -6,7 +6,7 @@
  */
 import { useState } from "react";
 import { base44 } from "@/api/base44Client";
-import { updateOrder } from "@/lib/tenantApi";
+import { cancelOrder, updateOrder } from "@/lib/tenantApi";
 import { AlertTriangle, CheckCircle, Loader2, MessageCircle, Tags, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -27,7 +27,7 @@ const CANCEL_REASON_CATEGORIES = [
   { value: "other", label: "其他", color: "bg-gray-100 text-gray-700" },
 ];
 
-export default function OrderCancellationModule({ order, onSuccess, compact = false }) {
+export default function OrderCancellationModule({ order, onSuccess, compact = false, isAdmin = true }) {
   const [cancelReason, setCancelReason] = useState("");
   const [cancelCategory, setCancelCategory] = useState("");
   const [cancelImages, setCancelImages] = useState([]);
@@ -43,8 +43,9 @@ export default function OrderCancellationModule({ order, onSuccess, compact = fa
   const fetchTemplateAndContact = async () => {
     try {
       // 获取通知模板
-      const templatesRes = await base44.functions.invoke('getNotificationTemplates', {});
-      const templates = templatesRes.data.templates || [];
+      // const templatesRes = await base44.functions.invoke('getNotificationTemplates', {});
+      const templatesRes = {};
+      const templates = templatesRes?.data?.templates || [];
       
       // 根据是否有退款金额选择模板
       const hasRefundAmount = refundAmountJpy || refundAmountCurrency;
@@ -55,8 +56,9 @@ export default function OrderCancellationModule({ order, onSuccess, compact = fa
       setCancellationTemplate(template || null);
 
       // 获取管理员联系方式（从 SiteSettings 或联系人）
-      const configRes = await base44.functions.invoke('getTenantConfigData', {});
-      const settings = configRes.data.settings || [];
+      // const configRes = await base44.functions.invoke('getTenantConfigData', {});
+      const configRes ={};
+      const settings = configRes?.data?.settings || [];
       const contactSetting = settings.find(s => s.key === 'admin_contact_info');
       if (contactSetting?.value) {
         setAdminContact(contactSetting.value);
@@ -165,22 +167,20 @@ export default function OrderCancellationModule({ order, onSuccess, compact = fa
       const template = cancellationTemplate;
       
       let messageContent;
-      if (template?.content_template) {
-        // 使用模板变量替换
-        messageContent = template.content_template
-          .replace(/{{order_name}}/g, order.product_name || '未知订单')
-          .replace(/{{order_number}}/g, order.order_number || order.id)
-          .replace(/{{cancel_reason}}/g, cancelReason)
-          .replace(/{{refund_amount}}/g, hasRefund 
-            ? `${refundAmountCurrency ? `${refundAmountCurrency} ${paymentCurrency}` : ''}${refundAmountCurrency && refundAmountJpy ? ' / ' : ''}${refundAmountJpy ? `¥${Math.round(refundAmountJpy).toLocaleString()} JPY` : ''}`
-            : '无退款')
-          .replace(/{{admin_contact}}/g, adminContact || '管理员');
-      } else {
-        // 默认模板（无模板时）
+      // 忽略模板，始终使用默认逻辑
+      if (isAdmin) {
+        // 管理员取消
         if (hasRefund) {
           messageContent = `尊敬的用户，你的订单 ${order.product_name || order.order_number}（${order.order_number || order.id}）由于 ${cancelReason} 而被管理员取消了，退款金额是 ${refundAmountCurrency ? `${refundAmountCurrency} ${paymentCurrency}` : ''}${refundAmountCurrency && refundAmountJpy ? ' / ' : ''}${refundAmountJpy ? `¥${Math.round(refundAmountJpy).toLocaleString()} JPY` : ''}。请在这里发送您的收款方式 稍后由管理员手动汇款`;
         } else {
           messageContent = `尊敬的用户，你的订单 ${order.product_name || order.order_number}（${order.order_number || order.id}）由于 ${cancelReason} 而被管理员取消了，如有后续疑问，您可在此留言或联系管理员 ${adminContact || '管理员'}，祝您有好的一天`;
+        }
+      } else {
+        // 用户取消
+        if (hasRefund) {
+          messageContent = `尊敬的用户，您已取消订单 ${order.product_name || order.order_number}（${order.order_number || order.id}），原因：${cancelReason}，退款金额是 ${refundAmountCurrency ? `${refundAmountCurrency} ${paymentCurrency}` : ''}${refundAmountCurrency && refundAmountJpy ? ' / ' : ''}${refundAmountJpy ? `¥${Math.round(refundAmountJpy).toLocaleString()} JPY` : ''}。请在这里发送您的收款方式 稍后由管理员手动汇款`;
+        } else {
+          messageContent = `尊敬的用户，您已取消订单 ${order.product_name || order.order_number}（${order.order_number || order.id}），原因：${cancelReason}，如有后续疑问，您可在此留言或联系管理员 ${adminContact || '管理员'}，祝您有好的一天`;
         }
       }
 
@@ -188,7 +188,7 @@ export default function OrderCancellationModule({ order, onSuccess, compact = fa
         id: `cancel_${Date.now()}`,
         from: "系统通知",
         from_email: "system@system.local",
-        role: "admin",
+        role: isAdmin ? "admin" : "user",
         content: messageContent,
         timestamp: new Date().toISOString(),
         image_urls: cancelImages, // 附加上传的图片
@@ -199,18 +199,57 @@ export default function OrderCancellationModule({ order, onSuccess, compact = fa
           refund_amount_jpy: updates.refund_amount_jpy,
           refund_amount_currency: updates.refund_amount_currency,
           refund_currency: paymentCurrency,
-        }
+        },
+        created_user_id: order.user_id
       };
 
       updates.messages = [...(order.messages || []), systemMessage];
       updates.unread_roles = [...new Set([...(order.unread_roles || []), "user"])];
 
+      updates.additional = {
+          user_email: order.user_email,
+          notification_type: 'cancellation',
+          notification_subtype: hasRefund ? 'order_cancelled_with_refund' : 'order_cancelled_no_refund',
+          title: hasRefund ? '订单已取消并退款' : '订单已取消',
+          content: messageContent,
+          related_entity_type: 'order',
+          related_entity_id: order.id,
+          related_url: `/orders/${order.id}`,
+          metadata: {
+            cancel_reason: cancelReason,
+            refund_amount_jpy: updates.refund_amount_jpy,
+            refund_amount_currency: updates.refund_amount_currency,
+            refund_currency: paymentCurrency
+          }
+      };
+
+      let notice_key = '';
+      if(isAdmin) {
+        if(hasRefund) {
+          notice_key = 'admin_order_cancelled_with_refund';
+        } else {
+          notice_key = 'admin_order_cancelled_no_refund';
+        }
+      } else {
+        if(hasRefund) {
+          notice_key = 'user_order_cancelled_with_refund';
+        } else {
+          notice_key = 'user_order_cancelled_no_refund';
+        }
+      }
+
+      updates.notice_key = notice_key;
       console.log(updates)
+return;
+      // 执行更新
+      const res = await cancelOrder(order.id, updates);
+      if (!res) {
+        return;
+      }
+      toast.success("订单已取消");
+      onSuccess?.();
 
       return;
-
-      // 执行更新
-      await updateOrder(order.id, updates);
 
       // 创建取消通知（与留言系统联动）
       try {

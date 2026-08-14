@@ -5,6 +5,7 @@
  */
 import { base44 } from '@/api/base44Client';
 import { getTenantConfigCache, setTenantConfigCache } from '@/lib/configCache';
+import { toast } from "sonner";
 
 // ─── Orders ──────────────────────────────────────────────────────────────────
 
@@ -25,9 +26,39 @@ export async function createOrder(data) {
 }
 
 export async function updateOrder(order_id, data) {
-  
-  const res = await base44.functions.invoke('admin/orders/updateTenantOrder', { order_id, ...data });
-  return res.data?.order;
+  try {
+    const res = await base44.functions.invoke('admin/orders/updateTenantOrder', { order_id, ...data });
+    if (res.data?.error) {
+      throw new Error(res.data.error?.[0] || JSON.stringify(res.data.error));
+    }
+    return res.data?.order || res?.data;
+  } catch (err) {
+    // 提取错误消息
+    let message = err.message || "更新订单失败";
+    if (err.response?.data?.error) {
+      message = err.response.data.error?.[0] || JSON.stringify(err.response.data.error);
+    }
+    toast.error(message);
+    return null; // 失败时返回 null
+  }
+}
+
+export async function cancelOrder(order_id, data) {
+  try {
+    const res = await base44.functions.invoke('order/info/cancelOrder', { order_id, ...data });
+    if (res.data?.error) {
+      throw new Error(res.data.error?.[0] || JSON.stringify(res.data.error));
+    }
+    return res.data?.order || res?.data;
+  } catch (err) {
+    // 提取错误消息
+    let message = err.message || "更新订单失败";
+    if (err.response?.data?.error) {
+      message = err.response.data.message || JSON.stringify(err.response.data.error);
+    }
+    toast.error(message);
+    return null; // 失败时返回 null
+  }
 }
 
 // ─── Shipping Pools ───────────────────────────────────────────────────────────

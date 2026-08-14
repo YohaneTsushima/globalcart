@@ -47,6 +47,10 @@ export default function OrderMessageThread({
   const canSendMessage = can("message:send_message") || can("message:send_order_message");
   const canSendImage = can("message:send_image");
   
+  // 不允许取消的订单状态
+  const nonCancellableStatuses = ['transit_shipped', 'shipped', 'delivered', 'cancelled', 'archived'];
+  const canCancelOrder = !nonCancellableStatuses.includes(order.order_status);
+  
   const [localMessages, setLocalMessages] = useState(order.messages || []);
   const [content, setContent] = useState("");
   const [imageUrls, setImageUrls] = useState([]);
@@ -207,6 +211,7 @@ export default function OrderMessageThread({
             <OrderCancellationModule 
               order={order} 
               compact 
+              isAdmin={isAdmin}
               onSuccess={() => {
                 setShowCancelModule(false);
                 onMessageSent?.();
@@ -228,13 +233,15 @@ export default function OrderMessageThread({
             submitLabel="发送留言"
             className="border-gray-200"
             footerActions={
-              <button
-                type="button"
-                onClick={() => setShowCancelModule(true)}
-                className="px-3 py-2 text-sm font-medium text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 rounded-md transition-colors whitespace-nowrap"
-              >
-                取消订单
-              </button>
+              canCancelOrder ? (
+                <button
+                  type="button"
+                  onClick={() => setShowCancelModule(true)}
+                  className="px-3 py-2 text-sm font-medium text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 rounded-md transition-colors whitespace-nowrap"
+                >
+                  取消订单
+                </button>
+              ) : null
             }
           />
         )

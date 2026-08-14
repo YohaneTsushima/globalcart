@@ -4,7 +4,7 @@
 import { useState, useEffect } from "react";
 import { base44 } from "@/api/base44Client";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Bell, Mail, Settings, DollarSign, Package, MessageSquare, Info } from "lucide-react";
+import { Bell, Mail, Settings, DollarSign, Package, MessageSquare, Info, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -48,6 +48,15 @@ const notificationCategories = [
       { key: "order_request_edit_created", label: "订单更改创建" },
       { key: "order_request_edit_approved", label: "订单更改申请被批准" },
       { key: "order_request_edit_rejected", label: "订单更改申请被拒绝" },
+    ]
+  },
+  {
+    key: "cancellation",
+    label: "订单取消",
+    icon: AlertCircle,
+    subtypes: [
+      { key: "order_cancelled_with_refund", label: "订单取消（有退款）" },
+      { key: "order_cancelled_no_refund", label: "订单取消（无退款）" },
     ]
   },
   {

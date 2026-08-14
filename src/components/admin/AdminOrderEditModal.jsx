@@ -221,35 +221,48 @@ export default function AdminOrderEditModal({ order, initialItemSizeTemplates, o
     const rawAmt = parseFloat(form.prepayment_amount) || order.prepayment_amount || 0;
     // Round JPY amounts to integer
     const finalAmt = cur === "JPY" ? Math.round(rawAmt) : rawAmt;
-    await updateOrder(order.id, {
+    const result = await updateOrder(order.id, {
       order_status: "payment_pending",
       prepayment_amount: finalAmt,
       payment_deadline: form.payment_deadline || null,
       admin_note: form.admin_note,
     });
+    if (!result) {
+      setSaving(false);
+      return;
+    }
     onSaved();
   };
 
   // → awaiting_reply
   const handleSendToReply = async () => {
     setSaving(true);
-    await updateOrder(order.id, {
+    const result = await updateOrder(order.id, {
       order_status: "awaiting_reply",
       pre_reply_status: order.pre_reply_status || order.order_status,
       admin_note: form.admin_note,
     });
+    if (!result) {
+      setSaving(false);
+      return;
+    }
     onSaved();
   };
 
   // → cancelled
   const handleCancel = async () => {
-    if (!form.cancel_reason) { alert("请填写取消理由"); return; }
+    // if (!form.cancel_reason) { alert("请填写取消理由"); return; }
+    toast.warning("请填写取消理由");
     setSaving(true);
-    await updateOrder(order.id, {
+    const result = await updateOrder(order.id, {
       order_status: "cancelled",
       cancel_reason: form.cancel_reason,
       admin_note: form.admin_note,
     });
+    if (!result) {
+      setSaving(false);
+      return;
+    }
     onSaved();
   };
 
@@ -264,7 +277,11 @@ export default function AdminOrderEditModal({ order, initialItemSizeTemplates, o
     };
 
     if (purchaseScreenshot) updates.purchase_screenshot_url = purchaseScreenshot;
-    await updateOrder(order.id, updates);
+    const result = await updateOrder(order.id, updates);
+    if (!result) {
+      setSaving(false);
+      return;
+    }
     savedRef.current = true;
     onSaved();
   };
@@ -293,7 +310,11 @@ export default function AdminOrderEditModal({ order, initialItemSizeTemplates, o
     // console.log(updates)
     // setSaving(false);
     // return ;
-    await updateOrder(order.id, updates);
+    const result = await updateOrder(order.id, updates);
+    if (!result) {
+      setSaving(false);
+      return;
+    }
 
     // If order has pre_shipment, trigger pool creation
     if (order.pre_shipment && !order.pre_shipment.pool_created) {
@@ -320,7 +341,7 @@ export default function AdminOrderEditModal({ order, initialItemSizeTemplates, o
   // notified_shipment → shipping_fee_pending
   const handleSetShippingFee = async () => {
     setSaving(true);
-    await updateOrder(order.id, {
+    const result = await updateOrder(order.id, {
       order_status: "shipping_fee_pending",
       shipping_total_weight_g: parseFloat(shippingWeight) || 0,
       shipping_fee_amount: parseFloat(shippingFee) || 0,
@@ -328,6 +349,10 @@ export default function AdminOrderEditModal({ order, initialItemSizeTemplates, o
       tracking_number: trackingNumber,
       admin_note: form.admin_note,
     });
+    if (!result) {
+      setSaving(false);
+      return;
+    }
     onSaved();
   };
 
@@ -343,7 +368,11 @@ export default function AdminOrderEditModal({ order, initialItemSizeTemplates, o
       notice_key: 'order_shipped'
     }
     
-    await updateOrder(order.id, pay_load);
+    const result = await updateOrder(order.id, pay_load);
+    if (!result) {
+      setSaving(false);
+      return;
+    }
     onSaved();
   };
 
@@ -356,7 +385,7 @@ export default function AdminOrderEditModal({ order, initialItemSizeTemplates, o
     const jpyRef = newCur === "JPY"
       ? newAmt
       : parseFloat(form.prepayment_amount_jpy) || order.prepayment_amount_jpy || 0;
-    await updateOrder(order.id, {
+    const result = await updateOrder(order.id, {
       order_status: form.order_status,
       admin_note: form.admin_note,
       admin_confirmed_amount: parseFloat(form.admin_confirmed_amount) || 0,
@@ -368,6 +397,10 @@ export default function AdminOrderEditModal({ order, initialItemSizeTemplates, o
       balance_credit: parseFloat(form.balance_credit) || 0,
       cancel_reason: form.cancel_reason,
     });
+    if (!result) {
+      setSaving(false);
+      return;
+    }
     onSaved();
   };
 
@@ -598,6 +631,7 @@ export default function AdminOrderEditModal({ order, initialItemSizeTemplates, o
                   <OrderCancellationModule
                     order={order}
                     compact
+                    isAdmin={true}
                     onSuccess={() => {
                       onSaved();
                       toast.success("订单已取消");
@@ -637,6 +671,7 @@ export default function AdminOrderEditModal({ order, initialItemSizeTemplates, o
                   <OrderCancellationModule
                     order={order}
                     compact
+                    isAdmin={true}
                     onSuccess={() => {
                       onSaved();
                       toast.success("订单已取消");
@@ -711,6 +746,7 @@ export default function AdminOrderEditModal({ order, initialItemSizeTemplates, o
                   <OrderCancellationModule
                     order={order}
                     compact
+                    isAdmin={true}
                     onSuccess={() => {
                       onSaved();
                       toast.success("订单已取消");
@@ -823,14 +859,17 @@ export default function AdminOrderEditModal({ order, initialItemSizeTemplates, o
                               <button
                                 type="button"
                                 className="text-teal-600 hover:text-teal-800 text-xs underline whitespace-nowrap"
-                                onClick={async () => {
-                                  await updateOrder(child.id, {
-                                    order_status: 'in_warehouse',
-                                    in_warehouse_date: new Date().toISOString().split('T')[0],
-                                  });
-                                  const updated = await tenantEntity.list('Order', { parent_order_id: order.id });
-                                  setChildOrders(updated || []);
-                                }}
+                                 onClick={async () => {
+                                   const result = await updateOrder(child.id, {
+                                     order_status: 'in_warehouse',
+                                     in_warehouse_date: new Date().toISOString().split('T')[0],
+                                   });
+                                   if (!result) {
+                                     return;
+                                   }
+                                   const updated = await tenantEntity.list('Order', { parent_order_id: order.id });
+                                   setChildOrders(updated || []);
+                                 }}
                               >
                                 入库
                               </button>
@@ -1018,7 +1057,11 @@ export default function AdminOrderEditModal({ order, initialItemSizeTemplates, o
                             updates.messages = [...currentMessages, sysMsg];
                             updates.unread_roles = [...new Set([...currentUnread, "user"])];
                           }
-                          await updateOrder(order.id, updates);
+                          const result = await updateOrder(order.id, updates);
+                          if (!result) {
+                            setSavingWarehouseEdit(false);
+                            return;
+                          }
                           setSavingWarehouseEdit(false);
                           setWarehouseEditMode(false);
                           onSaved();
@@ -1114,10 +1157,14 @@ export default function AdminOrderEditModal({ order, initialItemSizeTemplates, o
                                       content: `您的拆单申请已通过！已为您生成新订单：${newOrderNumber}（商品：${req.product_name}），状态：已入库。`,
                                       timestamp: new Date().toISOString(),
                                     });
-                                    await updateOrder(order.id, {
+                                    const result = await updateOrder(order.id, {
                                       messages: updatedMessages,
                                       unread_roles: [...new Set([...(order.unread_roles || []), "user"])],
                                     });
+                                    if (!result) {
+                                      setApprovingSplit(false);
+                                      return;
+                                    }
                                     setApprovingSplit(false);
                                     onSaved();
                                   }}>
@@ -1140,10 +1187,14 @@ export default function AdminOrderEditModal({ order, initialItemSizeTemplates, o
                                       content: `您对「${req.product_name}」的拆单申请未通过，如有疑问请联系管理员。`,
                                       timestamp: new Date().toISOString(),
                                     });
-                                    await updateOrder(order.id, {
+                                    const result = await updateOrder(order.id, {
                                       messages: updatedMessages,
                                       unread_roles: [...new Set([...(order.unread_roles || []), "user"])],
                                     });
+                                    if (!result) {
+                                      setApprovingSplit(false);
+                                      return;
+                                    }
                                     setApprovingSplit(false);
                                     onSaved();
                                   }}>

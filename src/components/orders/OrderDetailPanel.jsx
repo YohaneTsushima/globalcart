@@ -498,6 +498,7 @@ export default function OrderDetailPanel({ order, onClose, onRefresh, userProfil
                   <OrderCancellationModule
                     order={order}
                     onRefresh={onRefresh}
+                    isAdmin={isAdmin}
                   />
                 </div>
               )}
