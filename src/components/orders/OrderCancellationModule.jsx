@@ -166,22 +166,35 @@ export default function OrderCancellationModule({ order, onSuccess, compact = fa
       const hasRefund = refundAmountJpy || refundAmountCurrency;
       const template = cancellationTemplate;
       
+      let notice_key = '';
+      let real_notice_key = '';
+
       let messageContent;
       // 忽略模板，始终使用默认逻辑
       if (isAdmin) {
-        // 管理员取消
+      // 管理员取消
         if (hasRefund) {
+          notice_key = 'admin_order_cancelled_with_refund';
           messageContent = `尊敬的用户，你的订单 ${order.product_name || order.order_number}（${order.order_number || order.id}）由于 ${cancelReason} 而被管理员取消了，退款金额是 ${refundAmountCurrency ? `${refundAmountCurrency} ${paymentCurrency}` : ''}${refundAmountCurrency && refundAmountJpy ? ' / ' : ''}${refundAmountJpy ? `¥${Math.round(refundAmountJpy).toLocaleString()} JPY` : ''}。请在这里发送您的收款方式 稍后由管理员手动汇款`;
         } else {
+          notice_key = 'admin_order_cancelled_no_refund';
           messageContent = `尊敬的用户，你的订单 ${order.product_name || order.order_number}（${order.order_number || order.id}）由于 ${cancelReason} 而被管理员取消了，如有后续疑问，您可在此留言或联系管理员 ${adminContact || '管理员'}，祝您有好的一天`;
         }
       } else {
         // 用户取消
         if (hasRefund) {
+          notice_key = 'user_order_cancelled_with_refund';
           messageContent = `尊敬的用户，您已取消订单 ${order.product_name || order.order_number}（${order.order_number || order.id}），原因：${cancelReason}，退款金额是 ${refundAmountCurrency ? `${refundAmountCurrency} ${paymentCurrency}` : ''}${refundAmountCurrency && refundAmountJpy ? ' / ' : ''}${refundAmountJpy ? `¥${Math.round(refundAmountJpy).toLocaleString()} JPY` : ''}。请在这里发送您的收款方式 稍后由管理员手动汇款`;
         } else {
+          notice_key = 'user_order_cancelled_no_refund';
           messageContent = `尊敬的用户，您已取消订单 ${order.product_name || order.order_number}（${order.order_number || order.id}），原因：${cancelReason}，如有后续疑问，您可在此留言或联系管理员 ${adminContact || '管理员'}，祝您有好的一天`;
         }
+      }
+
+      if(hasRefund) {
+        real_notice_key = 'order_cancelled_with_refund';
+      } else {
+        real_notice_key = 'order_cancelled_no_refund';
       }
 
       const systemMessage = {
@@ -223,30 +236,16 @@ export default function OrderCancellationModule({ order, onSuccess, compact = fa
           }
       };
 
-      let notice_key = '';
-      if(isAdmin) {
-        if(hasRefund) {
-          notice_key = 'admin_order_cancelled_with_refund';
-        } else {
-          notice_key = 'admin_order_cancelled_no_refund';
-        }
-      } else {
-        if(hasRefund) {
-          notice_key = 'user_order_cancelled_with_refund';
-        } else {
-          notice_key = 'user_order_cancelled_no_refund';
-        }
-      }
-
       updates.notice_key = notice_key;
+      updates.real_notice_key = real_notice_key;
       console.log(updates)
-return;
+
       // 执行更新
       const res = await cancelOrder(order.id, updates);
       if (!res) {
         return;
       }
-      toast.success("订单已取消");
+      toast.success("订单已取消，通知已发送给用户");
       onSuccess?.();
 
       return;

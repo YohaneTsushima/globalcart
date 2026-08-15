@@ -31,6 +31,7 @@ function SingleImageEditor({ img, onUpdate, onPatch, onDelete }) {
           overlayColor={img.overlayColor || "#000000"}
           overlayOpacity={img.overlayOpacity ?? 0}
           showHeightPreview
+          uploadPath="bannerPic"
           onChange={patch => { onPatch(img.id, patch); setEditOpen(false); }}
           onClose={() => setEditOpen(false)}
         />
@@ -189,6 +190,7 @@ export default function BannerManager({ settings, onReload }) {
           overlayOpacity={0}
           aspect={4}
           showHeightPreview
+          uploadPath="bannerPic"
           onChange={handleNewImageConfirm}
           onClose={() => setPendingNewFileSrc(null)}
         />

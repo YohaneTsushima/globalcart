@@ -16,9 +16,12 @@ import LogisticsStatusBoard from "@/components/home/LogisticsStatusBoard";
 import HeroSection from "@/components/home/HeroSection";
 import FaqSection from "@/components/home/FaqSection";
 import ExchangeRateWidget from "@/components/home/ExchangeRateWidget";
+import { usePermissions } from "@/hooks/usePermissions";
+import { tenantEntity } from "@/lib/tenantApi";
 
 export default function Home() {
   const { user } = useCurrentUser();
+  const { can, isAdmin } = usePermissions();
   const { tenant } = useTenantBranding();
   const { locale } = useLocale();
   const [recentOrders, setRecentOrders] = useState([]);
@@ -54,8 +57,9 @@ export default function Home() {
         // Try authenticated endpoint first; fall back to public
         try {
           // const r = await base44.functions.invoke('getTenantConfigData', {});
-          const r = [];
-          const data = r.data || {};
+          const r = await tenantEntity.homeConfig('SiteSettings');
+          const data = r || r?.data || {};
+
           raw = data.settings || [];
           faqCategories = data.faqCategories || [];
           // Cache it for reuse across components
@@ -128,7 +132,7 @@ export default function Home() {
     if (stepsConfig.unified) {
       cfg = stepsConfig.guest;
     } else {
-      const isAdmin = user?.role === "admin" || user?.role === "tenant_admin" || user?.role === "platform_admin" || user?.role === "staff";
+      // const isAdmin = user?.role === "admin" || user?.role === "tenant_admin" || user?.role === "platform_admin" || user?.role === "staff";
       if (isAdmin && stepsConfig.admin) cfg = stepsConfig.admin;
       else if (user && stepsConfig.user) cfg = stepsConfig.user;
       else cfg = stepsConfig.guest;

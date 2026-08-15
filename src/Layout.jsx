@@ -86,8 +86,8 @@ export default function Layout({ children, currentPageName }) {
 
   useEffect(() => {
     if (!user) return;
-    fetchTenantConfig().then(applyTenantConfig).catch(() => {});
-    console.log(user?.role)
+    // fetchTenantConfig().then(applyTenantConfig).catch(() => {});
+    tenantEntity.layoutConfig('SiteSettings').then(applyTenantConfig).catch(() => {});
 
     // 单独获取公告
     tenantEntity.list('Announcement')
@@ -99,7 +99,7 @@ export default function Layout({ children, currentPageName }) {
   useEffect(() => {
     if (!user) return;
     const handler = () => {
-      fetchTenantConfig({ force: true }).then(applyTenantConfig).catch(() => {});
+      // fetchTenantConfig({ force: true }).then(applyTenantConfig).catch(() => {});
     };
     window.addEventListener('tenantConfigInvalidated', handler);
     return () => window.removeEventListener('tenantConfigInvalidated', handler);

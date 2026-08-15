@@ -68,11 +68,29 @@ export default function PlatformAdminSettings() {
     { key: "permissions", label: "权限一览" },
   ];
 
-  const isPlatformAdmin = user?.roles?.includes('platform_admin');
+  // const isPlatformAdmin = user?.role?.includes('platform_admin', 'ROLE_ADMIN', 'TENANT_ADMIN');
+  const isPlatformAdmin = ['ROLE_ADMIN', 'TENANT_ADMIN', 'platform_admin'].includes(user?.role);
+
+  const loadTenants = async () => {
+    setTenantsLoading(true);
+    const res = await base44.functions.invoke('manageTenants/load', {});
+    const data = res?.data?.data || res?.data || {};
+    console.log(data)
+    setTenants(data.tenants || []);
+    const domain = data.platform_base_domain || "";
+    setPlatformBaseDomain(domain);
+    setEditingDomain(domain);
+    if (data.exchange_rates) setLiveRates(data.exchange_rates);
+    setFeeTemplates(data.fee_rule_templates || []);
+    setTenantTemplates(data.tenant_templates || []);
+    if (data.platform_increments) setPlatformIncrements(data.platform_increments);
+    setTenantsLoading(false);
+  };
 
   useEffect(() => {
+    if (!isPlatformAdmin) return;
     loadTenants();
-  }, []);
+  }, [isPlatformAdmin]);
 
   // Redirect non-platform admins
   if (user && !isPlatformAdmin) {
@@ -95,29 +113,6 @@ export default function PlatformAdminSettings() {
     await base44.functions.invoke('adminAssignTenant', { action: 'assign', target_email: email, tenant_id: tid });
     setAssigning(a => ({ ...a, [email]: false }));
     await runDiagnose();
-  };
-
-  const loadTenants = async () => {
-    setTenantsLoading(true);
-    const [tenantsRes, domainRes, ratesRes, tplRes, tenantTplRes] = await Promise.all([
-      base44.functions.invoke('manageTenants', { action: 'list' }),
-      base44.functions.invoke('manageTenants', { action: 'get_platform_domain' }),
-      base44.functions.invoke('fetchExchangeRates', {}),
-      base44.functions.invoke('serviceFeeRuleEngine', { action: 'list_global_templates' }),
-      base44.functions.invoke('manageTenantTemplates', { action: 'list' }),
-    ]);
-    setFeeTemplates(tplRes.data?.templates || []);
-    setTenantTemplates(tenantTplRes.data?.templates || []);
-    setTenants(tenantsRes.data?.tenants || []);
-    const domain = domainRes.data?.platform_base_domain || "";
-    setPlatformBaseDomain(domain);
-    setEditingDomain(domain);
-    if (ratesRes.data?.raw_rates) setLiveRates(ratesRes.data.raw_rates);
-    else if (ratesRes.data?.rates) setLiveRates(ratesRes.data.rates);
-    // 加载平台级增量
-    const incRes = await base44.functions.invoke('managePlatformSettings', { action: 'get_platform_rate_increments' });
-    if (incRes.data && !incRes.data.error) setPlatformIncrements(incRes.data);
-    setTenantsLoading(false);
   };
 
   const handleSaveDomain = async () => {
@@ -146,6 +141,11 @@ export default function PlatformAdminSettings() {
     if (tenant_template_id && tenant_template_id !== "none") {
       payload.tenant_template_id = tenant_template_id;
     }
+
+    console.log(payload)
+
+    return
+
     const r = await base44.functions.invoke('manageTenants', payload);
     if (r.data?.error) {
       setTenantMsg({ type: 'error', text: r.data.error });

@@ -111,6 +111,7 @@ export function ImageEditModal({
   onClose,
   aspect,
   showHeightPreview = false,
+  uploadPath = "",
 }) {
   const fileInputRef = useRef();
   const imgRef = useRef();
@@ -242,7 +243,7 @@ export function ImageEditModal({
       canvas.toBlob(async (blob) => {
         if (!blob) { setUploading(false); return; }
         const file = new File([blob], "cropped.jpg", { type: "image/jpeg" });
-        const { file_url } = await base44.integrations.Core.UploadFile({ file });
+        const { file_url } = await base44.integrations.Core.UploadFile({ file, path: uploadPath });
         setUploading(false);
         onChange({ ...local, bgImageUrl: file_url });
         onClose();
@@ -255,7 +256,7 @@ export function ImageEditModal({
         const res = await fetch(sourceImageUrl);
         const blob = await res.blob();
         const file = new File([blob], "image.jpg", { type: blob.type || "image/jpeg" });
-        const { file_url } = await base44.integrations.Core.UploadFile({ file });
+        const { file_url } = await base44.integrations.Core.UploadFile({ file, path: uploadPath });
         setUploading(false);
         onChange({ ...local, bgImageUrl: file_url });
       } else {

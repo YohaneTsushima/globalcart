@@ -490,6 +490,7 @@ export default function OrderDetailPanel({ order, onClose, onRefresh, userProfil
                 isAdmin={isAdmin}
                 userProfileMap={userProfileMap}
                 hideHistory={false}
+                onMessageSent={onRefresh}
               />
 
               {/* Cancellation module */}
@@ -497,8 +498,11 @@ export default function OrderDetailPanel({ order, onClose, onRefresh, userProfil
                 <div className="border-t pt-4">
                   <OrderCancellationModule
                     order={order}
-                    onRefresh={onRefresh}
+                    compact
                     isAdmin={isAdmin}
+                    onSuccess={() => {
+                      onRefresh?.();
+                    }}
                   />
                 </div>
               )}
