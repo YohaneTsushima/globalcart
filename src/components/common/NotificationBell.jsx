@@ -50,6 +50,7 @@ export default function NotificationBellComponent() {
   const { data: unreadData, refetch: refetchUnread } = useQuery({
     queryKey: ['notification-unread-count'],
     queryFn: async () => {
+      if(!user) return;
       const res = await base44.functions.invoke('notification/getUnreadNotificationCount', {});
       let un_read = {unread_count: res.data};
       return un_read;
@@ -62,6 +63,7 @@ export default function NotificationBellComponent() {
   const { data: notificationsData, refetch: refetchNotifications } = useQuery({
     queryKey: ['notification-recent-unread'],
     queryFn: async () => {
+      if(!user) return;
       const res = await base44.functions.invoke('notification/getUnReadUserNotifications', { limit: 7, skip: 0 });
       let notifications = {'notifications': res?.data };
       return notifications;

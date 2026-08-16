@@ -112,6 +112,20 @@ async function mutate(entity, action, opts = {}) {
   return res.data;
 }
 
+async function manage(entity, action, opts = {}) {
+  const res = await base44.functions.invoke(`mutateTenantManage/${entity}/${action}`, { entity, action, ...opts });
+  if (res.data?.error) throw new Error(res.data.error?.[0] || JSON.stringify(res.data.error));
+  return res.data;
+}
+
+export const tenantManage = {
+  init:   (entity, filter = {}) => manage(entity, 'init', { filter }).then(r => r?.results || r?.data || r.data?.results || r || []),
+  list:   (entity, filter = {}) => manage(entity, 'list', { filter }).then(r => r?.results || r?.data || r.data?.results || r || []),
+  create: (entity, data)        => manage(entity, 'create', { data }).then(r => r.result || r.data?.result || r),
+  update: (entity, id, data)    => manage(entity, 'update', { id, data }).then(r => r.result || r.data?.result || r),
+  delete: (entity, id)          => manage(entity, 'delete', { id }),
+}
+
 export const tenantEntity = {
   list:   (entity, filter = {}) => mutate(entity, 'list', { filter }).then(r => r?.results || r?.data || r.data?.results || r || []),
   create: (entity, data)        => mutate(entity, 'create', { data }).then(r => r.result || r.data?.result || r),

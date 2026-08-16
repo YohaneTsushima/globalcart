@@ -17,6 +17,7 @@ import PermissionViewer from "@/components/admin/PermissionViewer";
 import ExchangeRateApiSettings from "@/components/platform/ExchangeRateApiSettings";
 import GlobalFeeRuleTemplates from "@/components/platform/GlobalFeeRuleTemplates";
 import TenantTemplateManager from "@/components/platform/TenantTemplateManager";
+import { tenantManage } from "@/lib/tenantApi";
 
 export default function PlatformAdminSettings() {
   const { user } = useCurrentUser();
@@ -71,12 +72,9 @@ export default function PlatformAdminSettings() {
   // const isPlatformAdmin = user?.role?.includes('platform_admin', 'ROLE_ADMIN', 'TENANT_ADMIN');
   const isPlatformAdmin = ['ROLE_ADMIN', 'TENANT_ADMIN', 'platform_admin'].includes(user?.role);
 
-  const loadTenants = async () => {
-    setTenantsLoading(true);
-    const res = await base44.functions.invoke('manageTenants/load', {});
+  const loadInitData = async () => {
+    const res = tenantManage.init('TenantsManage');
     const data = res?.data?.data || res?.data || {};
-    console.log(data)
-    setTenants(data.tenants || []);
     const domain = data.platform_base_domain || "";
     setPlatformBaseDomain(domain);
     setEditingDomain(domain);
@@ -84,13 +82,28 @@ export default function PlatformAdminSettings() {
     setFeeTemplates(data.fee_rule_templates || []);
     setTenantTemplates(data.tenant_templates || []);
     if (data.platform_increments) setPlatformIncrements(data.platform_increments);
+  };
+
+  const loadTenants = async () => {
+    setTenantsLoading(true);
+    // TODO: 替换为实际的租户列表 API
+    // const res = await base44.functions.invoke('manageTenants/list', {});
+    const res = tenantManage.list('TenantsManage');
+    setTenants(res?.data || res?.data?.tenants || []);
     setTenantsLoading(false);
   };
 
   useEffect(() => {
     if (!isPlatformAdmin) return;
-    loadTenants();
+    loadInitData();
   }, [isPlatformAdmin]);
+
+  useEffect(() => {
+    if (!isPlatformAdmin) return;
+    if ((activeTab === "tenants" || activeTab === "tenant_roles") && tenants.length === 0 && !tenantsLoading) {
+      loadTenants();
+    }
+  }, [activeTab, isPlatformAdmin]);
 
   // Redirect non-platform admins
   if (user && !isPlatformAdmin) {

@@ -238,7 +238,6 @@ export default function OrderCancellationModule({ order, onSuccess, compact = fa
 
       updates.notice_key = notice_key;
       updates.real_notice_key = real_notice_key;
-      console.log(updates)
 
       // 执行更新
       const res = await cancelOrder(order.id, updates);
