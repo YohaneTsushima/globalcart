@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Plus, Trash2, ChevronDown, ChevronUp, Shield, Lock, Pencil, Star } from "lucide-react";
 import { PERMISSIONS_PRESET } from "@/lib/permissionsPreset";
 import PermissionGrid from "@/components/admin/PermissionGrid.jsx";
+import { tenantManage } from "@/lib/tenantApi";
 
 // Flat map of all permission names -> display_name for lookup
 const PERM_LABEL_MAP = {};
@@ -82,32 +83,68 @@ export default function GlobalRoleManager() {
   const [saving, setSaving] = useState(false);
   const [permMsg, setPermMsg] = useState("");
   const [roleMsg, setRoleMsg] = useState("");
+  const [expandedSections, setExpandedSections] = useState({
+    createPermission: false,
+    systemRoles: false,
+    createGlobalRole: false,
+    roleTemplates: false
+  });
+
+  const toggleSection = (section) => {
+    setExpandedSections(prev => ({
+      ...prev,
+      [section]: !prev[section]
+    }));
+  };
 
   useEffect(() => { loadData(); }, []);
 
   const loadData = async () => {
     setLoading(true);
     try {
-      const [rolesRes, permsRes, defaultRes] = await Promise.all([
-        base44.functions.invoke('manageRoles', { action: 'listRoles', data: { tenant_id_filter: null } }),
-        base44.functions.invoke('managePermissions', { action: 'listPermissions', data: { tenant_id_filter: null } }),
-        base44.functions.invoke('manageRoles', { action: 'getGlobalDefaultRole', data: {} }),
-      ]);
-      setGlobalDefaultRoleId(defaultRes.data?.role_id || null);
-      const allRoles = rolesRes.data?.roles || [];
-      const dbPredefined = allRoles.filter(r => !!r.is_global && !!r.is_predefined);
+
+      await tenantManage.global('TenantsManage').then(res => {
+        
+        const allRoles = res.data?.roles || [];
+        const dbPredefined = allRoles.filter(r => !!r.is_global && !!r.is_predefined);
+        setGlobalDefaultRoleId(res?.data?.role_id || null);
+
+        // Merge: for each default builtin, use DB version if exists (matched by predefined_key), else show the static default
+        const merged = BUILTIN_ROLE_DEFAULTS.map(def => {
+          const dbRole = dbPredefined.find(ro => ro.predefined_key === def.predefined_key);
+          if (dbRole) return { ...dbRole, _isInDB: true };
+          return { ...def, id: null, _isInDB: false, direct_permissions: def.permissions };
+        });
+
+        // Also include any DB predefined roles not in BUILTIN_ROLE_DEFAULTS
+        const extraDB = dbPredefined.filter(r => !BUILTIN_ROLE_DEFAULTS.find(d => d.predefined_key === r.predefined_key));
+        console.log(extraDB)
+        setPredefinedRoles([...merged, ...extraDB.map(r => ({ ...r, _isInDB: true }))]);
+        setCustomRoles(allRoles.filter(r => !!r.is_global && !r.is_predefined));
+        setPermissions(res.data?.permissions || []);
+      }).catch(() => {});
+
+      // const [rolesRes, permsRes, defaultRes] = await Promise.all([
+      //   base44.functions.invoke('manageRoles', { action: 'listRoles', data: { tenant_id_filter: null } }),
+      //   base44.functions.invoke('managePermissions', { action: 'listPermissions', data: { tenant_id_filter: null } }),
+      //   base44.functions.invoke('manageRoles', { action: 'getGlobalDefaultRole', data: {} }),
+      // ]);
       
-      // Merge: for each default builtin, use DB version if exists (matched by predefined_key), else show the static default
-      const merged = BUILTIN_ROLE_DEFAULTS.map(def => {
-        const dbRole = dbPredefined.find(r => r.predefined_key === def.predefined_key);
-        if (dbRole) return { ...dbRole, _isInDB: true };
-        return { ...def, id: null, _isInDB: false, direct_permissions: def.permissions };
-      });
-      // Also include any DB predefined roles not in BUILTIN_ROLE_DEFAULTS
-      const extraDB = dbPredefined.filter(r => !BUILTIN_ROLE_DEFAULTS.find(d => d.predefined_key === r.predefined_key));
-      setPredefinedRoles([...merged, ...extraDB.map(r => ({ ...r, _isInDB: true }))]);
-      setCustomRoles(allRoles.filter(r => !!r.is_global && !r.is_predefined));
-      setPermissions(permsRes.data?.permissions || []);
+      // setGlobalDefaultRoleId(defaultRes.data?.role_id || null);
+      // const allRoles = rolesRes.data?.roles || [];
+      // const dbPredefined = allRoles.filter(r => !!r.is_global && !!r.is_predefined);
+      
+      // // Merge: for each default builtin, use DB version if exists (matched by predefined_key), else show the static default
+      // const merged = BUILTIN_ROLE_DEFAULTS.map(def => {
+      //   const dbRole = dbPredefined.find(r => r.predefined_key === def.predefined_key);
+      //   if (dbRole) return { ...dbRole, _isInDB: true };
+      //   return { ...def, id: null, _isInDB: false, direct_permissions: def.permissions };
+      // });
+      // // Also include any DB predefined roles not in BUILTIN_ROLE_DEFAULTS
+      // const extraDB = dbPredefined.filter(r => !BUILTIN_ROLE_DEFAULTS.find(d => d.predefined_key === r.predefined_key));
+      // setPredefinedRoles([...merged, ...extraDB.map(r => ({ ...r, _isInDB: true }))]);
+      // setCustomRoles(allRoles.filter(r => !!r.is_global && !r.is_predefined));
+      // setPermissions(permsRes.data?.permissions || []);
     } catch (e) {
       setPermMsg({ type: 'error', text: e.message });
     }
@@ -119,18 +156,31 @@ export default function GlobalRoleManager() {
     // Use local edited permissions if available, otherwise fall back to defaults
     const permsToSave = localPermOverrides[role.predefined_key] ?? role.direct_permissions ?? role.permissions ?? [];
     try {
-      const res = await base44.functions.invoke('manageRoles', {
-        action: 'create',
-        data: { name: role.name, description: role.description, color: role.color, is_global: true, is_predefined: true, predefined_key: role.predefined_key, direct_permissions: permsToSave },
-      });
-      if (res.data?.error) { setRoleMsg({ type: 'error', text: res.data.error }); }
-      else {
-        // Clear local overrides for this role after seeding
-        setLocalPermOverrides(prev => { const n = { ...prev }; delete n[role.predefined_key]; return n; });
-        await loadData();
-        setRoleMsg({ type: 'success', text: `"${role.name}"已初始化到数据库` });
-        setTimeout(() => setRoleMsg(""), 2000);
-      }
+      await tenantManage.create('TenantRole', { name: role.name, description: role.description, 
+        color: role.color, is_global: true, is_predefined: true, predefined_key: role.predefined_key, direct_permissions: permsToSave })
+        .then(res => {
+           // Clear local overrides for this role after seeding
+          setLocalPermOverrides(prev => { const n = { ...prev }; delete n[role.predefined_key]; return n; });
+          loadData();
+          setRoleMsg({ type: 'success', text: `"${role.name}"已初始化到数据库` });
+          setTimeout(() => setRoleMsg(""), 2000);
+        }).catch(e => {
+          const message = e.response?.data?.message || e.message || '初始化失败';
+          setRoleMsg({ type: 'error', text: message });
+        });
+
+      // const res = await base44.functions.invoke('manageRoles', {
+      //   action: 'create',
+      //   data: { name: role.name, description: role.description, color: role.color, is_global: true, is_predefined: true, predefined_key: role.predefined_key, direct_permissions: permsToSave },
+      // });
+      // if (res.data?.error) { setRoleMsg({ type: 'error', text: res.data.error }); }
+      // else {
+      //   // Clear local overrides for this role after seeding
+      //   setLocalPermOverrides(prev => { const n = { ...prev }; delete n[role.predefined_key]; return n; });
+      //   await loadData();
+      //   setRoleMsg({ type: 'success', text: `"${role.name}"已初始化到数据库` });
+      //   setTimeout(() => setRoleMsg(""), 2000);
+      // }
     } catch (e) { setRoleMsg({ type: 'error', text: e.message }); }
     setSaving(false);
   };
@@ -142,10 +192,13 @@ export default function GlobalRoleManager() {
     }
     setSaving(true);
     try {
-      await base44.functions.invoke('managePermissions', {
-        action: 'create',
-        data: { name: newPerm.name, description: newPerm.description, resource_type: newPerm.resource_type, action: newPerm.action, is_global: true },
-      });
+      // await base44.functions.invoke('managePermissions', {
+      //   action: 'create',
+      //   data: { name: newPerm.name, description: newPerm.description, resource_type: newPerm.resource_type, action: newPerm.action, is_global: true },
+      // });
+
+      await tenantManage.create('TenantPermission', { name: newPerm.name, description: newPerm.description, resource_type: newPerm.resource_type, action: newPerm.action, is_global: true });
+
       setPermMsg({ type: 'success', text: '权限创建成功' });
       setNewPerm({ name: "", description: "", resource_type: "", action: "" });
       await loadData();
@@ -159,19 +212,42 @@ export default function GlobalRoleManager() {
   const handleCreateRole = async () => {
     if (!newRole.name) return;
     setSaving(true);
+
+     await tenantManage.create('TenantRole', { name: newRole.name, description: newRole.description, is_global: true, is_predefined: newRole.is_predefined, direct_permissions: newRole.permissions })
+        .then(res => {
+          setRoleMsg({ type: 'success', text: `全局角色"${newRole.name}"创建成功` });
+          setNewRole({ name: "", description: "", permissions: [], is_predefined: false });
+          loadData();
+          setTimeout(() => setRoleMsg(""), 2000);
+        }).catch(e => {
+          const message = e.response?.data?.message || e.message || '初始化失败';
+          setRoleMsg({ type: 'error', text: message });
+        });
+
     try {
-      const res = await base44.functions.invoke('manageRoles', {
-        action: 'create',
-        data: { name: newRole.name, description: newRole.description, is_global: true, is_predefined: newRole.is_predefined, direct_permissions: newRole.permissions },
-      });
-      if (res.data?.error) {
-        setRoleMsg({ type: 'error', text: res.data.error });
-      } else {
-        setRoleMsg({ type: 'success', text: `全局角色"${newRole.name}"创建成功` });
-        setNewRole({ name: "", description: "", permissions: [], is_predefined: false });
-        await loadData();
-        setTimeout(() => setRoleMsg(""), 2000);
-      }
+      // await tenantManage.create('TenantRole', { name: newRole.name, description: newRole.description, is_global: true, is_predefined: newRole.is_predefined, direct_permissions: newRole.permissions })
+      //   .then(res => {
+      //     setRoleMsg({ type: 'success', text: `全局角色"${newRole.name}"创建成功` });
+      //     setNewRole({ name: "", description: "", permissions: [], is_predefined: false });
+      //     loadData();
+      //     setTimeout(() => setRoleMsg(""), 2000);
+      //   }).catch(e => {
+      //     const message = e.response?.data?.message || e.message || '初始化失败';
+      //     setRoleMsg({ type: 'error', text: message });
+      //   });
+
+      // const res = await base44.functions.invoke('manageRoles', {
+      //   action: 'create',
+      //   data: { name: newRole.name, description: newRole.description, is_global: true, is_predefined: newRole.is_predefined, direct_permissions: newRole.permissions },
+      // });
+      // if (res.data?.error) {
+      //   setRoleMsg({ type: 'error', text: res.data.error });
+      // } else {
+      //   setRoleMsg({ type: 'success', text: `全局角色"${newRole.name}"创建成功` });
+      //   setNewRole({ name: "", description: "", permissions: [], is_predefined: false });
+      //   await loadData();
+      //   setTimeout(() => setRoleMsg(""), 2000);
+      // }
     } catch (e) {
       setRoleMsg({ type: 'error', text: e.message });
     }
@@ -181,18 +257,29 @@ export default function GlobalRoleManager() {
   const handleDeleteRole = async (roleId) => {
     if (!window.confirm("确定删除此全局角色吗？")) return;
     setSaving(true);
-    try {
-      const res = await base44.functions.invoke('manageRoles', { action: 'delete', data: { role_id: roleId } });
-      if (res.data?.error) {
-        setRoleMsg({ type: 'error', text: res.data.error });
-      } else {
-        await loadData();
-        setRoleMsg({ type: 'success', text: "全局角色删除成功" });
-        setTimeout(() => setRoleMsg(""), 2000);
-      }
-    } catch (e) {
-      setRoleMsg({ type: 'error', text: e.message });
-    }
+
+    await tenantManage.delete('TenantRole', roleId)
+        .then(res => {
+          setRoleMsg({ type: 'success', text: "全局角色删除成功" });
+          loadData();
+          setTimeout(() => setRoleMsg(""), 2000);
+        }).catch(e => {
+          const message = e.response?.data?.message || e.message || '初始化失败';
+          setRoleMsg({ type: 'error', text: message });
+        });
+
+    // try {
+    //   const res = await base44.functions.invoke('manageRoles', { action: 'delete', data: { role_id: roleId } });
+    //   if (res.data?.error) {
+    //     setRoleMsg({ type: 'error', text: res.data.error });
+    //   } else {
+    //     await loadData();
+    //     setRoleMsg({ type: 'success', text: "全局角色删除成功" });
+    //     setTimeout(() => setRoleMsg(""), 2000);
+    //   }
+    // } catch (e) {
+    //   setRoleMsg({ type: 'error', text: e.message });
+    // }
     setSaving(false);
   };
 
@@ -200,11 +287,17 @@ export default function GlobalRoleManager() {
     setSaving(true);
     try {
       const newId = globalDefaultRoleId === roleId ? null : roleId; // toggle off if same
-      await base44.functions.invoke('manageRoles', { action: 'setGlobalDefaultRole', data: { role_id: newId } });
+      // await base44.functions.invoke('manageRoles', { action: 'setGlobalDefaultRole', data: { role_id: newId } });
+      await tenantManage.setDef('TenantRole', newId);
+      await loadData();
+
       setGlobalDefaultRoleId(newId);
       setRoleMsg({ type: 'success', text: newId ? '已设为系统默认角色' : '已取消系统默认角色' });
       setTimeout(() => setRoleMsg(""), 2000);
-    } catch (e) { setRoleMsg({ type: 'error', text: e.message }); }
+    } catch (e) { 
+      const message = e.response?.data?.message || e.message || '操作失败';
+      setRoleMsg({ type: 'error', text: message });
+    }
     setSaving(false);
   };
 
@@ -231,56 +324,76 @@ export default function GlobalRoleManager() {
     <div className="space-y-5">
       {/* Create Permission */}
       <Card className="border-blue-200">
-        <CardHeader className="pb-3">
-          <CardTitle className="text-sm font-semibold text-gray-700 flex items-center gap-2">
-            <Plus className="w-4 h-4 text-blue-500" />创建权限属性
-          </CardTitle>
-          <p className="text-xs text-gray-400 mt-1">定义全局权限属性，供角色分配使用</p>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <Label className="text-xs text-gray-500">权限名称 *</Label>
-              <Input className="mt-0.5 h-8 text-sm" placeholder="如：订单查看" value={newPerm.name}
-                onChange={e => setNewPerm(p => ({ ...p, name: e.target.value }))} />
-            </div>
-            <div>
-              <Label className="text-xs text-gray-500">资源类型 *</Label>
-              <Input className="mt-0.5 h-8 text-sm" placeholder="如：Order、ShippingPool" value={newPerm.resource_type}
-                onChange={e => setNewPerm(p => ({ ...p, resource_type: e.target.value }))} />
-            </div>
-            <div>
-              <Label className="text-xs text-gray-500">操作 *</Label>
-              <Input className="mt-0.5 h-8 text-sm" placeholder="如：read、create、update" value={newPerm.action}
-                onChange={e => setNewPerm(p => ({ ...p, action: e.target.value }))} />
-            </div>
-            <div>
-              <Label className="text-xs text-gray-500">说明</Label>
-              <Input className="mt-0.5 h-8 text-sm" placeholder="权限说明" value={newPerm.description}
-                onChange={e => setNewPerm(p => ({ ...p, description: e.target.value }))} />
-            </div>
+        <button
+          className="w-full flex items-center justify-between px-6 py-4 text-left hover:bg-blue-50 transition-colors"
+          onClick={() => toggleSection('createPermission')}
+        >
+          <div className="flex items-center gap-2">
+            <Plus className="w-4 h-4 text-blue-500" />
+            <CardTitle className="text-sm font-semibold text-gray-700">创建权限属性</CardTitle>
           </div>
-          {permMsg && (
-            <p className={`text-xs px-2 py-1 rounded ${permMsg.type === 'success' ? 'text-green-700 bg-green-50' : 'text-red-700 bg-red-50'}`}>{permMsg.text}</p>
+          {expandedSections.createPermission ? (
+            <ChevronUp className="w-4 h-4 text-gray-500" />
+          ) : (
+            <ChevronDown className="w-4 h-4 text-gray-500" />
           )}
-          <Button size="sm" className="h-8 text-xs bg-blue-600 hover:bg-blue-700"
-            onClick={handleCreatePermission}
-            disabled={saving || !newPerm.name || !newPerm.resource_type || !newPerm.action}>
-            <Plus className="w-3 h-3 mr-1" />{saving ? '创建中...' : '创建权限'}
-          </Button>
-        </CardContent>
+        </button>
+        {expandedSections.createPermission && (
+          <CardContent className="space-y-3 pt-0">
+            <p className="text-xs text-gray-400 mt-1">定义全局权限属性，供角色分配使用</p>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label className="text-xs text-gray-500">权限名称 *</Label>
+                <Input className="mt-0.5 h-8 text-sm" placeholder="如：订单查看" value={newPerm.name}
+                  onChange={e => setNewPerm(p => ({ ...p, name: e.target.value }))} />
+              </div>
+              <div>
+                <Label className="text-xs text-gray-500">资源类型 *</Label>
+                <Input className="mt-0.5 h-8 text-sm" placeholder="如：Order、ShippingPool" value={newPerm.resource_type}
+                  onChange={e => setNewPerm(p => ({ ...p, resource_type: e.target.value }))} />
+              </div>
+              <div>
+                <Label className="text-xs text-gray-500">操作 *</Label>
+                <Input className="mt-0.5 h-8 text-sm" placeholder="如：read、create、update" value={newPerm.action}
+                  onChange={e => setNewPerm(p => ({ ...p, action: e.target.value }))} />
+              </div>
+              <div>
+                <Label className="text-xs text-gray-500">说明</Label>
+                <Input className="mt-0.5 h-8 text-sm" placeholder="权限说明" value={newPerm.description}
+                  onChange={e => setNewPerm(p => ({ ...p, description: e.target.value }))} />
+              </div>
+            </div>
+            {permMsg && (
+              <p className={`text-xs px-2 py-1 rounded ${permMsg.type === 'success' ? 'text-green-700 bg-green-50' : 'text-red-700 bg-red-50'}`}>{permMsg.text}</p>
+            )}
+            <Button size="sm" className="h-8 text-xs bg-blue-600 hover:bg-blue-700"
+              onClick={handleCreatePermission}
+              disabled={saving || !newPerm.name || !newPerm.resource_type || !newPerm.action}>
+              <Plus className="w-3 h-3 mr-1" />{saving ? '创建中...' : '创建权限'}
+            </Button>
+          </CardContent>
+        )}
       </Card>
 
       {/* Built-in Global Roles (from DB, is_predefined=true) */}
       <Card className="border-amber-200">
-        <CardHeader className="pb-3">
-          <CardTitle className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+        <button
+          className="w-full flex items-center justify-between px-6 py-4 text-left hover:bg-amber-50 transition-colors"
+          onClick={() => toggleSection('systemRoles')}
+        >
+          <div className="flex items-center gap-2">
             <Badge className="bg-amber-100 text-amber-700 text-xs">内置</Badge>
-            系统角色 ({predefinedRoles.length})
-          </CardTitle>
-          <p className="text-xs text-gray-400 mt-1">平台管理员可编辑内置角色的权限策略，未初始化的角色仅供预览</p>
-        </CardHeader>
+            <CardTitle className="text-sm font-semibold text-gray-700">系统角色 ({predefinedRoles.length})</CardTitle>
+          </div>
+          {expandedSections.systemRoles ? (
+            <ChevronUp className="w-4 h-4 text-gray-500" />
+          ) : (
+            <ChevronDown className="w-4 h-4 text-gray-500" />
+          )}
+        </button>
+        {expandedSections.systemRoles && (
         <CardContent className="space-y-3">
+          <p className="text-xs text-gray-400 mt-1">平台管理员可编辑内置角色的权限策略，未初始化的角色仅供预览</p>
           {roleMsg && (
             <p className={`text-xs px-2 py-1 rounded ${roleMsg.type === 'success' ? 'text-green-700 bg-green-50' : 'text-red-700 bg-red-50'}`}>{roleMsg.text}</p>
           )}
@@ -373,10 +486,11 @@ export default function GlobalRoleManager() {
                               else { perms = perms.filter(x => x !== name); }
                             });
                             try {
-                              await base44.functions.invoke('manageRoles', {
-                                action: 'update',
-                                data: { role_id: role.id, updates: { direct_permissions: perms } },
-                              });
+                              // await base44.functions.invoke('manageRoles', {
+                              //   action: 'update',
+                              //   data: { role_id: role.id, updates: { direct_permissions: perms } },
+                              // });
+                              await tenantManage.update('TenantRole',  role.id, { direct_permissions: perms });
                               await loadData();
                               setRoleMsg({ type: 'success', text: '内置角色权限已更新' });
                               setTimeout(() => setRoleMsg(""), 2000);
@@ -408,16 +522,26 @@ export default function GlobalRoleManager() {
             );
           })}
         </CardContent>
+        )}
       </Card>
 
       {/* Create New Custom Global Role */}
       <Card className="border-purple-200">
-        <CardHeader className="pb-3">
-          <CardTitle className="text-sm font-semibold text-gray-700 flex items-center gap-2">
-            <Plus className="w-4 h-4 text-purple-500" />创建全局角色
-          </CardTitle>
-          <p className="text-xs text-gray-400 mt-1">全局角色可被所有租户管理员选取使用</p>
-        </CardHeader>
+        <button
+          className="w-full flex items-center justify-between px-6 py-4 text-left hover:bg-purple-50 transition-colors"
+          onClick={() => toggleSection('createGlobalRole')}
+        >
+          <div className="flex items-center gap-2">
+            <Plus className="w-4 h-4 text-purple-500" />
+            <CardTitle className="text-sm font-semibold text-gray-700">创建全局角色</CardTitle>
+          </div>
+          {expandedSections.createGlobalRole ? (
+            <ChevronUp className="w-4 h-4 text-gray-500" />
+          ) : (
+            <ChevronDown className="w-4 h-4 text-gray-500" />
+          )}
+        </button>
+        {expandedSections.createGlobalRole && (
         <CardContent className="space-y-4">
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -473,16 +597,26 @@ export default function GlobalRoleManager() {
             <Plus className="w-3 h-3 mr-1" />{saving ? '创建中...' : '创建全局角色'}
           </Button>
         </CardContent>
+        )}
       </Card>
 
       {/* Custom Global Roles List */}
       <Card className="border-gray-200">
-        <CardHeader className="pb-3">
-          <CardTitle className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+        <button
+          className="w-full flex items-center justify-between px-6 py-4 text-left hover:bg-gray-50 transition-colors"
+          onClick={() => toggleSection('roleTemplates')}
+        >
+          <div className="flex items-center gap-2">
             <Badge className="bg-purple-100 text-purple-700 text-xs">自定义</Badge>
-            角色模板 ({customRoles.length})
-          </CardTitle>
-        </CardHeader>
+            <CardTitle className="text-sm font-semibold text-gray-700">角色模板 ({customRoles.length})</CardTitle>
+          </div>
+          {expandedSections.roleTemplates ? (
+            <ChevronUp className="w-4 h-4 text-gray-500" />
+          ) : (
+            <ChevronDown className="w-4 h-4 text-gray-500" />
+          )}
+        </button>
+        {expandedSections.roleTemplates && (
         <CardContent className="space-y-3">
           {customRoles.length === 0 ? (
             <p className="text-xs text-gray-400">暂无自定义角色模板</p>
@@ -531,13 +665,15 @@ export default function GlobalRoleManager() {
                           else { perms = perms.filter(x => x !== name); }
                         });
                         try {
-                          await base44.functions.invoke('manageRoles', {
-                            action: 'update',
-                            data: { role_id: role.id, updates: { direct_permissions: perms } },
-                          });
+                          // await base44.functions.invoke('manageRoles', {
+                          //   action: 'update',
+                          //   data: { role_id: role.id, updates: { direct_permissions: perms } },
+                          // });
+                          await tenantManage.update('TenantRole',  role.id, { direct_permissions: perms });
                           await loadData();
                         } catch (e) {
-                          setRoleMsg({ type: 'error', text: e.message });
+                          const message = e.response?.data?.message || e.message || '分配失败';
+                          setRoleMsg({ type: 'error', text: message });
                         }
                         setSaving(false);
                       }}
@@ -550,6 +686,7 @@ export default function GlobalRoleManager() {
             ))
           )}
         </CardContent>
+        )}
       </Card>
     </div>
   );

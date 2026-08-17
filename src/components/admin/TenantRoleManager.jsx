@@ -6,6 +6,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { PERMISSIONS_PRESET } from "@/lib/permissionsPreset";
+import { tenantManage } from "@/lib/tenantApi";
+import { toast } from "sonner";
 
 // Flatten all permissions for lookup
 const ALL_PERMISSIONS = [];
@@ -83,24 +85,42 @@ function RoleEditForm({ role, tenantId, globalTemplates = [], onDone, onCancel }
     if (!name.trim()) { setErr('角色名称不能为空'); return; }
     setSaving(true);
     setErr(null);
-    if (isEdit) {
-      const r = await base44.functions.invoke('manageRoles', {
-        action: 'update',
-        data: {
-          role_id: role.id,
-          updates: { name, description, color, is_predefined: isPredefined, predefined_key: predefinedKey || null, direct_permissions: permissions }
-        }
-      });
-      if (r.data?.error) { setErr(r.data.error); setSaving(false); return; }
-    } else {
-      const r = await base44.functions.invoke('manageRoles', {
-        action: 'create',
-        data: { target_tenant_id: tenantId, name, description, color, is_predefined: isPredefined, predefined_key: predefinedKey || null, direct_permissions: permissions, is_global: false }
-      });
-      if (r.data?.error) { setErr(r.data.error); setSaving(false); return; }
+
+    try {
+      if(isEdit) {
+        await tenantManage.update('TenantRole', role.id, { name, description, color, is_predefined: isPredefined, predefined_key: predefinedKey || null, direct_permissions: permissions });
+      } else {
+        await tenantManage.create('TenantRole', { target_tenant_id: tenantId, name, description, color, is_predefined: isPredefined, 
+          predefined_key: predefinedKey || null, direct_permissions: permissions, is_global: false });
+      }
+
+      setSaving(false);
+      onDone();
+    } catch(e) {
+      const message = e.response?.data?.message || e.message || '分配失败';
+      toast.error(`分配失败：${message}`);
+    } finally {
+      setSaving(false);
     }
-    setSaving(false);
-    onDone();
+
+    // if (isEdit) {
+    //   const r = await base44.functions.invoke('manageRoles', {
+    //     action: 'update',
+    //     data: {
+    //       role_id: role.id,
+    //       updates: { name, description, color, is_predefined: isPredefined, predefined_key: predefinedKey || null, direct_permissions: permissions }
+    //     }
+    //   });
+    //   if (r.data?.error) { setErr(r.data.error); setSaving(false); return; }
+    // } else {
+    //   const r = await base44.functions.invoke('manageRoles', {
+    //     action: 'create',
+    //     data: { target_tenant_id: tenantId, name, description, color, is_predefined: isPredefined, predefined_key: predefinedKey || null, direct_permissions: permissions, is_global: false }
+    //   });
+    //   if (r.data?.error) { setErr(r.data.error); setSaving(false); return; }
+    // }
+    // setSaving(false);
+    // onDone();
   };
 
   return (
@@ -268,21 +288,34 @@ export default function TenantRoleManager({ tenants = [], onTenantUpdated }) {
   const [savingDefault, setSavingDefault] = useState({});
 
   useEffect(() => {
-    base44.functions.invoke('manageRoles', { action: 'listGlobalTemplates', data: {} })
-      .then(r => setGlobalTemplates(r.data?.templates || []))
-      .catch(() => {});
+    // base44.functions.invoke('manageRoles', { action: 'listGlobalTemplates', data: {} })
+    //   .then(r => setGlobalTemplates(r.data?.templates || []))
+    //   .catch(() => {});
+
+    tenantManage.list('TenantRole', { is_global: true })
+    .then(r => {
+      setGlobalTemplates(r?.data || r?.data?.data || [])
+    })
+    .catch(() => {});
+    
+    // tenantManage.list('TenantGlobalTemplate')
+    //   .then(r => setGlobalTemplates(r?.data || []))
+    //   .catch(() => {});
   }, []);
 
   const loadRoles = async (tenantId) => {
     setLoading(l => ({ ...l, [tenantId]: true }));
-    const r = await base44.functions.invoke('manageRoles', {
-      action: 'listRoles',
-      data: { tenant_id_filter: tenantId }
-    });
+    // const r = await base44.functions.invoke('manageRoles', {
+    //   action: 'listRoles',
+    //   data: { tenant_id_filter: tenantId }
+    // });
+
+    const r = await tenantManage.list('TenantRole', { tenant_id: tenantId });
     setRoles(prev => ({
       ...prev,
-      [tenantId]: (r.data?.roles || []).filter(r => !r.is_global && r.tenant_id === tenantId)
+      [tenantId]: (r?.data || r.data?.roles || []).filter(r => !r.is_global && (r.target_tenant_id || r.tenant_id) === tenantId)
     }));
+
     setLoading(l => ({ ...l, [tenantId]: false }));
   };
 

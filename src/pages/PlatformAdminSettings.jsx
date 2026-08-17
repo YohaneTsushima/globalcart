@@ -18,6 +18,7 @@ import ExchangeRateApiSettings from "@/components/platform/ExchangeRateApiSettin
 import GlobalFeeRuleTemplates from "@/components/platform/GlobalFeeRuleTemplates";
 import TenantTemplateManager from "@/components/platform/TenantTemplateManager";
 import { tenantManage } from "@/lib/tenantApi";
+import { toast } from "sonner";
 
 export default function PlatformAdminSettings() {
   const { user } = useCurrentUser();
@@ -73,7 +74,7 @@ export default function PlatformAdminSettings() {
   const isPlatformAdmin = ['ROLE_ADMIN', 'TENANT_ADMIN', 'platform_admin'].includes(user?.role);
 
   const loadInitData = async () => {
-    const res = tenantManage.init('TenantsManage');
+    const res = await tenantManage.init('TenantsManage');
     const data = res?.data?.data || res?.data || {};
     const domain = data.platform_base_domain || "";
     setPlatformBaseDomain(domain);
@@ -88,7 +89,7 @@ export default function PlatformAdminSettings() {
     setTenantsLoading(true);
     // TODO: 替换为实际的租户列表 API
     // const res = await base44.functions.invoke('manageTenants/list', {});
-    const res = tenantManage.list('TenantsManage');
+    const res = await tenantManage.list('TenantsManage');
     setTenants(res?.data || res?.data?.tenants || []);
     setTenantsLoading(false);
   };
@@ -113,17 +114,37 @@ export default function PlatformAdminSettings() {
   const runDiagnose = async () => {
     setDiagLoading(true);
     setDiagError(null);
-    const r = await base44.functions.invoke('adminAssignTenant', { action: 'diagnose' });
+    // const r = await base44.functions.invoke('adminAssignTenant', { action: 'diagnose' });
+    const r = await tenantManage.diagnose('TenantsManage');
+    
     if (r.data?.error) setDiagError(r.data.error);
     else setDiagData(r.data);
     setDiagLoading(false);
   };
 
-  const handleAssign = async (email) => {
+  const handleAssign = async (email, id) => {
     const tid = assignTarget[email];
     if (!tid) return;
     setAssigning(a => ({ ...a, [email]: true }));
-    await base44.functions.invoke('adminAssignTenant', { action: 'assign', target_email: email, tenant_id: tid });
+    const payload = {
+      user_id: id,
+      tenant_id: tid
+    };
+
+    // await base44.functions.invoke('adminAssignTenant', { action: 'assign', target_email: email, tenant_id: tid });
+
+    try {
+      const r = await tenantManage.assign('TenantsManage', payload);
+
+      toast.success('分配成功.');
+
+    } catch(e) {
+      const message = e.response?.data?.message || e.message || '分配失败';
+      toast.error(`分配失败：${message}`);
+    } finally {
+      setAssigning(a => ({ ...a, [email]: false }));
+    }
+
     setAssigning(a => ({ ...a, [email]: false }));
     await runDiagnose();
   };
@@ -131,7 +152,8 @@ export default function PlatformAdminSettings() {
   const handleSaveDomain = async () => {
     setSavingDomain(true);
     setDomainMsg(null);
-    const r = await base44.functions.invoke('manageTenants', { action: 'set_platform_domain', platform_base_domain: editingDomain });
+    // const r = await base44.functions.invoke('manageTenants', { action: 'set_platform_domain', platform_base_domain: editingDomain });
+    const r = {};
     if (r.data?.error) {
       setDomainMsg({ type: 'error', text: r.data.error });
     } else {
@@ -155,17 +177,13 @@ export default function PlatformAdminSettings() {
       payload.tenant_template_id = tenant_template_id;
     }
 
-    console.log(payload)
-
-    return
-
-    const r = await base44.functions.invoke('manageTenants', payload);
+    const r = await tenantManage.create('TenantsManage', payload);
     if (r.data?.error) {
       setTenantMsg({ type: 'error', text: r.data.error });
     } else {
-      const ruleNote = r.data.applied_fee_rule ? `，已套用规则模板「${r.data.applied_fee_rule.name}」（草稿）` : '';
-      const initNote = r.data.initialized ? `，已初始化 ${r.data.initialized.notification_templates} 个通知模板和默认仓储设置` : '';
-      setTenantMsg({ type: 'success', text: `租户 "${r.data.tenant.name}" 创建成功！${ruleNote}${initNote}` });
+      const ruleNote = r.data?.fee_rule_template ? `，已套用规则模板「${r.data.fee_rule_template.name}」（草稿）` : '';
+      const initNote = r.data?.initialized ? `，已初始化 ${r.data.initialized.notification_templates} 个通知模板和默认仓储设置` : '';
+      setTenantMsg({ type: 'success', text: `租户 "${r.data.name}" 创建成功！${ruleNote}${initNote}` });
       setNewTenant({ name: "", code: "", branding_name: "", timezone: "Asia/Tokyo", login_title: "", login_subtitle: "", logo_url: "", favicon_url: "", theme_color: "#dc2626", contact_info: "", initial_fee_rule_template_id: "none", tenant_template_id: "none" });
       await loadTenants();
     }
@@ -185,7 +203,8 @@ export default function PlatformAdminSettings() {
   };
 
   const handleToggleTenant = async (t) => {
-    await base44.functions.invoke('manageTenants', { action: 'update', id: t.id, is_active: !t.is_active });
+    // await base44.functions.invoke('manageTenants', { action: 'update', id: t.id, is_active: !t.is_active });
+    await tenantManage.update('TenantsManage', t.id, { is_active: !t.is_active })
     await loadTenants();
   };
 
@@ -208,13 +227,18 @@ export default function PlatformAdminSettings() {
   const handleSaveTenant = async (tenantId) => {
     setSavingTenant(true);
     setTenantMsg(null);
-    const r = await base44.functions.invoke('manageTenants', { action: 'update', id: tenantId, ...editTenantFields });
+    // const r = await base44.functions.invoke('manageTenants', { action: 'update', id: tenantId, ...editTenantFields });
+    const r = await tenantManage.update('TenantsManage', tenantId, {...editTenantFields });
+    
     if (r.data?.error) {
       setTenantMsg({ type: 'error', text: r.data.error });
     } else {
       setTenantMsg({ type: 'success', text: '保存成功' });
-      setEditingTenant(null);
       await loadTenants();
+      setTimeout(() => {
+        setEditingTenant(null);
+        setTenantMsg(null);
+      }, 2000);
     }
     setSavingTenant(false);
   };
@@ -294,12 +318,12 @@ export default function PlatformAdminSettings() {
                 ) : (
                   <div className="space-y-2">
                     {diagData.missing_tenant_users.map(u => (
-                      <div key={u.email} className="flex items-center gap-2 flex-wrap py-1.5 border-b border-gray-100 last:border-0">
+                      <div key={u.user_email} className="flex items-center gap-2 flex-wrap py-1.5 border-b border-gray-100 last:border-0">
                         <div className="flex-1 min-w-0">
-                          <span className="text-sm text-gray-800 font-medium">{u.email}</span>
-                          <span className="text-xs text-gray-400 ml-2">{u.role}</span>
+                          <span className="text-sm text-gray-800 font-medium">{u.user_email}</span>
+                          <span className="text-xs text-gray-400 ml-2">{u.role_name}</span>
                         </div>
-                        <Select value={assignTarget[u.email] || ""} onValueChange={v => setAssignTarget(a => ({ ...a, [u.email]: v }))}>
+                        <Select value={assignTarget[u.user_email] || ""} onValueChange={v => setAssignTarget(a => ({ ...a, [u.user_email]: v }))}>
                           <SelectTrigger className="w-40 h-7 text-xs"><SelectValue placeholder="选择租户" /></SelectTrigger>
                           <SelectContent>
                             {(diagData.tenants || []).map(t => (
@@ -308,9 +332,9 @@ export default function PlatformAdminSettings() {
                           </SelectContent>
                         </Select>
                         <Button size="sm" className="h-7 text-xs bg-amber-600 hover:bg-amber-700"
-                          disabled={!assignTarget[u.email] || assigning[u.email]}
-                          onClick={() => handleAssign(u.email)}>
-                          {assigning[u.email] ? "分配中..." : "分配"}
+                          disabled={!assignTarget[u.user_email] || assigning[u.user_email]}
+                          onClick={() => handleAssign(u.user_email, u.id)}>
+                          {assigning[u.user_email] ? "分配中..." : "分配"}
                         </Button>
                       </div>
                     ))}
@@ -375,14 +399,14 @@ export default function PlatformAdminSettings() {
         <CardContent className="space-y-3">
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <Label className="text-xs text-gray-500">租户名称 *</Label>
-              <Input className="mt-0.5 h-8 text-sm" placeholder="例：同一物流" value={newTenant.name}
+              <Label className="text-xs text-gray-500">租户名称 <span className="text-red-500">*</span></Label>
+              <Input className="mt-0.5 h-8 text-sm border-red-500" placeholder="例：同一物流" value={newTenant.name}
                 onChange={e => setNewTenant(p => ({ ...p, name: e.target.value }))} />
             </div>
             <div>
-              <Label className="text-xs text-gray-500">代码/子域名 (唯一) *</Label>
-              <Input className="mt-0.5 h-8 text-sm font-mono" placeholder="例：tongyi" value={newTenant.code}
-                onChange={e => setNewTenant(p => ({ ...p, code: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '') }))} />
+              <Label className="text-xs text-gray-500">代码/子域名 (唯一，只能输入小写英文字母) <span className="text-red-500">*</span></Label>
+              <Input className="mt-0.5 h-8 text-sm font-mono border-red-500" placeholder="例：tongyi" value={newTenant.code}
+                onChange={e => setNewTenant(p => ({ ...p, code: e.target.value.toLowerCase().replace(/[^a-z]/g, '') }))} />
               <p className="text-xs text-gray-400 mt-0.5">访问地址：{newTenant.code || "slug"}.{platformBaseDomain || "yourdomain.com"}</p>
             </div>
             <div>

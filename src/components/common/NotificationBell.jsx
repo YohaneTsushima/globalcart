@@ -50,12 +50,13 @@ export default function NotificationBellComponent() {
   const { data: unreadData, refetch: refetchUnread } = useQuery({
     queryKey: ['notification-unread-count'],
     queryFn: async () => {
-      if(!user) return;
+      if(!user) return { unread_count: 0 };
       const res = await base44.functions.invoke('notification/getUnreadNotificationCount', {});
       let un_read = {unread_count: res.data};
       return un_read;
       // return { unread_count: 4 };
     },
+    enabled: !!user,
     refetchInterval: false,
     refetchOnWindowFocus: false,
   });
@@ -63,7 +64,7 @@ export default function NotificationBellComponent() {
   const { data: notificationsData, refetch: refetchNotifications } = useQuery({
     queryKey: ['notification-recent-unread'],
     queryFn: async () => {
-      if(!user) return;
+      if(!user) return { notifications: [] };
       const res = await base44.functions.invoke('notification/getUnReadUserNotifications', { limit: 7, skip: 0 });
       let notifications = {'notifications': res?.data };
       return notifications;
@@ -121,6 +122,7 @@ export default function NotificationBellComponent() {
       //   ],
       // };
     },
+    enabled: !!user,
     refetchInterval: false,
     refetchOnWindowFocus: false,
   });
@@ -151,6 +153,7 @@ export default function NotificationBellComponent() {
 
   // WebSocket 实时监听
   const handleNewNotification = useCallback((notification) => {
+    if(!user) return;
     if (!notification || typeof notification !== 'object') return;
     
     queryClient.setQueryData(['notification-unread-count'], (old) => ({
