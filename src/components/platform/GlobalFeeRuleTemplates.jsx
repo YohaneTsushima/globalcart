@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Plus, Edit2, Trash2, FileText, Globe } from "lucide-react";
+import { tenantManage } from "@/lib/tenantApi";
 
 const MODE_LABELS = { simple: '简单比例', tiered: '阶梯费率', formula: '高级公式' };
 const PHASE_LABELS = { order: '下单服务费', shipping: '发货前服务费' };
@@ -22,8 +23,10 @@ export default function GlobalFeeRuleTemplates() {
 
   const load = async () => {
     setLoading(true);
-    const res = await base44.functions.invoke('serviceFeeRuleEngine', { action: 'list_global_templates' });
-    setTemplates(res.data?.templates || []);
+    // const res = await base44.functions.invoke('serviceFeeRuleEngine', { action: 'list_global_templates' });
+    const res = await tenantManage.list('FeeRuleTemplate');
+    
+    setTemplates(res?.data || []);
     setLoading(false);
   };
   useEffect(() => { load(); }, []);

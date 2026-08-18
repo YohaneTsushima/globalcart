@@ -17,6 +17,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { X, Save, FlaskConical, AlertCircle, ShoppingCart, Truck, Ticket } from "lucide-react";
+import { tenantManage } from "@/lib/tenantApi";
 
 const EMPTY_RULE = {
   name: '', description: '', status: 'draft', priority: 0,
@@ -67,10 +68,38 @@ export default function RuleEditorModal({ rule: initialRule, onClose, onSaved, s
     }
     setSaving(true);
     setError(null);
-    const res = await base44.functions.invoke('serviceFeeRuleEngine', { action: saveAction, rule });
-    if (res.data?.error) { setError(res.data.error); setSaving(false); return; }
-    onSaved(res.data?.rule);
-    onClose();
+
+    if(rule.id) {
+      tenantManage.update('FeeRuleTemplate', rule.id, rule)
+      .then(res => {
+        setSaving(false);
+        onSaved(res?.data);
+        onClose();
+      }).catch(e => {
+          const message = e.response?.data?.message || e.message || '保存失败';
+          setError(message);
+          onClose();
+          setSaving(false);
+      });
+    } else {
+      tenantManage.create('FeeRuleTemplate', rule)
+      .then(res => {
+        setSaving(false);
+        onSaved(res?.data);
+        onClose();
+      }).catch(e => {
+          const message = e.response?.data?.message || e.message || '保存失败';
+          setError(message);
+          onClose();
+          setSaving(false);
+      });
+
+    }
+    // const res = await base44.functions.invoke('serviceFeeRuleEngine', { action: saveAction, rule });
+    
+    // if (res.data?.error) { setError(res.data.error); setSaving(false); return; }
+    
+    
   };
 
   const currentRule = { ...rule, tiered_config: rule.tiered_config || [] };
@@ -78,7 +107,7 @@ export default function RuleEditorModal({ rule: initialRule, onClose, onSaved, s
   const modeOptions = isShipping ? SHIPPING_MODES : ORDER_MODES;
 
   return (
-    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onMouseDown={onClose}>
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
       <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[92vh] overflow-hidden flex flex-col" onMouseDown={e => e.stopPropagation()}>
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">

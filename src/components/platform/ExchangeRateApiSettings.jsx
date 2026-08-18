@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Save, Globe } from "lucide-react";
+import { tenantManage } from "@/lib/tenantApi";
 
 export default function ExchangeRateApiSettings() {
   const [apiUrl, setApiUrl] = useState("");
@@ -16,35 +17,62 @@ export default function ExchangeRateApiSettings() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState(null);
+  const [rateId, setRateId] = useState(null);
 
   useEffect(() => {
-    base44.functions.invoke('managePlatformSettings', { action: 'get_exchange_settings' })
+
+    tenantManage.getRate('TenantsManage')
       .then(res => {
-        if (res.data && !res.data.error) {
-          setApiUrl(res.data.api_url || "");
-          setRefreshMinutes(res.data.refresh_minutes || 60);
-          setLastFetchedAt(res.data.last_fetched_at);
-        }
-        setLoading(false);
-      })
-      .catch(() => setLoading(false));
+        setRateId(res?.data?.id);
+        setApiUrl(res?.data?.api_url || "");
+        setRefreshMinutes(res?.data?.refresh_minutes || 60);
+        setLastFetchedAt(res?.data?.last_fetched_at);
+      }).catch(e => {
+          const message = e.response?.data?.message || e.message || '初始化失败';
+          setRoleMsg({ type: 'error', text: message });
+      });
+
+    setLoading(false)
+
+    // base44.functions.invoke('managePlatformSettings', { action: 'get_exchange_settings' })
+    //   .then(res => {
+    //     if (res.data && !res.data.error) {
+    //       setApiUrl(res.data.api_url || "");
+    //       setRefreshMinutes(res.data.refresh_minutes || 60);
+    //       setLastFetchedAt(res.data.last_fetched_at);
+    //     }
+    //     setLoading(false);
+    //   })
+    //   .catch(() => setLoading(false));
   }, []);
 
   const handleSave = async () => {
     setSaving(true);
     setMsg(null);
-    const res = await base44.functions.invoke('managePlatformSettings', {
-      action: 'set_exchange_settings',
-      api_url: apiUrl,
-      refresh_minutes: refreshMinutes,
-    });
-    if (res.data?.error) {
-      setMsg({ type: 'error', text: res.data.error });
-    } else {
-      setRefreshMinutes(res.data.refresh_minutes);
-      setMsg({ type: 'success', text: '已保存，对所有租户生效' });
-      setTimeout(() => setMsg(null), 3000);
-    }
+
+    tenantManage.updateRate('TenantsManage', rateId, { api_url: apiUrl, refresh_minutes: refreshMinutes })
+      .then(res => {
+        setRefreshMinutes(res?.data?.refresh_minutes);
+        setMsg({ type: 'success', text: '已保存，对所有租户生效' });
+        setTimeout(() => setMsg(null), 3000);
+      }).catch(e => {
+          const message = e.response?.data?.message || e.message || '保存失败';
+          setRoleMsg({ type: 'error', text: message });
+      });
+      
+
+    // const res = await base44.functions.invoke('managePlatformSettings', {
+    //   action: 'set_exchange_settings',
+    //   api_url: apiUrl,
+    //   refresh_minutes: refreshMinutes,
+    // });
+    // if (res.data?.error) {
+    //   setMsg({ type: 'error', text: res.data.error });
+    // } else {
+    //   setRefreshMinutes(res.data.refresh_minutes);
+    //   setMsg({ type: 'success', text: '已保存，对所有租户生效' });
+    //   setTimeout(() => setMsg(null), 3000);
+    // }
     setSaving(false);
   };
 

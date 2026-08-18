@@ -120,14 +120,17 @@ async function manage(entity, action, opts = {}) {
 
 export const tenantManage = {
   init:         (entity, filter = {}) => manage(entity, 'init', { filter }).then(r => r || r?.data || r.data?.results || r || []),
-  list:         (entity, data = {}) => manage(entity, 'list', { data }).then(r => r || r?.data || r?.data || r.data?.results || r || []),
+  list:         (entity, data = {})   => manage(entity, 'list', { data }).then(r => r || r?.data || r?.data || r.data?.results || r || []),
   diagnose:     (entity, filter = {}) => manage(entity, 'diagnose', { filter }).then(r => r || r?.data || r?.data || r.data?.results || r || []),
+  getRate:      (entity, filter = {}) => manage(entity, 'getRate', { filter }).then(r => r || r?.data || r?.data || r.data?.results || r || []),
+  updateRate:   (entity, id, data) => manage(entity, 'updateRate', { id, data }).then(r => r || r?.data || r?.data || r.data?.results || r || []),
   global:       (entity, filter = {}) => manage(entity, 'global', { filter }).then(r => r || r?.data || r?.data || r.data?.results || r || []),
   create:       (entity, data)        => manage(entity, 'create', { data }).then(r => r || r?.data || r.data?.result || r),
   assign:       (entity, data)        => manage(entity, 'assign', { data }).then(r => r || r?.data || r.data?.result || r),
   assignAll:    (entity, data)        => manage(entity, 'assignAll', { data }).then(r => r || r?.data || r.data?.result || r),
   update:       (entity, id, data)    => manage(entity, 'update', { id, data }).then(r => r || r?.data || r.data?.result || r),
-  setDef:       (entity, data)    => manage(entity, 'setGlobalDefaultRole', { data }).then(r => r || r?.data || r.data?.result || r),
+  setDef:       (entity, data)        => manage(entity, 'setGlobalDefaultRole', { data }).then(r => r || r?.data || r.data?.result || r),
+  setDefTenant: (entity, data)        => manage(entity, 'defTenantRole', { data }).then(r => r || r?.data || r.data?.result || r),
   delete:       (entity, id)          => manage(entity, 'delete', { id }),
 }
 

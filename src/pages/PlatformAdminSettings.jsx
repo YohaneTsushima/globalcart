@@ -400,19 +400,19 @@ export default function PlatformAdminSettings() {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <Label className="text-xs text-gray-500">租户名称 <span className="text-red-500">*</span></Label>
-              <Input className="mt-0.5 h-8 text-sm border-red-500" placeholder="例：同一物流" value={newTenant.name}
-                onChange={e => setNewTenant(p => ({ ...p, name: e.target.value }))} />
+              <Input className="mt-0.5 h-8 text-sm border-red-500" placeholder="例：同一物流" value={newTenant.name} maxLength={100}
+                onChange={e => setNewTenant(p => ({ ...p, name: e.target.value.slice(0, 100) }))} />
             </div>
             <div>
               <Label className="text-xs text-gray-500">代码/子域名 (唯一，只能输入小写英文字母) <span className="text-red-500">*</span></Label>
-              <Input className="mt-0.5 h-8 text-sm font-mono border-red-500" placeholder="例：tongyi" value={newTenant.code}
-                onChange={e => setNewTenant(p => ({ ...p, code: e.target.value.toLowerCase().replace(/[^a-z]/g, '') }))} />
+              <Input className="mt-0.5 h-8 text-sm font-mono border-red-500" placeholder="例：tongyi" value={newTenant.code} maxLength={10}
+                onChange={e => setNewTenant(p => ({ ...p, code: e.target.value.toLowerCase().replace(/[^a-z]/g, '').slice(0, 10) }))} />
               <p className="text-xs text-gray-400 mt-0.5">访问地址：{newTenant.code || "slug"}.{platformBaseDomain || "yourdomain.com"}</p>
             </div>
             <div>
               <Label className="text-xs text-gray-500">品牌显示名</Label>
-              <Input className="mt-0.5 h-8 text-sm" placeholder="同上则留空" value={newTenant.branding_name}
-                onChange={e => setNewTenant(p => ({ ...p, branding_name: e.target.value }))} />
+              <Input className="mt-0.5 h-8 text-sm" placeholder="同上则留空" value={newTenant.branding_name} maxLength={100}
+                onChange={e => setNewTenant(p => ({ ...p, branding_name: e.target.value.slice(0, 100) }))} />
             </div>
             <div>
               <Label className="text-xs text-gray-500">登录页标题</Label>
@@ -706,14 +706,14 @@ export default function PlatformAdminSettings() {
                   <div className="flex items-center gap-1">
                     <Input type="number" step="0.00001" className="h-8 text-sm flex-1"
                       placeholder="0"
-                      value={platformIncrements[`${key}_increment`] ?? 0}
-                      onChange={e => setPlatformIncrements(p => ({ ...p, [`${key}_increment`]: e.target.value }))}
+                      value={platformIncrements[`${key}`] ?? 0}
+                      onChange={e => setPlatformIncrements(p => ({ ...p, [`${key}`]: e.target.value }))}
                     />
                     <span className="text-xs text-gray-400 px-2">Δ</span>
                   </div>
-                  {(parseFloat(platformIncrements[`${key}_increment`]) || 0) !== 0 && (
+                  {(parseFloat(platformIncrements[`${key}`]) || 0) !== 0 && (
                     <p className="text-xs text-green-600 mt-0.5">
-                      → {((liveRates[key] || 0) + (parseFloat(platformIncrements[`${key}_increment`]) || 0)).toFixed(6)}
+                      → {((liveRates[key] || 0) + (parseFloat(platformIncrements[`${key}`]) || 0)).toFixed(6)}
                     </p>
                   )}
                 </div>
@@ -722,9 +722,16 @@ export default function PlatformAdminSettings() {
             <Button size="sm" className="bg-green-600 hover:bg-green-700" disabled={savingRates}
               onClick={async () => {
                 setSavingRates(true);
-                const payload = { action: 'set_platform_rate_increments' };
+                const payload = {};
                 Object.entries(platformIncrements).forEach(([k, v]) => { payload[k] = parseFloat(v) || 0; });
-                await base44.functions.invoke('managePlatformSettings', payload);
+                // await base44.functions.invoke('managePlatformSettings', payload);
+                const increments = {platform_increments: payload}
+                await tenantManage.updateRate('TenantsManage', 1, increments)
+                  .then(res => {
+
+                  }).catch(e => {
+                    setSavingRates(false);
+                  });
                 setSavingRates(false);
               }}>
               <Save className="w-3.5 h-3.5 mr-1" />{savingRates ? "保存中..." : "保存平台增量设置"}

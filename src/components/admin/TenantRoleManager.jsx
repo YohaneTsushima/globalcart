@@ -90,7 +90,7 @@ function RoleEditForm({ role, tenantId, globalTemplates = [], onDone, onCancel }
       if(isEdit) {
         await tenantManage.update('TenantRole', role.id, { name, description, color, is_predefined: isPredefined, predefined_key: predefinedKey || null, direct_permissions: permissions });
       } else {
-        await tenantManage.create('TenantRole', { target_tenant_id: tenantId, name, description, color, is_predefined: isPredefined, 
+        await tenantManage.create('TenantRole', { tenant_id: tenantId, name, description, color, is_predefined: isPredefined, 
           predefined_key: predefinedKey || null, direct_permissions: permissions, is_global: false });
       }
 
@@ -218,8 +218,16 @@ function RoleCard({ role, tenantId, onRefresh }) {
     if (!window.confirm(`确定删除角色「${role.name}」？`)) return;
     setDeleting(true);
     setErr(null);
-    const r = await base44.functions.invoke('manageRoles', { action: 'delete', data: { role_id: role.id } });
-    if (r.data?.error) { setErr(r.data.error); setDeleting(false); return; }
+    await tenantManage.delete('TenantRole', role.id)
+        .then(res => {
+          
+          setDeleting(false);
+        }).catch(e => {
+          const message = e.response?.data?.message || e.message || '删除失败';
+          setErr(message);
+        });
+    // const r = await base44.functions.invoke('manageRoles', { action: 'delete', data: { role_id: role.id } });
+    // if (r.data?.error) { setErr(r.data.error); setDeleting(false); return; }
     onRefresh();
   };
 
@@ -334,10 +342,13 @@ export default function TenantRoleManager({ tenants = [], onTenantUpdated }) {
     // Toggle off if same role
     const newRoleId = tenant?.default_role_id === role?.id ? null : role?.id || null;
     const newRoleName = newRoleId ? role?.name : null;
-    await base44.functions.invoke('manageRoles', {
-      action: 'setTenantDefaultRole',
-      data: { tenant_id: tenantId, role_id: newRoleId, role_name: newRoleName }
-    });
+
+    await tenantManage.setDefTenant('TenantsManage', { tenant_id: tenantId, id: newRoleId, name: newRoleName })
+
+    // await base44.functions.invoke('manageRoles', {
+    //   action: 'setTenantDefaultRole',
+    //   data: { tenant_id: tenantId, id: newRoleId, name: newRoleName }
+    // });
     if (onTenantUpdated) onTenantUpdated();
     setSavingDefault(s => ({ ...s, [tenantId]: false }));
   };

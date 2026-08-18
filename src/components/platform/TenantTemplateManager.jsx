@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Layers, Plus, Pencil, Trash2, Save, X } from "lucide-react";
+import { tenantManage } from "@/lib/tenantApi";
 
 export const FEATURE_OPTIONS = [
   { key: "credit_module", label: "记账/余额模块" },
@@ -36,11 +37,13 @@ export default function TenantTemplateManager() {
   const load = async () => {
     setLoading(true);
     const [tplRes, feeRes] = await Promise.all([
-      base44.functions.invoke('manageTenantTemplates', { action: 'list' }),
-      base44.functions.invoke('serviceFeeRuleEngine', { action: 'list_global_templates' }),
+      tenantManage.list('TenantTemplate'),
+      tenantManage.list('FeeRuleTemplate')
+      // base44.functions.invoke('manageTenantTemplates', { action: 'list' }),
+      // base44.functions.invoke('serviceFeeRuleEngine', { action: 'list_global_templates' }),
     ]);
-    setTemplates(tplRes.data?.templates || []);
-    setFeeTemplates(feeRes.data?.templates || []);
+    setTemplates(tplRes?.data || []);
+    setFeeTemplates(feeRes?.data || []);
     setLoading(false);
   };
 
@@ -73,20 +76,61 @@ export default function TenantTemplateManager() {
       ...form,
       fee_rule_template_id: form.fee_rule_template_id === "none" ? "" : form.fee_rule_template_id,
     };
-    const r = await base44.functions.invoke('manageTenantTemplates', { action: 'save', template: payload });
-    if (r.data?.error) {
-      setMsg({ type: 'error', text: r.data.error });
+
+    if(payload.id) {
+      await tenantManage.update('TenantTemplate', payload.id, payload)
+        .then(res => {
+          setForm(null);
+          setMsg({ type: 'success', text: '模板已保存' });
+          load();
+          setTimeout(() => setMsg(""), 2000);
+        }).catch(e => {
+            const message = e.response?.data?.message || e.message || '保存失败';
+            setMsg({ type: 'error', text: message });
+            setSaving(false);
+            setTimeout(() => setMsg(""), 2000);
+      });
     } else {
-      setMsg({ type: 'success', text: '模板已保存' });
-      setForm(null);
-      await load();
+      await tenantManage.create('TenantTemplate', payload)
+        .then(res => {
+          setForm(null);
+          setMsg({ type: 'success', text: '模板已保存' });
+          load();
+          setTimeout(() => setMsg(""), 2000);
+        }).catch(e => {
+            const message = e.response?.data?.message || e.message || '保存失败';
+            setMsg({ type: 'error', text: message });
+            setSaving(false);
+            setTimeout(() => setMsg(""), 2000);
+      });
     }
+    
+    // const r = await base44.functions.invoke('manageTenantTemplates', { action: 'save', template: payload });
+    // if (r.data?.error) {
+    //   setMsg({ type: 'error', text: r.data.error });
+    // } else {
+    //   setMsg({ type: 'success', text: '模板已保存' });
+    //   setForm(null);
+    //   await load();
+    // }
     setSaving(false);
   };
 
   const handleDelete = async (t) => {
     if (!confirm(`确认删除模板「${t.name}」？`)) return;
-    await base44.functions.invoke('manageTenantTemplates', { action: 'delete', template_id: t.id });
+    // await base44.functions.invoke('manageTenantTemplates', { action: 'delete', template_id: t.id });
+    await tenantManage.delete('TenantTemplate', t.id)
+      .then(res => {
+        setForm(null);
+        setMsg({ type: 'success', text: '模板已删除' });
+        load();
+        setTimeout(() => setMsg(""), 2000);
+      }).catch(e => {
+          const message = e.response?.data?.message || e.message || '删除失败';
+          setMsg({ type: 'error', text: message });
+          setSaving(false);
+          setTimeout(() => setMsg(""), 2000);
+    });
     await load();
   };
 

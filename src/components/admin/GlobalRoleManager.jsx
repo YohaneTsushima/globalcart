@@ -118,7 +118,7 @@ export default function GlobalRoleManager() {
 
         // Also include any DB predefined roles not in BUILTIN_ROLE_DEFAULTS
         const extraDB = dbPredefined.filter(r => !BUILTIN_ROLE_DEFAULTS.find(d => d.predefined_key === r.predefined_key));
-        console.log(extraDB)
+        
         setPredefinedRoles([...merged, ...extraDB.map(r => ({ ...r, _isInDB: true }))]);
         setCustomRoles(allRoles.filter(r => !!r.is_global && !r.is_predefined));
         setPermissions(res.data?.permissions || []);

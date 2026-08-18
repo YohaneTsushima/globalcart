@@ -8,6 +8,7 @@ import { base44 } from "@/api/base44Client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Plus, Trash2, X, ChevronDown, ArrowUp } from "lucide-react";
+import { tenantManage } from "@/lib/tenantApi";
 
 // Render a role badge using hex color
 function RoleColorBadge({ name, color }) {
@@ -47,8 +48,8 @@ function LevelPicker({ value = [], onChange, tiers, roles }) {
 
   return (
     <div className="relative" ref={ref}>
-      <button type="button" onClick={() => setOpen(v => !v)}
-        className="w-full min-h-[32px] flex flex-wrap gap-1 items-center px-2 py-1 border border-gray-200 rounded-md bg-white hover:border-blue-300 text-left">
+      <div role="button" tabIndex={0} onClick={() => setOpen(v => !v)} onKeyDown={e => e.key === 'Enter' && setOpen(v => !v)}
+        className="w-full min-h-[32px] flex flex-wrap gap-1 items-center px-2 py-1 border border-gray-200 rounded-md bg-white hover:border-blue-300 text-left cursor-pointer">
         {value.length === 0
           ? <span className="text-xs text-gray-400">所有用户</span>
           : value.map(v => (
@@ -63,7 +64,7 @@ function LevelPicker({ value = [], onChange, tiers, roles }) {
           ))
         }
         <ChevronDown className="w-3 h-3 text-gray-300 ml-auto flex-shrink-0" />
-      </button>
+      </div>
       {open && (
         <div className="absolute top-full left-0 z-30 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg min-w-[160px] max-h-48 overflow-y-auto">
           <button type="button" onClick={() => { onChange([]); setOpen(false); }}
@@ -113,11 +114,13 @@ export default function PostOrderSimpleEditor({ value = [], onChange }) {
 
   useEffect(() => {
     Promise.all([
-      base44.functions.invoke('serviceFeeRuleEngine', { action: 'list_member_tiers' }),
-      base44.functions.invoke('serviceFeeRuleEngine', { action: 'list_roles' }),
+      tenantManage.list('MemberTier'),
+      // base44.functions.invoke('serviceFeeRuleEngine', { action: 'list_member_tiers' }),
+      // base44.functions.invoke('serviceFeeRuleEngine', { action: 'list_roles' }),
+      tenantManage.list('TenantRole')
     ]).then(([t, r]) => {
-      setTiers(t.data?.tiers || []);
-      setRoles((r.data?.roles || []).filter(x => !x.is_global && !x.is_archived));
+      setTiers(t?.data || []);
+      setRoles((r?.data || []).filter(x => !x.is_global && !x.is_archived));
       setLoading(false);
     });
   }, []);
