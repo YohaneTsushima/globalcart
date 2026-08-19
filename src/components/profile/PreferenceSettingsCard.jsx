@@ -3,6 +3,7 @@
  * 偏好货币 / 界面语言 / 运输方式 / 中转运输方式 / 拼邮 / 订单信息公开
  */
 import { useState, useEffect } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useUserPref } from "@/hooks/useUserPref";
 import { tenantEntity } from "@/lib/tenantApi";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -19,17 +20,21 @@ export default function PreferenceSettingsCard() {
     preferred_currency: "JPY",
     preferred_language: "zh",
     preferred_shipping: "EMS",
-    preferred_transit_shipping_id: "",
+    preferred_transit_shipping_id: null,
     prefer_consolidation: false,
   });
-  const [transitMethods, setTransitMethods] = useState([]);
   const [saving, setSaving] = useState(false);
 
-  useEffect(() => {
-    tenantEntity.list('TransitShippingMethod', { is_active: true })
-      .then(rows => setTransitMethods(rows || []))
-      .catch(() => {});
-  }, []);
+  const { data: transitMethods = [] } = useQuery({
+    queryKey: ['transit-shipping-methods'],
+    queryFn: async () => {
+      const rows = await tenantEntity.list('TransitShippingMethod', { is_active: true });
+      return rows || [];
+    },
+    staleTime: 10 * 60 * 1000,
+    placeholderData: [],
+    refetchOnMount: false,
+  });
 
   useEffect(() => {
     if (!pref) return;
@@ -74,7 +79,7 @@ export default function PreferenceSettingsCard() {
             <Select value={form.preferred_language} onValueChange={v => f("preferred_language", v)}>
               <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="zh">中文（简体）</SelectItem>
+                <SelectItem value="zhcn">中文（简体）</SelectItem>
                 <SelectItem value="en">English（即将上线）</SelectItem>
                 <SelectItem value="ja">日本語（即将上線）</SelectItem>
               </SelectContent>

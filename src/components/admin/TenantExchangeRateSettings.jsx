@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Save, RefreshCw, TrendingUp, Clock, Key, AlertCircle } from "lucide-react";
+import { tenantManage } from "@/lib/tenantApi";
 
 const RATE_PAIRS = [
   { key: "jpy_cny", label: "日元 → 人民币", currency: "CNY" },
@@ -53,6 +54,20 @@ export default function TenantExchangeRateSettings({ settings, onReload }) {
   // 拉取当前汇率（平台增量已叠加）
   const fetchRates = async () => {
     setRatesLoading(true);
+
+    tenantManage.getRate('TenantsManage')
+    .then(res => {
+      setRateId(res?.data?.id);
+      setApiUrl(res?.data?.api_url || "");
+      setPlatformRefreshMinutes(res?.data?.refresh_minutes || 60);
+      setLastFetchedAt(res?.data?.last_fetched_at);
+    }).catch(e => {
+        const message = e.response?.data?.message || e.message || '初始化失败';
+        setRoleMsg({ type: 'error', text: message });
+    }).finally(() => {
+        setRatesLoading(false);
+    });
+
     try {
       const res = await base44.functions.invoke('fetchExchangeRates', {});
       if (res.data && !res.data.error) {

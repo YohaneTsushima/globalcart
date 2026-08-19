@@ -5,7 +5,8 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { PERMISSIONS_PRESET } from "@/lib/permissionsPreset";
 import PermissionGrid from "@/components/admin/PermissionGrid.jsx";
-
+import { tenantManage } from "@/lib/tenantApi";
+import { toast } from "sonner";
 
 // Flatten for counting overrides
 function flattenPreset(preset) {
@@ -68,15 +69,25 @@ export default function UserPermissionManager({ user, allRoles: allRolesProp, on
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState("");
 
+  // 禁止背景滚动
+  useEffect(() => {
+    const originalOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = originalOverflow;
+    };
+  }, []);
 
   // Always fetch fresh user + roles data when the panel opens, to avoid stale allRoles/permission state
   useEffect(() => {
     setInitializing(true);
     Promise.all([
-      base44.functions.invoke('getAdminUsersPageData', {}),
+      // base44.functions.invoke('getAdminUsersPageData', {}),
+      tenantManage.list('AdminUser'),
     ]).then(([res]) => {
       const freshRoles = res.data?.roles || allRolesProp || [];
       const freshUser = res.data?.users?.find(u => u.id === user.id) || user;
+      console.log(freshUser)
       setLoadedRoles(freshRoles);
       setSelectedRoleIds(freshUser.assigned_role_ids || []);
       const base = computeBasePerms(freshUser.assigned_role_ids || [], freshRoles);
@@ -147,41 +158,47 @@ export default function UserPermissionManager({ user, allRoles: allRolesProp, on
   const hasAnyOverride = Object.keys(overrides).length > 0;
 
   const handleSave = async () => {
+    if (selectedRoleIds.length === 0) {
+      toast.error("请至少选择一个角色");
+      return;
+    }
+
     setSaving(true);
-    try {
-      const res = await base44.functions.invoke('manageUser', {
-        action: 'update_user_permissions',
-        target_user_id: user.id,
-        assigned_role_ids: selectedRoleIds,
-        permission_overrides: overrides,
-      });
-      if (res.data?.error) {
-        setMsg({ type: "error", text: res.data.error });
-      } else {
-        // Pass the saved data back so parent can update its state immediately
-        const savedUser = res.data?.user;
+
+    let payload = {
+      action: 'update_user_permissions',
+      target_user_id: user.id,
+      assigned_role_ids: selectedRoleIds,
+      permission_overrides: overrides,
+    };
+
+    tenantManage.update('AdminUser', user.id, payload)
+      .then(res => {
+        const savedUser = res?.data;
         setMsg({ type: "success", text: "权限已更新" });
         setTimeout(() => { onClose(savedUser); }, 1200);
-      }
-    } catch (e) {
-      setMsg({ type: "error", text: e.message });
-    }
-    setSaving(false);
+      }).catch(e => {
+        const message = e.response?.data?.message || e.message || '更新失败';
+        toast.error(message);
+      })
+      .finally(() => {
+        setSaving(false);
+      });
   };
 
 
 
   return (
-    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onMouseDown={onClose}>
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
       <div
-        className="bg-white rounded-xl shadow-xl w-full max-w-2xl p-5 max-h-[92vh] overflow-y-auto"
+        className="bg-white rounded-xl shadow-xl w-full max-w-2xl p-5"
         onMouseDown={e => e.stopPropagation()}
       >
         {/* Header */}
         <div className="flex items-center justify-between mb-4">
           <div>
             <h3 className="font-semibold text-gray-900">用户权限管理</h3>
-            <p className="text-xs text-gray-500 mt-0.5">{user.full_name || user.email}</p>
+            <p className="text-xs text-gray-500 mt-0.5">{user.full_name || user.user_email}</p>
           </div>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-lg leading-none">✕</button>
         </div>
@@ -240,11 +257,13 @@ export default function UserPermissionManager({ user, allRoles: allRolesProp, on
               )}
               <span className="text-xs text-gray-400 shrink-0">{effectivePerms.size} 项已开启</span>
             </div>
-            <PermissionGrid
-              selected={[...effectivePerms]}
-              onToggle={togglePerm}
-              accentColor="green"
-            />
+            <div className="max-h-[50vh] overflow-y-auto rounded-lg">
+              <PermissionGrid
+                selected={[...effectivePerms]}
+                onToggle={togglePerm}
+                accentColor="green"
+              />
+            </div>
             {/* Legend */}
             <div className="flex items-center gap-4 mt-2 text-xs text-gray-400">
               <span className="flex items-center gap-1"><span className="text-blue-500 font-bold">＋改</span> 超出角色新增</span>
@@ -262,7 +281,7 @@ export default function UserPermissionManager({ user, allRoles: allRolesProp, on
 
         {!initializing && (
         <div className="flex gap-2 justify-end mt-5 border-t pt-4">
-          <Button size="sm" variant="outline" onClick={onClose}>取消</Button>
+          <Button size="sm" variant="outline" onClick={onClose} disabled={saving}>取消</Button>
           <Button
             size="sm"
             className="bg-gray-900 hover:bg-gray-800"

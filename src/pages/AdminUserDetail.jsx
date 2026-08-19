@@ -8,7 +8,7 @@ import {
   User, Package, CreditCard, MapPin, Clock, AlertTriangle, 
   TrendingUp, DollarSign, ShoppingCart, Truck, Calendar,
   FileText, Settings, Shield, CheckCircle, X, ChevronRight,
-  ArrowLeft, ExternalLink, Plus, Edit2, MessageSquare, Bell, Eye, MessageCircleQuestion
+  ArrowLeft, ExternalLink, Plus, Edit2, MessageSquare, Bell, Eye, MessageCircleQuestion, Sliders
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { Button } from "@/components/ui/button";
@@ -33,6 +33,7 @@ import PrivacySettingsTab from "@/components/profile/PrivacySettingsTab";
 import CustomerOrderDetailModal from "@/components/customer360/CustomerOrderDetailModal";
 import MemberTierBadge from "@/components/profile/MemberTierBadge";
 import MyFaqQuestionsCard from "@/components/faq/MyFaqQuestionsCard";
+import { MOCK_ADMIN_USER_DETAIL_DATA } from "@/mock/adminUserDetailMock";
 
 const PAYMENT_METHOD_LABELS = {
   alipay: "支付宝", wechatpay: "微信支付", paypay: "PayPay", paypal: "PayPal",
@@ -152,7 +153,8 @@ export default function AdminUserDetail() {
     }
     
     try {
-      const res = await base44.functions.invoke('getCustomer360Data', { userId: targetUserId });
+      // const res = await base44.functions.invoke('getCustomer360Data', { userId: targetUserId });
+      const res = MOCK_ADMIN_USER_DETAIL_DATA;
       if (res.data?.error) {
         setError(res.data.error);
       } else {
@@ -353,10 +355,16 @@ export default function AdminUserDetail() {
                 </Button>
               )}
               {isOwnProfile && (
-                <Button size="sm" onClick={() => setShowEditProfile(true)}>
-                  <Settings className="w-4 h-4 mr-2" />
-                  编辑资料
-                </Button>
+                <>
+                  <Button variant="outline" size="sm" onClick={() => navigate(createPageUrl("UserPreferences"))}>
+                    <Sliders className="w-4 h-4 mr-2" />
+                    个人偏好
+                  </Button>
+                  <Button size="sm" onClick={() => setShowEditProfile(true)}>
+                    <Settings className="w-4 h-4 mr-2" />
+                    编辑资料
+                  </Button>
+                </>
               )}
             </div>
           </div>

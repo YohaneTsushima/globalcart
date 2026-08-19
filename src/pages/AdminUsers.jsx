@@ -18,6 +18,9 @@ import RoleCreationPanel from "@/components/admin/RoleCreationPanel";
 import UserPermissionManager from "@/components/admin/UserPermissionManager";
 import RolePermissionOverview from "@/components/admin/RolePermissionOverview";
 import CreditApplicationModal from "@/components/admin/CreditApplicationModal";
+import { tenantManage } from "@/lib/tenantApi";
+import { MOCK_ADMIN_USERS_DATA } from "@/mock/adminUsersMock";
+import { toast } from "sonner";
 
 const ROLE_LABELS = {
   platform_admin: { label: "平台管理员", color: "bg-purple-100 text-purple-700" },
@@ -25,6 +28,8 @@ const ROLE_LABELS = {
   admin:          { label: "管理员",     color: "bg-red-100 text-red-700" },
   staff:          { label: "员工",       color: "bg-blue-100 text-blue-700" },
   user:           { label: "用户",       color: "bg-gray-100 text-gray-600" },
+  ROLE_ADMIN:     { label: "大管理员",   color: "bg-red-100 text-red-700"},
+  ROLE_USER:      { label: "用户",       color: "bg-gray-100 text-gray-600" },
 };
 
 function EditUserModal({ user: targetUser, currentUser, memberTiers, allRoles = [], onClose, onSaved }) {
@@ -64,52 +69,81 @@ function EditUserModal({ user: targetUser, currentUser, memberTiers, allRoles = 
   const handleSave = async () => {
     setSaving(true);
     setError("");
-    
-    try {
-      // Always update roles (even if empty array)
-      const res = await base44.functions.invoke('manageUser', {
-        action: 'update_roles',
-        target_user_id: targetUser.id,
-        roles: Array.isArray(roles) ? roles : [],
-      });
-      
-      if (res.data?.error) {
-        console.error('Role save error:', res.data.error);
-        setError(`保存角色失败: ${res.data.error}`);
-        setSaving(false);
-        return;
-      }
-      
-      // Update credit & tier settings
-      const selectedTier = memberTiers.find(t => t.id === memberTierId);
-      const limitVal = creditLimitJpy ? parseFloat(String(creditLimitJpy)) : 0;
-      const balanceVal = creditBalanceJpy ? parseFloat(String(creditBalanceJpy)) : 0;
-      
-      const creditRes = await base44.functions.invoke('manageCreditApplication', {
-        action: 'admin_update_user_credit',
-        target_user_id: targetUser.id,
-        member_tier_id: memberTierId || null,
-        member_tier_name: selectedTier?.name || null,
-        credit_enabled: !!creditEnabled,
-        credit_limit_jpy: isNaN(limitVal) ? 0 : limitVal,
-        credit_cycle: creditCycle,
-        credit_balance_jpy: isNaN(balanceVal) ? 0 : balanceVal,
-      });
-      
-      if (creditRes.data?.error) {
-        console.error('Credit save error:', creditRes.data.error);
-        setError(`保存记账设置失败: ${creditRes.data.error}`);
-        setSaving(false);
-        return;
-      }
-      
-      setSaving(false);
-      onSaved();
-    } catch (err) {
-      console.error('Save error:', err);
-      setError(err.message || '保存失败，请重试');
-      setSaving(false);
+
+    const selectedTier = memberTiers.find(t => t.id === memberTierId);
+    const limitVal = creditLimitJpy ? parseFloat(String(creditLimitJpy)) : 0;
+    const balanceVal = creditBalanceJpy ? parseFloat(String(creditBalanceJpy)) : 0;
+
+    let cdPay = {
+      action: 'admin_update_user_credit',
+      target_user_id: targetUser.id,
+      member_tier_id: memberTierId || null,
+      member_tier_name: selectedTier?.name || null,
+      credit_enabled: !!creditEnabled,
+      credit_limit_jpy: isNaN(limitVal) ? 0 : limitVal,
+      credit_cycle: creditCycle,
+      credit_balance_jpy: isNaN(balanceVal) ? 0 : balanceVal,
+      assigned_role_ids: Array.isArray(roles) ? roles : [],
     }
+
+    tenantManage.update('AdminUser', targetUser.id, cdPay)
+    .then(res => {
+      const savedUser = res?.data;
+      toast.success(`${targetUser.full_name} 的记账设置已更新.`)
+      setTimeout(() => { onClose(savedUser); }, 1200);
+    }).catch(e => {
+      const message = e.response?.data?.message || e.message || '更新失败';
+      setError(`保存记账设置失败: ${message}`);
+    })
+    .finally(() => {
+      setSaving(false);
+    });
+    
+    // try {
+    //   // Always update roles (even if empty array)
+    //   const res = await base44.functions.invoke('manageUser', {
+    //     action: 'update_roles',
+    //     target_user_id: targetUser.id,
+    //     roles: Array.isArray(roles) ? roles : [],
+    //   });
+      
+    //   if (res.data?.error) {
+    //     console.error('Role save error:', res.data.error);
+    //     setError(`保存角色失败: ${res.data.error}`);
+    //     setSaving(false);
+    //     return;
+    //   }
+      
+    //   // Update credit & tier settings
+    //   const selectedTier = memberTiers.find(t => t.id === memberTierId);
+    //   const limitVal = creditLimitJpy ? parseFloat(String(creditLimitJpy)) : 0;
+    //   const balanceVal = creditBalanceJpy ? parseFloat(String(creditBalanceJpy)) : 0;
+      
+    //   const creditRes = await base44.functions.invoke('manageCreditApplication', {
+    //     action: 'admin_update_user_credit',
+    //     target_user_id: targetUser.id,
+    //     member_tier_id: memberTierId || null,
+    //     member_tier_name: selectedTier?.name || null,
+    //     credit_enabled: !!creditEnabled,
+    //     credit_limit_jpy: isNaN(limitVal) ? 0 : limitVal,
+    //     credit_cycle: creditCycle,
+    //     credit_balance_jpy: isNaN(balanceVal) ? 0 : balanceVal,
+    //   });
+      
+    //   if (creditRes.data?.error) {
+    //     console.error('Credit save error:', creditRes.data.error);
+    //     setError(`保存记账设置失败: ${creditRes.data.error}`);
+    //     setSaving(false);
+    //     return;
+    //   }
+      
+    //   setSaving(false);
+    //   onSaved();
+    // } catch (err) {
+    //   console.error('Save error:', err);
+    //   setError(err.message || '保存失败，请重试');
+    //   setSaving(false);
+    // }
   };
 
   const selectedTier = memberTiers.find(t => t.id === memberTierId);
@@ -140,7 +174,7 @@ function EditUserModal({ user: targetUser, currentUser, memberTiers, allRoles = 
           <div>
             <p className="text-xs text-gray-500 mb-0.5">用户</p>
             <p className="text-sm font-medium text-gray-800">{targetUser.full_name || "-"}</p>
-            <p className="text-xs text-gray-400">{targetUser.email}</p>
+            <p className="text-xs text-gray-400">{targetUser.user_email}</p>
           </div>
 
           {/* Member Tier */}
@@ -252,27 +286,32 @@ export default function AdminUsers() {
   const loadData = () => {
     setLoading(true);
     Promise.all([
-      base44.functions.invoke('getAdminUsersPageData', {}),
-      base44.functions.invoke('getAdminSettingsPageData', {}),
+      tenantManage.list('AdminUser'),
+      // base44.functions.invoke('getAdminSettingsPageData', {}),
+      tenantManage.list('MemberTier')
     ]).then(([r1, r2]) => {
-      const { users: u = [], orders: o = [], tenants = [] } = r1.data || {};
+      const { users: u = [], orders: o = [], tenants = [] } = r1?.data || {};
       const map = {};
       tenants.forEach(t => { map[t.id] = t; });
       setTenantMap(map);
-      setUsers(u);
+      let users = r1?.data?.users;
+        // let mockUserrs = MOCK_ADMIN_USERS_DATA?.data?.users;
+        // users.splice(users.length, 0, ...mockUserrs)
+      
+      setUsers(users);
       setOrders(o);
-      setMemberTiers(r2.data?.memberTiers || []);
-      setAllRoles(r1.data?.roles || []);
+      setMemberTiers(r2?.data || []);
+      setAllRoles(r1?.data?.roles || []);
       // Load credit applications for status indicators
-      base44.functions.invoke('manageCreditApplication', { action: 'list' }).then(appsRes => {
-        const appsMap = {};
-        (appsRes.data?.applications || []).forEach(app => {
-          const email = app.user_email;
-          if (!appsMap[email]) appsMap[email] = [];
-          appsMap[email].push(app);
-        });
-        setCreditApps(appsMap);
-      }).catch(() => {});
+      // base44.functions.invoke('manageCreditApplication', { action: 'list' }).then(appsRes => {
+      //   const appsMap = {};
+      //   (appsRes.data?.applications || []).forEach(app => {
+      //     const email = app.user_email;
+      //     if (!appsMap[email]) appsMap[email] = [];
+      //     appsMap[email].push(app);
+      //   });
+      //   setCreditApps(appsMap);
+      // }).catch(() => {});
       setLoading(false);
     }).catch(() => setLoading(false));
   };
@@ -293,17 +332,44 @@ export default function AdminUsers() {
 
   const handleToggleActive = async (u) => {
     setActioning(a => ({ ...a, [u.id]: 'toggle' }));
-    await base44.functions.invoke('manageUser', {
+
+    let cdPay = {
       action: 'toggle_active',
       target_user_id: u.id,
       is_active: !u.is_active,
+    }
+
+    let active = cdPay?.is_active ? '已启用':'已停用';
+
+    tenantManage.update('AdminUser', u.id, cdPay)
+    .then(res => {
+      
+      toast.success(`${u.full_name} 的账号 ${ active }.`);
+      setUsers(prev => prev.map(x => x.id === u.id ? { ...x, is_active: !u.is_active } : x));
+    }).catch(e => {
+      const message = e.response?.data?.message || e.message || '更新失败';
+      toast.error(`操作失败: ${message}`);
+    })
+    .finally(() => {
+      setActioning(a => ({ ...a, [u.id]: null }));
     });
-    setUsers(prev => prev.map(x => x.id === u.id ? { ...x, is_active: !u.is_active } : x));
-    setActioning(a => ({ ...a, [u.id]: null }));
+
+    // await base44.functions.invoke('manageUser', {
+    //   action: 'toggle_active',
+    //   target_user_id: u.id,
+    //   is_active: !u.is_active,
+    // });
+    // setUsers(prev => prev.map(x => x.id === u.id ? { ...x, is_active: !u.is_active } : x));
+    // setActioning(a => ({ ...a, [u.id]: null }));
   };
 
   const handleDelete = async (u) => {
-    if (!window.confirm(`确定要删除用户 ${u.email} 吗？此操作不可撤销。`)) return;
+
+    toast.warning('暂时无法删除用户！！！');
+
+    return;
+
+    if (!window.confirm(`确定要删除用户 ${u.user_email} 吗？此操作不可撤销。`)) return;
     setActioning(a => ({ ...a, [u.id]: 'delete' }));
     const res = await base44.functions.invoke('manageUser', {
       action: 'delete',
@@ -317,7 +383,7 @@ export default function AdminUsers() {
 
   const filtered = users.filter(u =>
     !search ||
-    u.email?.toLowerCase().includes(search.toLowerCase()) ||
+    u.user_email?.toLowerCase().includes(search.toLowerCase()) ||
     u.full_name?.toLowerCase().includes(search.toLowerCase())
   );
 
@@ -394,12 +460,12 @@ export default function AdminUsers() {
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2">
                       <div className="w-7 h-7 bg-gray-200 rounded-full flex items-center justify-center text-xs font-medium text-gray-600">
-                        {(u.full_name || u.email || "?")[0].toUpperCase()}
+                        {(u.full_name || u.user_email || "?")[0].toUpperCase()}
                       </div>
                       <span className="font-medium text-gray-800">{u.full_name || "-"}</span>
                     </div>
                   </td>
-                  <td className="px-4 py-3 text-gray-500 text-xs hidden sm:table-cell">{u.email}</td>
+                  <td className="px-4 py-3 text-gray-500 text-xs hidden sm:table-cell">{u.user_email}</td>
                   <td className="px-4 py-3">
                    <div className="flex items-center gap-1.5 flex-wrap">
                      {(() => {
@@ -424,7 +490,7 @@ export default function AdminUsers() {
                      )}
                    </div>
                   </td>
-                  <td className="px-4 py-3 text-gray-700 hidden md:table-cell">{getUserOrderCount(u.email)}</td>
+                  <td className="px-4 py-3 text-gray-700 hidden md:table-cell">{u.order_count}</td>
                   <td className="px-4 py-3 text-xs text-gray-400 hidden md:table-cell">
                     {u.created_date ? new Date(u.created_date).toLocaleDateString("zh-CN") : "-"}
                   </td>
@@ -492,9 +558,9 @@ export default function AdminUsers() {
                          <button
                            onClick={() => setCreditAppUser(u)}
                            className={`p-1.5 rounded ${
-                             creditApps[u.email]?.some(a => a.status === 'pending')
+                             creditApps[u.user_email]?.some(a => a.status === 'pending')
                                ? 'bg-amber-100 text-amber-600 hover:bg-amber-200'
-                               : creditApps[u.email]?.length > 0
+                               : creditApps[u.user_email]?.length > 0
                                ? 'text-blue-500 hover:bg-blue-50'
                                : 'text-gray-400 hover:bg-gray-100'
                            }`}

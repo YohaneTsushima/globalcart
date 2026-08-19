@@ -4,8 +4,10 @@
  * Shown in UserPreferences page.
  */
 import { useState, useEffect } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { CreditCard, Calendar, AlertCircle, CheckCircle, Clock, Upload, Loader2 } from "lucide-react";
 import { base44 } from "@/api/base44Client";
+import { tenantEntity } from "@/lib/tenantApi";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -17,9 +19,8 @@ import PaymentMethodSelector from "@/components/common/PaymentMethodSelector";
 
 const CYCLE_LABELS = { weekly: "周结（记账日起7天结算）", monthly: "月结（每月1日结算）" };
 
-export default function CreditPanel({ creditApplicationEnabled, refreshKey }) {
-  const [credit, setCredit] = useState(null);
-  const [loading, setLoading] = useState(true);
+export default function CreditPanel({ refreshKey }) {
+  const queryClient = useQueryClient();
   const [showApplyForm, setShowApplyForm] = useState(false);
   const [applyForm, setApplyForm] = useState({
     application_type: "apply",
@@ -31,13 +32,24 @@ export default function CreditPanel({ creditApplicationEnabled, refreshKey }) {
 
   // Payment state
   const [showPayment, setShowPayment] = useState(false);
-  const [selectedMethod, setSelectedMethod] = useState(null); // { value, label, payment_note, image_url, payment_currency, ... }
+  const [selectedMethod, setSelectedMethod] = useState(null);
   const [payingCredit, setPayingCredit] = useState(false);
   const [proofUrl, setProofUrl] = useState("");
   const [uploading, setUploading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [paySuccess, setPaySuccess] = useState(false);
   const [rates, setRates] = useState(null);
+
+  const { data: creditApplicationEnabled = false } = useQuery({
+    queryKey: ['credit-application-enabled'],
+    queryFn: async () => {
+      const creditSettings = await tenantEntity.list('SiteSettings', { key: 'credit_application_enabled' }).catch(() => []);
+      return creditSettings?.length > 0 ? creditSettings[0].value === 'true' : false;
+    },
+    staleTime: 10 * 60 * 1000,
+    placeholderData: false,
+    refetchOnMount: false,
+  });
 
   useEffect(() => {
     fetch('https://v6.exchangerate-api.com/v6/89e2f91c758d92aa2c06667b/latest/JPY')
@@ -46,14 +58,17 @@ export default function CreditPanel({ creditApplicationEnabled, refreshKey }) {
       .catch(() => {});
   }, []);
 
-  const load = async () => {
-    setLoading(true);
-    const r = await base44.functions.invoke('manageCreditApplication', { action: 'get_user_credit' });
-    setCredit(r.data || null);
-    setLoading(false);
-  };
-
-  useEffect(() => { load(); }, [refreshKey]);
+  const { data: credit, isLoading: loading, refetch: load } = useQuery({
+    queryKey: ['user-credit', refreshKey],
+    queryFn: async () => {
+      // const r = await base44.functions.invoke('manageCreditApplication', { action: 'get_user_credit' });
+      const r = {};
+      return r.data || null;
+    },
+    staleTime: 2 * 60 * 1000,
+    placeholderData: null,
+    refetchOnMount: false,
+  });
 
   const af = (k, v) => setApplyForm(p => ({ ...p, [k]: v }));
 
@@ -61,12 +76,13 @@ export default function CreditPanel({ creditApplicationEnabled, refreshKey }) {
     if (applyForm.application_type !== 'disable' && (!applyForm.requested_cycle || !applyForm.requested_limit_jpy)) return;
     setSubmitting(true);
     setSubmitMsg(null);
-    const action = applyForm.application_type === 'disable' ? 'disable' : 'apply';
-    const r = await base44.functions.invoke('manageCreditApplication', {
-      action,
-      ...applyForm,
-      requested_limit_jpy: parseFloat(applyForm.requested_limit_jpy) || 0,
-    });
+    // const action = applyForm.application_type === 'disable' ? 'disable' : 'apply';
+    // const r = await base44.functions.invoke('manageCreditApplication', {
+    //   action,
+    //   ...applyForm,
+    //   requested_limit_jpy: parseFloat(applyForm.requested_limit_jpy) || 0,
+    // });
+    const r = {};
     if (r.data?.error) {
       setSubmitMsg({ type: 'error', text: r.data.error });
     } else {

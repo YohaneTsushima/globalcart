@@ -1,12 +1,13 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import { base44 } from "@/api/base44Client";
-import { tenantEntity, userPrefApi } from "@/lib/tenantApi";
+import { userPrefApi } from "@/lib/tenantApi";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { useAuth } from "@/lib/AuthContext";
 import { usePermissions } from "@/hooks/usePermissions";
-import { User, Save, Palette, Archive, Lock, Bell, ExternalLink } from "lucide-react";
+import { useUserPref } from "@/hooks/useUserPref";
+import { User, Save, Palette, Archive, Lock, ExternalLink } from "lucide-react";
 import AvatarEditor from "@/components/common/AvatarEditor";
 import NavbarExchangeRateManager from "@/components/admin/NavbarExchangeRateManager";
 import ThemeSelector from "@/components/common/ThemeSelector";
@@ -27,12 +28,12 @@ export default function UserPreferences() {
   const { user } = useCurrentUser();
   const { setUser } = useAuth();
   const { can } = usePermissions();
+  const { pref, loading: prefLoading } = useUserPref();
   const canChangeAvatar = can("profile:change_avatar");
   const canChangeAutoArchive = can("profile:change_auto_archive_settings");
   const canChangeDisplayName = can("profile:change_display_name");
   const canChangeDisplayNameAnytime = can("profile:change_display_name_anytime");
   
-  const [pref, setPref] = useState(null);
   const [displayName, setDisplayName] = useState("");
   const [avatarUrl, setAvatarUrl] = useState("");
   const [form, setForm] = useState({
@@ -42,8 +43,17 @@ export default function UserPreferences() {
   });
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
-  const [creditApplicationEnabled, setCreditApplicationEnabled] = useState(false);
   const [creditRefreshKey, setCreditRefreshKey] = useState(0);
+
+  const ROLE_LABELS = {
+    platform_admin: { label: "平台管理员", color: "bg-purple-100 text-purple-700" },
+    tenant_admin:   { label: "租户管理员", color: "bg-red-100 text-red-700" },
+    admin:          { label: "管理员",     color: "bg-red-100 text-red-700" },
+    staff:          { label: "员工",       color: "bg-blue-100 text-blue-700" },
+    user:           { label: "用户",       color: "bg-gray-100 text-gray-600" },
+    ROLE_ADMIN:     { label: "大管理员",   color: "bg-red-100 text-red-700"},
+    ROLE_USER:      { label: "用户",       color: "bg-gray-100 text-gray-600" },
+  };
 
   // Detect return from Alipay credit payment and trigger CreditPanel refresh
   useEffect(() => {
@@ -60,28 +70,21 @@ export default function UserPreferences() {
 
   useEffect(() => {
     if (!user) return;
+    console.log(user)
     setDisplayName(user.display_name || user.full_name || "");
-    setAvatarUrl(user.avatar_url || "");
-    Promise.all([
-      userPrefApi.list({ user_email: user.email }),
-      tenantEntity.list('SiteSettings', { key: 'credit_application_enabled' }).catch(() => []),
-    ]).then(([prefs, creditSettings]) => {
-      if (creditSettings && creditSettings.length > 0) {
-        setCreditApplicationEnabled(creditSettings[0].value === 'true');
-      }
-      if (prefs.length > 0) {
-        // Use the most recently updated record as the primary pref record
-        const sorted = [...prefs].sort((a, b) => new Date(b.updated_date || 0) - new Date(a.updated_date || 0));
-        const p = sorted[0];
-        setPref(p);
-        setForm({
-          notification_email: p.notification_email !== false,
-          auto_archive_order_days: p.auto_archive_order_days !== undefined ? p.auto_archive_order_days : 7,
-          auto_archive_pool_days: p.auto_archive_pool_days !== undefined ? p.auto_archive_pool_days : 7,
-        });
-      }
-    }).catch(() => {});
-  }, [user?.email]);  // eslint-disable-line
+    setAvatarUrl(user?.avatar || user?.avatar_url || "");
+  }, [user]);
+
+  useEffect(() => {
+    if (!pref) return;
+    setForm({
+      notification_email: pref.notification_email !== false,
+      auto_archive_order_days: pref.auto_archive_order_days !== undefined ? pref.auto_archive_order_days : 7,
+      auto_archive_pool_days: pref.auto_archive_pool_days !== undefined ? pref.auto_archive_pool_days : 7,
+    });
+  }, [pref?.id]);
+
+  const f = (k, v) => setForm(p => ({ ...p, [k]: v }));
 
   const handleSave = async () => {
     setSaving(true);
@@ -91,7 +94,6 @@ export default function UserPreferences() {
       await userPrefApi.update(pref.id, data);
     } else {
       const created = await userPrefApi.create(data);
-      setPref(created);
     }
     // Refresh the user object in AuthContext so avatar/display_name update immediately
     const updatedUser = await base44.auth.me();
@@ -101,7 +103,7 @@ export default function UserPreferences() {
     setTimeout(() => setSaved(false), 2000);
   };
 
-  const f = (k, v) => setForm(p => ({ ...p, [k]: v }));
+  const displayNameChanged = displayName !== (user?.display_name || user?.full_name || "");
 
   return (
     <>
@@ -119,7 +121,7 @@ export default function UserPreferences() {
         </Link>
       </div>
 
-      {/* 账户信息 */}
+      {/* Basic Info */}
       {user && (
         <Card className="border-gray-200">
           <CardHeader className="pb-3">
@@ -129,23 +131,13 @@ export default function UserPreferences() {
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="flex items-center gap-4">
-              <AvatarEditor value={avatarUrl} onChange={setAvatarUrl} size={64} disabled={!canChangeAvatar} />
+              <AvatarEditor value={avatarUrl} onChange={setAvatarUrl} disabled={!canChangeAvatar} />
               <div className="flex-1">
-                <Label className="text-sm">显示名称</Label>
-                <Input
-                  className="mt-1"
-                  placeholder={user.full_name || "输入显示名称"}
-                  value={displayName}
-                  onChange={e => setDisplayName(e.target.value)}
-                  disabled={!canChangeDisplayName}
-                  title={!canChangeDisplayName ? "您没有权限更改显示名称" : undefined}
-                />
-                {canChangeDisplayName && !canChangeDisplayNameAnytime && (
-                  <p className="text-xs text-orange-500 mt-1">更改显示名称需经管理员审核</p>
-                )}
-                {!canChangeDisplayName && (
-                  <p className="text-xs text-gray-400 mt-1 flex items-center gap-1"><Lock className="w-3 h-3" />无权更改</p>
-                )}
+                <Label className="text-sm">显示昵称</Label>
+                <Input className="mt-1" value={displayName} onChange={e => setDisplayName(e.target.value)}
+                  disabled={!canChangeDisplayName || (!canChangeDisplayNameAnytime && !displayNameChanged)} />
+                {!canChangeDisplayName && <p className="text-xs text-gray-400 mt-1">您没有权限修改显示昵称</p>}
+                {canChangeDisplayName && !canChangeDisplayNameAnytime && <p className="text-xs text-gray-400 mt-1">昵称修改有频率限制</p>}
               </div>
             </div>
             <div className="space-y-2 text-sm pt-1 border-t border-gray-100">
@@ -155,7 +147,8 @@ export default function UserPreferences() {
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-gray-500">角色</span>
-                <Badge className="text-xs">{user.role === "admin" ? "管理员" : "用户"}</Badge>
+                {/* <Badge className="text-xs">{user.role === "admin" ? "管理员" : "用户"}</Badge> */}
+                <Badge className="text-xs"> {ROLE_LABELS[user.role]?.label || user.role}</Badge>
               </div>
             </div>
           </CardContent>
@@ -249,7 +242,7 @@ export default function UserPreferences() {
       </Card>
 
       {/* 记账结算 */}
-      <CreditPanel creditApplicationEnabled={creditApplicationEnabled} refreshKey={creditRefreshKey} />
+      <CreditPanel refreshKey={creditRefreshKey} />
 
       <Button className="w-full bg-red-600 hover:bg-red-700" onClick={handleSave} disabled={saving}>
         <Save className="w-4 h-4 mr-2" />

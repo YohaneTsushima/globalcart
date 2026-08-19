@@ -73,9 +73,11 @@ export default function Layout({ children, currentPageName }) {
       setBannerConfig(null);
     }
     const rateSetting = (cfg.settings || []).find(s => s.key === "navbar_exchange_rate_config");
+    
     if (rateSetting?.value) {
       try {
         const rc = JSON.parse(rateSetting.value);
+        console.log(rc)
         if (rc.enabled && Array.isArray(rc.currencies)) setNavbarRateCurrencies(rc.currencies);
         else setNavbarRateCurrencies([]);
       } catch { setNavbarRateCurrencies([]); }

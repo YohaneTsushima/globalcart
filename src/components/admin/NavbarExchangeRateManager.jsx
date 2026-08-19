@@ -126,6 +126,7 @@ export default function NavbarExchangeRateManager({ settings, onReload }) {
       const value = JSON.stringify(form);
       const existingList = await tenantEntity.list("SiteSettings", { key: "navbar_exchange_rate_config" });
       const existing = existingList?.[0];
+      
       if (existing?.id) {
         await tenantEntity.update("SiteSettings", existing.id, { value });
       } else {

@@ -1,4 +1,5 @@
 import React, { createContext, useState, useContext, useEffect } from 'react';
+import { unstable_batchedUpdates } from 'react-dom';
 import { base44 } from '@/api/base44Client';
 import { resolveTenantBranding } from '@/lib/tenantBranding';
 
@@ -101,23 +102,27 @@ export const AuthProvider = ({ children }) => {
           const roles = Array.isArray(d.assigned_roles) ? d.assigned_roles : [];
           const isActive = d.isActive ?? d.is_active ?? true;
 
-          setUser(u);
-          setPermissions(perms);
-          setAssignedRoles(roles);
-          setIsAuthenticated(true);
-          writeAuthCache({ user: u, permissions: perms, assigned_roles: roles, is_active: isActive });
+          unstable_batchedUpdates(() => {
+            setUser(u);
+            setPermissions(perms);
+            setAssignedRoles(roles);
+            setIsAuthenticated(true);
+            writeAuthCache({ user: u, permissions: perms, assigned_roles: roles, is_active: isActive });
 
-          if (isActive === false) {
-            setAuthError({ type: 'account_suspended', message: '您的账户已被停用，请联系管理员。' });
-          }
+            if (isActive === false) {
+              setAuthError({ type: 'account_suspended', message: '您的账户已被停用，请联系管理员。' });
+            }
+          });
         })
         .catch(err => {
           // 网络不可达（后端没启动 / 断连）：清除状态，跳登录
           if (isNetworkError(err)) {
             console.warn('[Auth] 后端不可达，跳转登录页');
             clearAuthCache();
-            setIsAuthenticated(false);
-            setUser(null);
+            unstable_batchedUpdates(() => {
+              setIsAuthenticated(false);
+              setUser(null);
+            });
             redirectToLogin();
             return;
           }
@@ -142,25 +147,29 @@ export const AuthProvider = ({ children }) => {
           const u = normalizeUser(d);
           const isActive = d.isActive ?? d.is_active ?? true;
 
-          setUser(u);
-          setIsAuthenticated(true);
-          writeAuthCache({
-            user: u,
-            permissions: Array.isArray(d.permissions) ? d.permissions : [],
-            assigned_roles: Array.isArray(d.assigned_roles) ? d.assigned_roles : [],
-            is_active: isActive,
-          });
+          unstable_batchedUpdates(() => {
+            setUser(u);
+            setIsAuthenticated(true);
+            writeAuthCache({
+              user: u,
+              permissions: Array.isArray(d.permissions) ? d.permissions : [],
+              assigned_roles: Array.isArray(d.assigned_roles) ? d.assigned_roles : [],
+              is_active: isActive,
+            });
 
-          if (isActive === false) {
-            setAuthError({ type: 'account_suspended', message: '您的账户已被停用，请联系管理员。' });
-          }
+            if (isActive === false) {
+              setAuthError({ type: 'account_suspended', message: '您的账户已被停用，请联系管理员。' });
+            }
+          });
         })
         .catch(err => {
           if (isNetworkError(err)) {
             console.warn('[Auth] 后端不可达，清除登录状态');
             clearAuthCache();
-            setIsAuthenticated(false);
-            setUser(null);
+            unstable_batchedUpdates(() => {
+              setIsAuthenticated(false);
+              setUser(null);
+            });
             redirectToLogin();
           }
         });
@@ -194,25 +203,29 @@ export const AuthProvider = ({ children }) => {
       const roles = Array.isArray(r?.assigned_roles) ? r.assigned_roles : (Array.isArray(r?.data?.assigned_roles) ? r.data.assigned_roles : []);
       const isActive = r?.is_active ?? r?.data?.is_active ?? true;
 
-      setUser(u);
-      setPermissions(perms);
-      setAssignedRoles(roles);
-      setIsAuthenticated(true);
+      unstable_batchedUpdates(() => {
+        setUser(u);
+        setPermissions(perms);
+        setAssignedRoles(roles);
+        setIsAuthenticated(true);
 
-      writeAuthCache({ user: u, permissions: perms, assigned_roles: roles, is_active: isActive });
+        writeAuthCache({ user: u, permissions: perms, assigned_roles: roles, is_active: isActive });
 
-      if (isActive === false) {
-        setAuthError({ type: 'account_suspended', message: '您的账户已被停用，请联系管理员。' });
-        return { ok: false, error: 'account_suspended' };
-      }
+        if (isActive === false) {
+          setAuthError({ type: 'account_suspended', message: '您的账户已被停用，请联系管理员。' });
+          return { ok: false, error: 'account_suspended' };
+        }
+      });
       return { ok: true };
     } catch (error) {
       console.error('login failed:', error);
-      setIsAuthenticated(false);
-      setUser(null);
-      const msg = error?.response?.data?.message || error?.message || '登录失败，请检查验证码';
-      setAuthError({ type: 'login_failed', message: msg });
-      return { ok: false, error: msg };
+      unstable_batchedUpdates(() => {
+        setIsAuthenticated(false);
+        setUser(null);
+        const msg = error?.response?.data?.message || error?.message || '登录失败，请检查验证码';
+        setAuthError({ type: 'login_failed', message: msg });
+      });
+      return { ok: false, error: error?.response?.data?.message || error?.message || '登录失败，请检查验证码' };
     }
   };
 
@@ -233,26 +246,30 @@ export const AuthProvider = ({ children }) => {
       const roles = Array.isArray(d.assigned_roles) ? d.assigned_roles : [];
       const isActive = d.isActive ?? d.is_active ?? true;
 
-      setUser(u);
-      setPermissions(perms);
-      setAssignedRoles(roles);
-      setIsAuthenticated(true);
+      unstable_batchedUpdates(() => {
+        setUser(u);
+        setPermissions(perms);
+        setAssignedRoles(roles);
+        setIsAuthenticated(true);
 
-      writeAuthCache({ user: u, permissions: perms, assigned_roles: roles, is_active: isActive });
+        writeAuthCache({ user: u, permissions: perms, assigned_roles: roles, is_active: isActive });
 
-      if (isActive === false) {
-        setAuthError({ type: 'account_suspended', message: '您的账户已被停用，请联系管理员。' });
-        return { ok: false, error: 'account_suspended' };
-      }
+        if (isActive === false) {
+          setAuthError({ type: 'account_suspended', message: '您的账户已被停用，请联系管理员。' });
+          return { ok: false, error: 'account_suspended' };
+        }
+      });
       return { ok: true };
     } catch (error) {
       console.error('oauth login failed:', error);
       clearAuthCache();
-      setIsAuthenticated(false);
-      setUser(null);
-      const msg = error?.response?.data?.message || error?.message || '获取用户信息失败';
-      setAuthError({ type: 'login_failed', message: msg });
-      return { ok: false, error: msg };
+      unstable_batchedUpdates(() => {
+        setIsAuthenticated(false);
+        setUser(null);
+        const msg = error?.response?.data?.message || error?.message || '获取用户信息失败';
+        setAuthError({ type: 'login_failed', message: msg });
+      });
+      return { ok: false, error: error?.response?.data?.message || error?.message || '获取用户信息失败' };
     }
   };
 
@@ -262,11 +279,13 @@ export const AuthProvider = ({ children }) => {
     if (refreshToken) {
       base44.functions.invoke('auth/logout', { refresh_token: refreshToken }).catch(() => {});
     }
-    setUser(null);
-    setIsAuthenticated(false);
-    setPermissions([]);
-    setAssignedRoles([]);
-    setAuthError(null);
+    unstable_batchedUpdates(() => {
+      setUser(null);
+      setIsAuthenticated(false);
+      setPermissions([]);
+      setAssignedRoles([]);
+      setAuthError(null);
+    });
     clearAuthCache();
     if (shouldRedirect) {
       const lang = (navigator.language || '').toLowerCase().includes('ja') ? 'ja' : 'zhcn';

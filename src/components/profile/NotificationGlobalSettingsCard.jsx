@@ -22,21 +22,22 @@ export default function NotificationGlobalSettingsCard() {
   const { data, isLoading } = useQuery({
     queryKey: ['notification-preferences'],
     queryFn: async () => {
-      const res = await base44.functions.invoke('getNotificationPreferences', {});
+      const res = await base44.functions.invoke('notification/preference/getNotificationPreferences', {});
       return res.data;
     },
+    refetchOnMount: false,
   });
 
   useEffect(() => {
-    if (data?.preferences) {
-      setGlobalInApp(data.preferences.in_app_enabled ?? true);
-      setGlobalEmail(data.preferences.email_enabled ?? true);
+    if (data?.settings?.preferences) {
+      setGlobalInApp(data?.settings?.preferences.in_app_enabled ?? true);
+      setGlobalEmail(data?.settings?.preferences.email_enabled ?? true);
     }
   }, [data]);
 
   const updateMutation = useMutation({
     mutationFn: async (settings) => {
-      const res = await base44.functions.invoke('updateNotificationPreferences', settings);
+      const res = await base44.functions.invoke('notification/preference/updateNotificationPreferences', settings);
       return res.data;
     },
     onSuccess: () => {
