@@ -2,13 +2,18 @@ import axios from 'axios';
 import { t, getLocale } from "@/lib/i18n";
 import { refreshAndReconnect } from "@/lib/socket";
 
+// 本地开发时从环境变量或配置读取
+const tenantCode = import.meta.env.VITE_TENANT_CODE || 
+                   window.location.hostname.split('.')[0];
+
 // 后端地址写环境变量
 const api = axios.create({
   baseURL: '',
   headers: {
-    'Content-Type': 'application/json'
+    'Content-Type': 'application/json',
+    'X-Tenant': tenantCode
   }
-})
+});
 
 // ── Token 刷新并发锁 ────────────────────────────────────────────────────────
 let isRefreshing = false;
@@ -20,6 +25,8 @@ const processQueue = (error, token = null) => {
   });
   failedQueue = [];
 };
+
+
 
 // ── 请求拦截：自动带 access_token ─────────────────────────────────────────────
 api.interceptors.request.use(cfg => {
@@ -191,6 +198,9 @@ export const base44 = {
       window.location.href = url;
 
       // window.open(url, '_blank', `width=${width},height=${height},left=${left},top=${top},scrollbars=yes,resizable=yes`);
+    },
+    updateMe: async (me) => {
+      console.log(me)
     }
   },
   integrations: {

@@ -70,7 +70,6 @@ export default function UserPreferences() {
 
   useEffect(() => {
     if (!user) return;
-    console.log(user)
     setDisplayName(user.display_name || user.full_name || "");
     setAvatarUrl(user?.avatar || user?.avatar_url || "");
   }, [user]);
@@ -88,13 +87,29 @@ export default function UserPreferences() {
 
   const handleSave = async () => {
     setSaving(true);
-    await base44.auth.updateMe({ display_name: displayName, avatar_url: avatarUrl });
-    const data = { ...form, user_email: user.email };
-    if (pref) {
-      await userPrefApi.update(pref.id, data);
-    } else {
-      const created = await userPrefApi.create(data);
+    let payload = {
+      me: {
+        id: user.id,
+        display_name: displayName,
+        avatar: avatarUrl,
+      },
+      pref: {
+        id: pref.id,
+        ...form
+      }
+      
     }
+    await base44.auth.updateMe(payload);
+    const data = { ...form, user_email: user.email };
+    console.log(pref)
+    console.log(form)
+    return
+    // if (pref) {
+    //   pref.user_id = user.id;
+    //   await userPrefApi.update(pref.id, data);
+    // } else {
+    //   const created = await userPrefApi.create(data);
+    // }
     // Refresh the user object in AuthContext so avatar/display_name update immediately
     const updatedUser = await base44.auth.me();
     setUser(updatedUser);

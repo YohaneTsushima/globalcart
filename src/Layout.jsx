@@ -77,7 +77,6 @@ export default function Layout({ children, currentPageName }) {
     if (rateSetting?.value) {
       try {
         const rc = JSON.parse(rateSetting.value);
-        console.log(rc)
         if (rc.enabled && Array.isArray(rc.currencies)) setNavbarRateCurrencies(rc.currencies);
         else setNavbarRateCurrencies([]);
       } catch { setNavbarRateCurrencies([]); }
