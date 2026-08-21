@@ -48,35 +48,38 @@ export default function CustomsDeclarationForm({ value, onChange, hazmatText }) 
     return_method: "economy",
   };
 
+  // 确保 items 始终是数组
+  const items = Array.isArray(data.items) ? data.items : [newItem()];
+
   const update = (patch) => onChange({ ...data, ...patch });
 
   const updateItem = (id, patch) =>
-    update({ items: data.items.map(it => it.id === id ? { ...it, ...patch } : it) });
+    update({ items: items.map(it => it.id === id ? { ...it, ...patch } : it) });
 
   const addItem = () => {
-    update({ items: [...data.items, newItem()] });
+    update({ items: [...items, newItem()] });
     setTimeout(() => newItemNameRef.current?.focus(), 30);
   };
 
   const removeItem = (id) => {
-    if (data.items.length <= 1) return;
-    update({ items: data.items.filter(it => it.id !== id) });
+    if (items.length <= 1) return;
+    update({ items: items.filter(it => it.id !== id) });
   };
 
   // Auto-calc total value and total weight
-  const total = data.items.reduce((sum, it) => {
+  const total = items.reduce((sum, it) => {
     const price = parseFloat(it.unit_price) || 0;
     const qty = parseInt(it.quantity) || 0;
     return sum + price * qty;
   }, 0);
-  const totalWeightG = data.items.reduce((sum, it) => {
+  const totalWeightG = items.reduce((sum, it) => {
     const w = parseFloat(it.weight_g) || 0;
     const qty = parseInt(it.quantity) || 1;
     return sum + w * qty;
   }, 0);
 
   // All currencies in use (use first item's currency for total display)
-  const displayCurrency = data.items[0]?.currency || "JPY";
+  const displayCurrency = items[0]?.currency || "JPY";
 
   return (
     <div className="border border-orange-200 rounded-xl overflow-hidden">
@@ -129,10 +132,10 @@ export default function CustomsDeclarationForm({ value, onChange, hazmatText }) 
                 <span>个数</span>
                 <span></span>
               </div>
-              {data.items.map((item, idx) => (
+              {items.map((item, idx) => (
                 <div key={item.id} className="grid grid-cols-[2fr_1fr_1fr_1fr_1fr_auto] gap-1 items-center">
                   <Input
-                    ref={idx === data.items.length - 1 ? newItemNameRef : null}
+                    ref={idx === items.length - 1 ? newItemNameRef : null}
                     value={item.name}
                     onChange={e => updateItem(item.id, { name: e.target.value })}
                     placeholder="e.g. Toy Car"

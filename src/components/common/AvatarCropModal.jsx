@@ -25,6 +25,7 @@ export default function AvatarCropModal({ imageSrc, onConfirm, onCancel, uploadi
   // Load image once
   useEffect(() => {
     const img = new Image();
+    img.crossOrigin = "anonymous";  // 新增这行
     img.onload = () => {
       imgRef.current = img;
       // Start scale: fill the circle

@@ -29,7 +29,7 @@ export default function AvatarEditor({ value, onChange, size = 64, disabled = fa
   const handleCropConfirm = async (blob) => {
     setUploading(true);
     const file = new File([blob], "avatar.jpg", { type: "image/jpeg" });
-    const { file_url } = await base44.integrations.Core.UploadFile({ file });
+    const { file_url } = await base44.integrations.Core.UploadFile({ file, path: "avatar" });
     onChange(file_url);
     setCropSrc(null);
     setUploading(false);

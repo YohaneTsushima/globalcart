@@ -53,6 +53,7 @@ export default function MessageThread({
   permissionKey = 'order',
 }) {
   const { can } = usePermissions();
+
   // 根据类型检查权限
   const canSendMessage = can("message:send_message") || can(`message:send_${permissionKey}_message`);
   const canSendImage = can("message:send_image");

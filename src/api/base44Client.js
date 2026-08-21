@@ -200,7 +200,7 @@ export const base44 = {
       // window.open(url, '_blank', `width=${width},height=${height},left=${left},top=${top},scrollbars=yes,resizable=yes`);
     },
     updateMe: async (me) => {
-      console.log(me)
+      return api.post(`/globalcart/user/stats/updateMe`, me).then(r => r.data);
     }
   },
   integrations: {

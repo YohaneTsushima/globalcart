@@ -128,7 +128,7 @@ export default function ShippingPoolDetailModal({ pool: initialPool, isAdmin, cu
     };
   }, [onUpdated, onClose]);
 
-  const subject = `${user?.displayName} - ${pool?.title}`;
+  const subject = `${user?.display_name} - ${pool?.title}`;
 
   const openConvertToOther = async () => {
     setShowConvertToOther(true);
@@ -260,7 +260,8 @@ export default function ShippingPoolDetailModal({ pool: initialPool, isAdmin, cu
         // Backend returns nested { date, jpy: { cny, twd, usr } }
         // Frontend expects flat { jpy_cny, jpy_twd, jpy_usd, ... }
         if (d.rates) {
-          const r = d.rates;
+          const r = d?.rates?.conversion_rates;
+          
           if (r.jpy) {
             setExchangeRates({
               jpy_cny: r.jpy.cny,
@@ -472,7 +473,8 @@ export default function ShippingPoolDetailModal({ pool: initialPool, isAdmin, cu
     let amountToCharge = amountJpy;
     let currencyToSend = "JPY";
     if (payCurrency !== "JPY" && exchangeRates) {
-      const rate = exchangeRates[`jpy_${payCurrency.toLowerCase()}`];
+      // const rate = exchangeRates[`jpy_${payCurrency.toLowerCase()}`];
+      const rate = exchangeRates[`${payCurrency}`];
       if (rate) {
         amountToCharge = Math.round(amountJpy * rate * 100) / 100;
         currencyToSend = payCurrency;
@@ -1980,8 +1982,8 @@ export default function ShippingPoolDetailModal({ pool: initialPool, isAdmin, cu
                       })();
                       const currency = selectedMethodMeta.payment_currency;
                       const CURRENCY_SYMBOLS = { CNY: "¥", USD: "$", TWD: "NT$", HKD: "HK$", EUR: "€", SGD: "S$" };
-                      const rateKey = `jpy_${currency.toLowerCase()}`;
-                      const rate = exchangeRates?.[rateKey];
+                      // const rateKey = `jpy_${currency.toLowerCase()}`;
+                      const rate = exchangeRates?.[currency];
                       const sym = CURRENCY_SYMBOLS[currency] || currency;
                       return (
                         <div className="bg-orange-50 border border-orange-200 rounded-lg px-3 py-2.5 space-y-1">

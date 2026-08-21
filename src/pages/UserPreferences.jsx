@@ -23,6 +23,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { toast } from "sonner";
 
 export default function UserPreferences() {
   const { user } = useCurrentUser();
@@ -33,6 +34,7 @@ export default function UserPreferences() {
   const canChangeAutoArchive = can("profile:change_auto_archive_settings");
   const canChangeDisplayName = can("profile:change_display_name");
   const canChangeDisplayNameAnytime = can("profile:change_display_name_anytime");
+  const canEditPreference = can("block_profile:*");
   
   const [displayName, setDisplayName] = useState("");
   const [avatarUrl, setAvatarUrl] = useState("");
@@ -57,6 +59,8 @@ export default function UserPreferences() {
 
   // Detect return from Alipay credit payment and trigger CreditPanel refresh
   useEffect(() => {
+    console.log(canEditPreference)
+    console.log(canChangeDisplayName)
     const params = new URLSearchParams(window.location.search);
     if (params.get('credit_paid') === '1') {
       // Remove the param from URL without reload
@@ -87,6 +91,7 @@ export default function UserPreferences() {
 
   const handleSave = async () => {
     setSaving(true);
+
     let payload = {
       me: {
         id: user.id,
@@ -99,11 +104,10 @@ export default function UserPreferences() {
       }
       
     }
+
     await base44.auth.updateMe(payload);
-    const data = { ...form, user_email: user.email };
-    console.log(pref)
-    console.log(form)
-    return
+    // const data = { ...form, user_email: user.email };
+    
     // if (pref) {
     //   pref.user_id = user.id;
     //   await userPrefApi.update(pref.id, data);
@@ -111,14 +115,26 @@ export default function UserPreferences() {
     //   const created = await userPrefApi.create(data);
     // }
     // Refresh the user object in AuthContext so avatar/display_name update immediately
-    const updatedUser = await base44.auth.me();
-    setUser(updatedUser);
+    // const updatedUser = await base44.auth.me();
+    // setUser(updatedUser);
     setSaving(false);
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
   };
 
   const displayNameChanged = displayName !== (user?.display_name || user?.full_name || "");
+
+  if (canEditPreference) {
+    return (
+      <div className="max-w-lg mx-auto flex items-center justify-center min-h-[60vh]">
+        <div className="text-center">
+          <Lock className="w-12 h-12 text-gray-300 mx-auto mb-4" />
+          <h2 className="text-lg font-semibold text-gray-700 mb-2">您没有权限修改个人档案</h2>
+          <p className="text-sm text-gray-500">请联系管理员获取权限</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <>

@@ -381,8 +381,8 @@ export default function AdminShippingInfoPanel({
     setSaving(true);
     // 已发货的池子补付时不改变发货状态
     const keepStatus = ["ready_to_ship", "shipped", "delivered"].includes(pool.status);
-    let updateStatus = (keepStatus ? '' : "awaiting_payment_confirmation");
-    const payload = { ...buildUpdatePayload(), status: updateStatus, payment_status: "awaiting_confirmation", order_status: "notified_shipment_fee_pending",
+    let updateStatus = (keepStatus ? '' : "awaiting_payment");
+    const payload = { ...buildUpdatePayload(), status: updateStatus, payment_status: "unpaid", order_status: "notified_shipment_fee_pending",
       notice_key: 'shipping_fee_required'
      };
     await updatePool(payload, { setLoading: setSaving });
@@ -449,6 +449,7 @@ export default function AdminShippingInfoPanel({
       per_user_payments: updatedPerUserPayments,
       order_status: "shipped",
       order_balance_settled: true,
+      notice_key: 'order_shipped'
     };
     await updatePool(payload, { setLoading: setConfirmingSaving });
   };
@@ -470,6 +471,7 @@ export default function AdminShippingInfoPanel({
       post_shipment_paid: true,
       post_shipment_paid_at: new Date().toISOString(),
       order_balance_settled: true,
+      notice_key: 'order_shipped'
     };
     await updatePool(payload, { setLoading: setConfirmingSaving });
   };
@@ -628,6 +630,7 @@ export default function AdminShippingInfoPanel({
       tracking_number: trackingNumber,
       order_status: "shipped",
       order_balance_settled: true,
+      notice_key: 'order_shipped'
     };
     await updatePool(payload, { setLoading: setConfirmingSaving });
   };
@@ -642,7 +645,10 @@ export default function AdminShippingInfoPanel({
       tracking_number: trackingNumber,
       order_status: "shipped",
       order_balance_settled: pool.payment_status === "paid",
+      notice_key: 'order_shipped'
     };
+    console.log(payload)
+
     await updatePool(payload, { setLoading: setSaving });
   };
 

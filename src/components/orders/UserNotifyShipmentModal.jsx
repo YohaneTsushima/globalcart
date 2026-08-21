@@ -287,7 +287,6 @@ export default function UserNotifyShipmentModal({ order, orders, initialData, on
   const [showConfirm, setShowConfirm] = useState(false);
 
   useEffect(() => {
-    console.log(initialData)
     // If initialData was provided by the parent page, use it directly — skip all self-fetches
     if (initialData) {
       const pref = initialData.userPreference;
@@ -586,7 +585,7 @@ export default function UserNotifyShipmentModal({ order, orders, initialData, on
       shared_with_emails: sharedWithEmails,
       customs_declaration: hasCustoms ? customsData : null,
     };
-
+    
     // Call unified engine
     try {
       await base44.functions.invoke('shipping/createShippingPool', {
@@ -596,8 +595,9 @@ export default function UserNotifyShipmentModal({ order, orders, initialData, on
       });
       onSuccess?.();
     } catch (err) {
-      console.error('[UserNotifyShipmentModal] createShippingPool failed:', err);
-      toast.error(err?.message || "提交失败，请稍后重试");
+      let message = err?.response?.data?.message;
+      console.error('[UserNotifyShipmentModal] createShippingPool failed:', message);
+      toast.error(message || "提交失败，请稍后重试");
       setSubmitting(false);
     }
   };

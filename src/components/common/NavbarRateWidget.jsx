@@ -16,7 +16,8 @@ async function fetchRates() {
   if (_cache && now - _cacheTs < 5 * 60 * 1000) return _cache;
   try {
     const r = await base44.functions.invoke("config/page/fetchExchangeRates", {});
-    if (r.data?.rates || r?.data?.jpy) { _cache = (r.data.rates || r?.data?.jpy); _cacheTs = now; return _cache; }
+    let rates = r?.data?.dates || r?.data?.conversion_rates;
+    if (rates) { _cache = rates; _cacheTs = now; return _cache; }
   } catch { /* noop */ }
   return _cache;
 }
@@ -67,7 +68,8 @@ export default function NavbarRateWidget({ currencies = [], unit = 100 }) {
   return (
     <div className="hidden md:flex items-center gap-2 px-2">
       {items.map(({ code, unit: u, reversed }) => {
-        const val = rates[`jpy_${code.toLowerCase()}`] ?? rates[code.toLowerCase()];
+        // const val = rates[`jpy_${code.toLowerCase()}`] ?? rates[code.toLowerCase()];
+        const val = rates[code];
         return (
           <span key={code} className="inline-flex items-center gap-1 text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-2 py-0.5 font-medium whitespace-nowrap">
             <TrendingUp className="w-3 h-3" />

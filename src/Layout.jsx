@@ -304,7 +304,7 @@ export default function Layout({ children, currentPageName }) {
             )}
             {user ? (
               <div className="flex items-center gap-2">
-                <span className="text-sm text-gray-600 hidden sm:inline">{user.displayName || user.userEmail}</span>
+                <span className="text-sm text-gray-600 hidden sm:inline">{user.displayName || user.display_name || user.userEmail}</span>
                 <Button variant="ghost" size="sm" className="text-gray-500 h-7 px-2"
                   onClick={() => base44.auth.logout()}>
                   <LogOut className="w-3.5 h-3.5" />

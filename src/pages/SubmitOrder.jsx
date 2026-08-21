@@ -3,6 +3,7 @@ import { parseNaturalPrice } from "@/lib/naturalNumber";
 import { detectPrimaryStoreTagResult } from "@/lib/onlineStoreTag";
 import { base44 } from "@/api/base44Client";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
+import { useAuth } from "@/lib/AuthContext";
 import { timePage } from "@/lib/timing";
 import { useNavigate } from "react-router-dom";
 import { createPageUrl } from "@/utils";
@@ -30,6 +31,7 @@ const DEFAULT_PREPAY_RATE = 0.80;
 export default function SubmitOrder() {
   const navigate = useNavigate();
   const { user } = useCurrentUser();
+  const { setUser: setAuthUser, setPermissions: setAuthPermissions } = useAuth();
   const { can } = usePermissions();
   const locale = getLocale();
   const canSubmitOrder = can("order:submit_purchase_request");
@@ -65,6 +67,24 @@ export default function SubmitOrder() {
   const [creditDowngradeMsg, setCreditDowngradeMsg] = useState(null);
   const [shippingMethods, setShippingMethods] = useState([]);
   const [pageDataLoading, setPageDataLoading] = useState(true);
+
+  useEffect(() => {
+    setPageDataLoading(true);
+    
+    // 刷新用户权限
+    base44.auth.me().then(res => {
+      const d = res?.data ?? res ?? {};
+      const u = {
+        ...d,
+        email: d.userEmail ?? d.email ?? d.user_email,
+        full_name: d.displayName ?? d.full_name ?? d.fullName ?? d.user_name,
+      };
+      setAuthUser(u);
+      if (Array.isArray(d.permissions)) setAuthPermissions(d.permissions);
+    }).catch(() => {});
+    
+    // 原有逻辑保持不变...
+  }, []);
 
   useEffect(() => {
     setPageDataLoading(true);

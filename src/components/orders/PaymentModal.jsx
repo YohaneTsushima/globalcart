@@ -81,25 +81,25 @@ export default function PaymentModal({ order, mode = "prepay", onClose, onSucces
   const [finalAmountJpy, setFinalAmountJpy] = useState(defaultAmount);
 
   // Fetch exchange rates once on mount
-  useEffect(() => {
-    const DEFAULT_RATES = { JPY: 1, CNY: 0.049, USD: 0.0067, TWD: 0.21, HKD: 0.052, EUR: 0.0061, GBP: 0.0053, AUD: 0.01, SGD: 0.009 };
-    base44.functions.invoke("config/page/fetchExchangeRates", {})
-      .then(r => {
-        if (r && r.data) {
-          let data = r.data;
-          let rs = {
-            JPY: 1,
-            CNY: data.jpy.cny || DEFAULT_RATES.CNY,
-            USD: data.jpy.usd || DEFAULT_RATES.USD,
-            TWD: data.jpy.twd || DEFAULT_RATES.TWD,
-            TWD: data.jpy.hkd || DEFAULT_RATES.HKD
-          };
+  // useEffect(() => {
+  //   const DEFAULT_RATES = { JPY: 1, CNY: 0.049, USD: 0.0067, TWD: 0.21, HKD: 0.052, EUR: 0.0061, GBP: 0.0053, AUD: 0.01, SGD: 0.009 };
+  //   base44.functions.invoke("config/page/fetchExchangeRates", {})
+  //     .then(r => {
+  //       if (r && r.data) {
+  //         let data = r.data;
+  //         let rs = {
+  //           JPY: 1,
+  //           CNY: data.jpy.cny || DEFAULT_RATES.CNY,
+  //           USD: data.jpy.usd || DEFAULT_RATES.USD,
+  //           TWD: data.jpy.twd || DEFAULT_RATES.TWD,
+  //           TWD: data.jpy.hkd || DEFAULT_RATES.HKD
+  //         };
 
-          setRates(rs);
-        }
-      })
-      .catch(() => {});
-  }, []);
+  //         setRates(rs);
+  //       }
+  //     })
+  //     .catch(() => {});
+  // }, []);
 
   // When method changes (for prepay mode), reload surcharge from backend
   useEffect(() => {
@@ -112,6 +112,7 @@ export default function PaymentModal({ order, mode = "prepay", onClose, onSucces
           setSurchargeJpy(sc);
           setFinalAmountJpy(total);
           setPaidAmount(String(Math.round(total)));
+          setRates(r?.data?.rates);
         })
         .catch(() => {});
     } else if (!method) {
