@@ -287,7 +287,7 @@ export default function AdminSettings() {
           settingsData = refreshed.data?.settings || [];
         }
       }
-      
+
       setSettings(settingsData);
       setAddons(data.addons || []);
       setShippingMethods(data.shippingMethods || []);

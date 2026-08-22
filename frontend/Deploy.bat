@@ -9,7 +9,7 @@ set VITE_BACKEND_URL=https://api.beday.cc
 cd /d "%~dp0.."
 
 echo === 1. Building Docker image ===
-docker build --build-arg VITE_BACKEND_URL=%VITE_BACKEND_URL% -f frontend/Dockerfile -t %IMAGE_NAME%:%VERSION% .
+docker build --no-cache --build-arg VITE_BACKEND_URL=%VITE_BACKEND_URL% -f frontend/Dockerfile -t %IMAGE_NAME%:%VERSION% .
 
 echo === 2. Pushing to Docker Hub ===
 docker push %IMAGE_NAME%:%VERSION%

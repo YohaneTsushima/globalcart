@@ -7,7 +7,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Save, RefreshCw, TrendingUp, Clock, Key, AlertCircle } from "lucide-react";
-import { tenantManage } from "@/lib/tenantApi";
 
 const RATE_PAIRS = [
   { key: "jpy_cny", label: "日元 → 人民币", currency: "CNY" },
@@ -55,34 +54,36 @@ export default function TenantExchangeRateSettings({ settings, onReload }) {
   const fetchRates = async () => {
     setRatesLoading(true);
 
-    tenantManage.getRate('TenantsManage')
+    tenantEntity.one('RateSetting')
     .then(res => {
-      setRateId(res?.data?.id);
-      setApiUrl(res?.data?.api_url || "");
-      setPlatformRefreshMinutes(res?.data?.refresh_minutes || 60);
-      setLastFetchedAt(res?.data?.last_fetched_at);
+      console.log(res.data)
+      setLiveRates(res?.rates || res.data);
+      setRawRates(res?.raw_rates || null);
+      setPlatformRefreshMinutes(res?.data.refresh_minutes || 60);
+      setLastFetchedAt(cfgRes.data.last_fetched_at || null);
     }).catch(e => {
         const message = e.response?.data?.message || e.message || '初始化失败';
-        setRoleMsg({ type: 'error', text: message });
+        // setRoleMsg({ type: 'error', text: message });
+        console.log(message)
     }).finally(() => {
         setRatesLoading(false);
     });
 
-    try {
-      const res = await base44.functions.invoke('fetchExchangeRates', {});
-      if (res.data && !res.data.error) {
-        setLiveRates(res.data.rates || res.data);
-        setRawRates(res.data.raw_rates || null);
-        // 解析平台刷新频率（从 managePlatformSettings 获取）
-        const cfgRes = await base44.functions.invoke('managePlatformSettings', { action: 'get_exchange_settings' });
-        if (cfgRes.data) {
-          setPlatformRefreshMinutes(cfgRes.data.refresh_minutes || 60);
-          setLastFetchedAt(cfgRes.data.last_fetched_at || null);
-        }
-      }
-    } finally {
-      setRatesLoading(false);
-    }
+    // try {
+    //   const res = await base44.functions.invoke('fetchExchangeRates', {});
+    //   if (res.data && !res.data.error) {
+    //     setLiveRates(res.data.rates || res.data);
+    //     setRawRates(res.data.raw_rates || null);
+    //     // 解析平台刷新频率（从 managePlatformSettings 获取）
+    //     const cfgRes = await base44.functions.invoke('managePlatformSettings', { action: 'get_exchange_settings' });
+    //     if (cfgRes.data) {
+    //       setPlatformRefreshMinutes(cfgRes.data.refresh_minutes || 60);
+    //       setLastFetchedAt(cfgRes.data.last_fetched_at || null);
+    //     }
+    //   }
+    // } finally {
+    //   setRatesLoading(false);
+    // }
   };
 
   useEffect(() => { fetchRates(); }, []);
@@ -185,7 +186,8 @@ export default function TenantExchangeRateSettings({ settings, onReload }) {
           {liveRates && (
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
               {RATE_PAIRS.map(({ key, label, currency }) => {
-                const raw = rawRates?.[key];
+                let subKey = key.split('_')[1].toUpperCase();
+                const raw = rawRates?.[subKey];
                 const withPlatform = liveRates[key];
                 const tenantInc = parseFloat(increments[key]) || 0;
                 const final = withPlatform != null ? withPlatform + tenantInc : null;

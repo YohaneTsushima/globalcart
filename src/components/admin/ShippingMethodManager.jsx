@@ -454,7 +454,7 @@ export function EstimateRateGlobalSetting({ settings = [] }) {
   const handleSave = async () => {
     setSaving(true);
     const value = JSON.stringify(rows.map(r => ({ country: r.country || "", rate_per_unit: parseFloat(r.rate_per_unit) || 0, unit_g: parseFloat(r.unit_g) || 100 })));
-    debugger
+    
     if (settingId) {
       await tenantEntity.update('SiteSettings', settingId, { value });
     } else {
@@ -514,6 +514,7 @@ export default function ShippingMethodManager({ initialData = null, itemSizeTemp
   useEffect(() => {
     if (initialData === null) return;
     if (methods !== null) return;
+
     if (initialData.length === 0 && !seeding) {
       setSeeding(true);
       Promise.all(DEFAULT_METHODS.map(m => tenantEntity.create('ShippingMethod', m)))

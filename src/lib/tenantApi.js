@@ -122,7 +122,7 @@ export const tenantManage = {
   init:         (entity, filter = {}) => manage(entity, 'init', { filter }).then(r => r || r?.data || r.data?.results || r || []),
   list:         (entity, data = {})   => manage(entity, 'list', { data }).then(r => r || r?.data || r?.data || r.data?.results || r || []),
   diagnose:     (entity, filter = {}) => manage(entity, 'diagnose', { filter }).then(r => r || r?.data || r?.data || r.data?.results || r || []),
-  getRate:      (entity, filter = {}) => manage(entity, 'getRate', { filter }).then(r => r || r?.data || r?.data || r.data?.results || r || []),
+  getRate:      (entity, filter = {}) => manage(entity, 'platformRate', { filter }).then(r => r || r?.data || r?.data || r.data?.results || r || []),
   updateRate:   (entity, id, data) => manage(entity, 'updateRate', { id, data }).then(r => r || r?.data || r?.data || r.data?.results || r || []),
   global:       (entity, filter = {}) => manage(entity, 'global', { filter }).then(r => r || r?.data || r?.data || r.data?.results || r || []),
   create:       (entity, data)        => manage(entity, 'create', { data }).then(r => r || r?.data || r.data?.result || r),

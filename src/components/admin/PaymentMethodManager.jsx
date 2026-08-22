@@ -276,25 +276,25 @@ function OtherPaymentConfig() {
   };
 
   const [config, setConfig] = useState({ ...DEFAULT });
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [uploading, setUploading] = useState(false);
 
-  useEffect(() => {
-    base44.functions.invoke('managePaymentMethod', { action: 'get_other_config' })
-      .then(r => {
-        const c = r.data?.config || {};
-        setConfig({
-          other_payment_name: c.other_payment_name ?? DEFAULT.other_payment_name,
-          other_payment_note: c.other_payment_note ?? '',
-          other_payment_image_url: c.other_payment_image_url ?? '',
-          other_payment_proof_enabled: c.other_payment_proof_enabled ?? 'true',
-          other_payment_skip_proof_override: c.other_payment_skip_proof_override ?? 'false',
-        });
-        setLoading(false);
-      });
-  }, []); // eslint-disable-line
+  // useEffect(() => {
+  //   base44.functions.invoke('managePaymentMethod', { action: 'get_other_config' })
+  //     .then(r => {
+  //       const c = r.data?.config || {};
+  //       setConfig({
+  //         other_payment_name: c.other_payment_name ?? DEFAULT.other_payment_name,
+  //         other_payment_note: c.other_payment_note ?? '',
+  //         other_payment_image_url: c.other_payment_image_url ?? '',
+  //         other_payment_proof_enabled: c.other_payment_proof_enabled ?? 'true',
+  //         other_payment_skip_proof_override: c.other_payment_skip_proof_override ?? 'false',
+  //       });
+  //       setLoading(false);
+  //     });
+  // }, []); // eslint-disable-line
 
   const set = (k, v) => setConfig(p => ({ ...p, [k]: v }));
 
@@ -420,12 +420,21 @@ export default function PaymentMethodManager({ onReload }) {
   const reload = async () => {
     setLoading(true);
     const [methodsRes, settingsRes] = await Promise.all([
-      base44.functions.invoke('managePaymentMethod', { action: 'list' }),
-      base44.functions.invoke('getAdminSettingsPageData', {}),
+      // base44.functions.invoke('managePaymentMethod', { action: 'list' }),
+      [],
+      base44.functions.invoke('admin/settings/getAdminSettingsPageData', {}),
     ]);
-    setMethods(methodsRes.data?.methods || []);
+    setMethods(settingsRes?.data?.data?.methods || []);
 
-    const allSettings = settingsRes.data?.settings || [];
+    // setConfig({
+    //   other_payment_name: c.other_payment_name ?? DEFAULT.other_payment_name,
+    //   other_payment_note: c.other_payment_note ?? '',
+    //   other_payment_image_url: c.other_payment_image_url ?? '',
+    //   other_payment_proof_enabled: c.other_payment_proof_enabled ?? 'true',
+    //   other_payment_skip_proof_override: c.other_payment_skip_proof_override ?? 'false',
+    // });
+
+    const allSettings = settingsRes?.data?.data?.settings || [];
     const keySettings = allSettings.filter(s => s.key.startsWith('alipay_key_'));
     const ids = {};
     keySettings.forEach(s => { ids[s.key] = s.id; });

@@ -340,11 +340,11 @@ export default function NotificationBellComponent() {
                 <ExternalLink className="w-3.5 h-3.5 mr-1.5" />
                 查看全部通知
               </Button>
-              {!isAdmin && (
+              {/* {!isAdmin && (
                 <Button variant="outline" size="sm" className="h-8 px-2" onClick={handleTestSend} title="测试：发送通知给管理员">
                   <Send className="w-3.5 h-3.5" />
                 </Button>
-              )}
+              )} */}
             </div>
           </div>
         </>
