@@ -28,6 +28,14 @@ export default function PlatformAdminSettings() {
   const [diagError, setDiagError] = useState(null);
   const [assigning, setAssigning] = useState({});
   const [assignTarget, setAssignTarget] = useState({});
+  
+  // 已分配用户管理状态
+  const [filterTenant, setFilterTenant] = useState(null);
+  const [searchUser, setSearchUser] = useState("");
+  const [reassignTarget, setReassignTarget] = useState({});
+  const [reassigning, setReassigning] = useState({});
+  const [removing, setRemoving] = useState({});
+  const [assignedExpanded, setAssignedExpanded] = useState(true);
 
   const [tenants, setTenants] = useState([]);
   const [tenantsLoading, setTenantsLoading] = useState(false);
@@ -148,6 +156,73 @@ export default function PlatformAdminSettings() {
     setAssigning(a => ({ ...a, [email]: false }));
     await runDiagnose();
   };
+
+  // 重新分配用户到新租户（通过 relation_id 更新 tenant_id）
+  const handleReassign = async (relationId, newTenantId) => {
+    setReassigning(prev => ({ ...prev, [relationId]: true }));
+
+    try {
+      await tenantManage.assign('TenantsManage', {
+        relation_id: relationId,
+        tenant_id: Number(newTenantId)
+      });
+      toast.success('重新分配成功');
+      await runDiagnose();
+    } catch (e) {
+      const message = e.response?.data?.message || e.message || '分配失败';
+      toast.error(`重新分配失败：${message}`);
+    } finally {
+      setReassigning(prev => ({ ...prev, [relationId]: false }));
+    }
+  };
+
+  // 添加用户至新租户（新增一条关联记录）
+  const handleAddToTenant = async (userId, tenantId) => {
+    setReassigning(prev => ({ ...prev, [`add_${userId}`]: true }));
+
+    try {
+      await tenantManage.assign('TenantsManage', {
+        user_id: userId,
+        tenant_id: Number(tenantId)
+      });
+      toast.success('已添加至新租户');
+      await runDiagnose();
+    } catch (e) {
+      const message = e.response?.data?.message || e.message || '添加失败';
+      toast.error(`添加失败：${message}`);
+    } finally {
+      setReassigning(prev => ({ ...prev, [`add_${userId}`]: false }));
+    }
+  };
+
+  // 移除用户-租户关系（通过 relation_id 删除）
+  const handleRemove = async (relationId) => {
+    setRemoving(prev => ({ ...prev, [relationId]: true }));
+
+    try {
+      await tenantManage.remove('TenantsManage', {
+        relation_id: relationId
+      });
+      toast.success('已移除该用户-租户关系');
+      await runDiagnose();
+    } catch (e) {
+      const message = e.response?.data?.message || e.message || '移除失败';
+      toast.error(`移除失败：${message}`);
+    } finally {
+      setRemoving(prev => ({ ...prev, [relationId]: false }));
+    }
+  };
+
+  // 过滤已分配用户
+  const filteredAssignedUsers = (diagData?.assigned_users || []).filter(u => {
+    if (searchUser && !u.user_email.toLowerCase().includes(searchUser.toLowerCase())) {
+      return false;
+    }
+    if (filterTenant && !u.tenant_relations?.some(r => r.tenant_id === filterTenant)) {
+      return false;
+    }
+    return true;
+  });
 
   const handleSaveDomain = async () => {
     setSavingDomain(true);
@@ -312,11 +387,17 @@ export default function PlatformAdminSettings() {
                   <span className={`font-semibold ${diagData.missing_tenant_users?.length > 0 ? 'text-red-600' : 'text-green-600'}`}>
                     {diagData.missing_tenant_users?.length} 名未分配租户
                   </span>
+                  {diagData.assigned_users?.length > 0 && (
+                    <span className="text-gray-400 ml-2">
+                      · {diagData.assigned_users?.length} 名已分配
+                    </span>
+                  )}
                 </p>
                 {diagData.missing_tenant_users?.length === 0 ? (
                   <p className="text-xs text-green-600">✓ 所有用户均已分配租户</p>
                 ) : (
                   <div className="space-y-2">
+                    <p className="text-xs font-medium text-gray-600">未分配用户</p>
                     {diagData.missing_tenant_users.map(u => (
                       <div key={u.user_email} className="flex items-center gap-2 flex-wrap py-1.5 border-b border-gray-100 last:border-0">
                         <div className="flex-1 min-w-0">
@@ -340,6 +421,141 @@ export default function PlatformAdminSettings() {
                     ))}
                   </div>
                 )}
+
+                {/* 已分配用户区域 */}
+                {diagData.assigned_users?.length > 0 && (
+                  <div className="space-y-2 mt-4">
+                    <button
+                      className="w-full flex items-center justify-between py-1.5 text-xs font-medium text-gray-600 hover:text-gray-800"
+                      onClick={() => setAssignedExpanded(e => !e)}
+                    >
+                      <span>已分配用户 ({filteredAssignedUsers.length})</span>
+                      {assignedExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                    </button>
+                    
+                    {assignedExpanded && (
+                      <>
+                        <div className="flex items-center gap-2">
+                          <Select value={filterTenant ? String(filterTenant) : "all"} onValueChange={v => setFilterTenant(v === "all" ? null : Number(v))}>
+                            <SelectTrigger className="w-36 h-7 text-xs"><SelectValue placeholder="全部租户" /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="all">全部租户</SelectItem>
+                              {(diagData.tenants || []).map(t => (
+                                <SelectItem key={t.id} value={String(t.id)}>{t.name}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <Input
+                            className="w-44 h-7 text-xs"
+                            placeholder="搜索用户..."
+                            value={searchUser}
+                            onChange={e => setSearchUser(e.target.value)}
+                          />
+                        </div>
+
+                        <div className="space-y-2 max-h-96 overflow-y-auto">
+                          {filteredAssignedUsers.length === 0 ? (
+                            <p className="text-xs text-gray-400 py-2">没有匹配的用户</p>
+                          ) : (
+                            filteredAssignedUsers.map(u => {
+                              // 获取该用户未关联的租户列表（用于"添加至新租户"）
+                              const relatedTenantIds = (u.tenant_relations || []).map(r => r.tenant_id);
+                              const availableTenants = (diagData.tenants || []).filter(t => !relatedTenantIds.includes(t.id));
+                              
+                              return (
+                                <div key={u.id || u.user_email} className="border border-gray-100 rounded-lg p-2.5 bg-gray-50/50">
+                                  <div className="flex items-center justify-between mb-1.5">
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-sm font-medium text-gray-800">{u.user_email}</span>
+                                      {u.user_name && <span className="text-xs text-gray-500">({u.user_name})</span>}
+                                      <span className="text-xs text-gray-400">{u.role_name}</span>
+                                    </div>
+                                    
+                                    {/* 添加至新租户 */}
+                                    {availableTenants.length > 0 && (
+                                      <div className="flex items-center gap-1">
+                                        <Select
+                                          value={reassignTarget[`add_select_${u.id}`] || ""}
+                                          onValueChange={v => setReassignTarget(prev => ({ ...prev, [`add_select_${u.id}`]: v }))}
+                                        >
+                                          <SelectTrigger className="w-28 h-6 text-xs"><SelectValue placeholder="添加至租户" /></SelectTrigger>
+                                          <SelectContent>
+                                            {availableTenants.map(t => (
+                                              <SelectItem key={t.id} value={String(t.id)}>{t.name}</SelectItem>
+                                            ))}
+                                          </SelectContent>
+                                        </Select>
+                                        <Button
+                                          size="sm" variant="outline" className="h-6 text-xs px-2 border-green-200 text-green-600 hover:bg-green-50"
+                                          disabled={!reassignTarget[`add_select_${u.id}`] || reassigning[`add_${u.id}`]}
+                                          onClick={() => handleAddToTenant(u.id, reassignTarget[`add_select_${u.id}`])}
+                                        >
+                                          {reassigning[`add_${u.id}`] ? "..." : "+ 添加"}
+                                        </Button>
+                                      </div>
+                                    )}
+                                  </div>
+                                  
+                                  <div className="space-y-1.5 ml-3">
+                                    {(u.tenant_relations || []).length === 0 ? (
+                                      <p className="text-xs text-gray-400 italic">暂无租户关联</p>
+                                    ) : (
+                                      u.tenant_relations.map(rel => {
+                                        const rkey = String(rel.relation_id);
+                                        // 排除该用户所有已关联的租户（与"添加至租户"逻辑一致）
+                                        const availableForReassign = (diagData.tenants || []).filter(t => !relatedTenantIds.includes(t.id));
+                                        
+                                        return (
+                                          <div key={rel.relation_id} className="flex items-center gap-2 flex-wrap py-1 border-l-2 border-blue-200 pl-2">
+                                            <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-200">
+                                              {rel.tenant_name} <span className="text-blue-400 ml-0.5">({rel.tenant_code})</span>
+                                            </Badge>
+                                            
+                                            <Select
+                                              value={reassignTarget[rkey] || ""}
+                                              onValueChange={v => setReassignTarget(prev => ({ ...prev, [rkey]: v }))}
+                                            >
+                                              <SelectTrigger className="w-28 h-6 text-xs"><SelectValue placeholder="更改租户" /></SelectTrigger>
+                                              <SelectContent>
+                                                {availableForReassign.length === 0 ? (
+                                                  <SelectItem value="none" disabled>无可选租户</SelectItem>
+                                                ) : (
+                                                  availableForReassign.map(t => (
+                                                    <SelectItem key={t.id} value={String(t.id)}>{t.name}</SelectItem>
+                                                  ))
+                                                )}
+                                              </SelectContent>
+                                            </Select>
+                                            <Button
+                                              size="sm" variant="outline" className="h-6 text-xs px-2 border-blue-200 text-blue-600 hover:bg-blue-50"
+                                              disabled={!reassignTarget[rkey] || reassigning[rkey] || availableForReassign.length === 0}
+                                              onClick={() => handleReassign(rel.relation_id, reassignTarget[rkey])}
+                                            >
+                                              {reassigning[rkey] ? "..." : "改分配"}
+                                            </Button>
+                                            
+                                            <Button
+                                              size="sm" variant="ghost" className="h-6 text-xs px-2 text-red-500 hover:text-red-700 hover:bg-red-50"
+                                              disabled={removing[rkey]}
+                                              onClick={() => handleRemove(rel.relation_id)}
+                                            >
+                                              {removing[rkey] ? "..." : "移除"}
+                                            </Button>
+                                          </div>
+                                        );
+                                      })
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })
+                          )}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
+
                 <Button size="sm" variant="outline" className="text-xs h-7" onClick={runDiagnose}>刷新诊断</Button>
               </>
             ) : null}

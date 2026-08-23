@@ -127,6 +127,7 @@ export const tenantManage = {
   global:       (entity, filter = {}) => manage(entity, 'global', { filter }).then(r => r || r?.data || r?.data || r.data?.results || r || []),
   create:       (entity, data)        => manage(entity, 'create', { data }).then(r => r || r?.data || r.data?.result || r),
   assign:       (entity, data)        => manage(entity, 'assign', { data }).then(r => r || r?.data || r.data?.result || r),
+  remove:       (entity, data)        => manage(entity, 'remove', { data }).then(r => r || r?.data || r.data?.result || r),
   assignAll:    (entity, data)        => manage(entity, 'assignAll', { data }).then(r => r || r?.data || r.data?.result || r),
   update:       (entity, id, data)    => manage(entity, 'update', { id, data }).then(r => r || r?.data || r.data?.result || r),
   setDef:       (entity, data)        => manage(entity, 'setGlobalDefaultRole', { data }).then(r => r || r?.data || r.data?.result || r),
