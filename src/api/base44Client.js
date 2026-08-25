@@ -1,6 +1,6 @@
 import axios from 'axios';
 import { t, getLocale } from "@/lib/i18n";
-import { refreshAndReconnect } from "@/lib/socket";
+import { reconnectWebSocket } from "@/lib/socket";
 
 // 本地开发时从环境变量或配置读取
 const tenantCode = import.meta.env.VITE_TENANT_CODE || 
@@ -58,6 +58,22 @@ api.interceptors.response.use(
     // 非 401 直接拒绝
     if (status !== 401) return Promise.reject(err);
 
+    // 验证 401 是否真的是 token 相关错误，防止数据库等其他异常被误当 token 过期处理
+    const errorData = err?.response?.data;
+    const msgText = String(errorData?.msg ?? errorData?.message ?? '');
+    const isTokenError = !errorData ||
+      errorData.code === 401 ||                     // 后端 R 格式：数字 code 401
+      errorData.code === 'TOKEN_EXPIRED' ||
+      errorData.code === 'UNAUTHORIZED' ||
+      errorData.code === 'INVALID_TOKEN' ||
+      errorData.code === 'TOKEN_INVALID' ||
+      msgText.toLowerCase().includes('token') ||
+      msgText.toLowerCase().includes('expired') ||
+      msgText.toLowerCase().includes('过期') ||
+      msgText.toLowerCase().includes('unauthorized');
+      
+    if (!isTokenError) return Promise.reject(err);
+
     // 如果是 refresh 接口本身 401，直接清 token 跳登录
     if (originalRequest?.url?.includes('/auth/refresh')) {
       localStorage.removeItem('access_token');
@@ -105,8 +121,8 @@ api.interceptors.response.use(
       localStorage.setItem('token', newToken);
       if (newRefreshToken) localStorage.setItem('refresh_token', newRefreshToken);
 
-      // 刷新 WebSocket 连接
-      refreshAndReconnect();
+      // token 已由拦截器刷新并存入 localStorage，这里只需重连 WebSocket（不再二次刷新）
+      reconnectWebSocket();
 
       // 创建新请求（不复用 originalRequest，避免 headers 冻结问题）
       const retryConfig = { ...originalRequest, headers: { ...originalRequest.headers, Authorization: `Bearer ${newToken}` } };
@@ -186,8 +202,9 @@ export const base44 = {
       window.location.href = redirectUrl || `/${lang}/home`;
     },
     alipayLogin: async (redirectUrl) => {
-
-      const res = await api.get('/globalcart/auth/alipay/authorize');
+      const params = new URLSearchParams(redirectUrl || '');
+      const tenant = params.get('tenant') || 'tongyi';
+      const res = await api.get(`/globalcart/auth/alipay/authorize?tenant=${encodeURIComponent(tenant)}`);
       const { url } = res.data.data;
 
       const width = 762;

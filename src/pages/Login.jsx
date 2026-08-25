@@ -84,7 +84,10 @@ export default function Login() {
 
   const getRedirect = () => {
     const next = searchParams.get('next');
-    return next ? `?next=${encodeURIComponent(next)}` : '';
+    const params = new URLSearchParams();
+    params.set('tenant', tenant?.id || 'tongyi');
+    if (next) params.set('next', next);
+    return `?${params.toString()}`;
   };
 
   const performLogin = async () => {
