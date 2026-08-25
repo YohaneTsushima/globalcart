@@ -9,7 +9,9 @@
     "lint": "eslint . --quiet",
     "lint:fix": "eslint . --fix",
     "typecheck": "tsc -p ./jsconfig.json",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "dev:scraper": "cd server && npm install && node mercari-scraper.js",
+    "dev:all": "npx concurrently \"npm run dev\" \"npm run dev:scraper\""
   },
   "dependencies": {
     "@hello-pangea/dnd": "^17.0.0",

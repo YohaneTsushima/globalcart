@@ -59,8 +59,6 @@ export default function UserPreferences() {
 
   // Detect return from Alipay credit payment and trigger CreditPanel refresh
   useEffect(() => {
-    console.log(canEditPreference)
-    console.log(canChangeDisplayName)
     const params = new URLSearchParams(window.location.search);
     if (params.get('credit_paid') === '1') {
       // Remove the param from URL without reload

@@ -53,10 +53,9 @@ export default function Home() {
       if (cached) {
         raw = cached.settings || [];
         faqCategories = cached.faqCategories || [];
-      } else {
-        // Try authenticated endpoint first; fall back to public
+      } else if (user) {
+        // Logged-in users: use authenticated endpoint (has 30s in-memory cache shared with Layout/AdminSettings)
         try {
-          // const r = await base44.functions.invoke('getTenantConfigData', {});
           const r = await tenantEntity.homeConfig('SiteSettings');
           const data = r || r?.data || {};
 
@@ -64,15 +63,7 @@ export default function Home() {
           faqCategories = data.faqCategories || [];
           // Cache it for reuse across components
           setTenantConfigCache({ ...data, faqCategories });
-        } catch {
-          // Guest / unauthenticated: use public endpoint
-          try {
-            // const r = await base44.functions.invoke('getPublicHomeConfig', { hostname: window.location.hostname });
-            const r = [];
-            raw = r.data?.raw || [];
-            faqCategories = r.data?.faqCategories || [];
-          } catch { /* silent */ }
-        }
+        } catch { /* silent */ }
       }
 
       var values = {

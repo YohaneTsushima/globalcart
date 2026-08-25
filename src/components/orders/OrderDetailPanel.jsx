@@ -122,7 +122,7 @@ export default function OrderDetailPanel({ order, onClose, onRefresh, userProfil
   const statusColor = getStatusColor(order.order_status, isAdmin ? "admin" : "user");
 
   return (
-    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4 overflow-y-auto">
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4 overflow-y-auto" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="bg-white rounded-xl shadow-xl w-full max-w-4xl my-8" onClick={e => e.stopPropagation()}>
         {/* Header */}
         <div className="flex items-start justify-between px-6 py-4 border-b sticky top-0 bg-white rounded-t-xl z-10">
@@ -183,7 +183,7 @@ export default function OrderDetailPanel({ order, onClose, onRefresh, userProfil
               {/* Key metrics */}
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                 <div className="bg-blue-50 border border-blue-100 rounded-lg p-3">
-                  <div className="text-xs text-blue-600 mb-1">日元估价</div>
+                  <div className="text-xs text-blue-600 mb-1">日元货款</div>
                   <div className="text-lg font-bold text-blue-700">
                     {order.estimated_jpy ? `${Math.round(order.estimated_jpy).toLocaleString()} JPY` : "-"}
                   </div>
@@ -195,7 +195,7 @@ export default function OrderDetailPanel({ order, onClose, onRefresh, userProfil
                   </div>
                 </div>
                 <div className="bg-purple-50 border border-purple-100 rounded-lg p-3">
-                  <div className="text-xs text-purple-600 mb-1">预付款</div>
+                  <div className="text-xs text-purple-600 mb-1">{order.payment_mode === 'fullpay_once' ? '日元货款总额' : '预付款'}</div>
                   <div className="text-lg font-bold text-purple-700">
                     {order.prepayment_amount ? formatCurrency(order.prepayment_amount, order.prepayment_currency) : "-"}
                   </div>
@@ -203,7 +203,7 @@ export default function OrderDetailPanel({ order, onClose, onRefresh, userProfil
                 <div className="bg-orange-50 border border-orange-100 rounded-lg p-3">
                   <div className="text-xs text-orange-600 mb-1">支付方式</div>
                   <div className="text-sm font-bold text-orange-700">
-                    {PAYMENT_METHOD_LABELS[order.payment_method] || order.payment_method || "-"}
+                    {order.order_status === 'payment_pending' ? '-' : PAYMENT_METHOD_LABELS[order.payment_method] || order.payment_method || "-"}
                   </div>
                 </div>
               </div>
@@ -229,20 +229,21 @@ export default function OrderDetailPanel({ order, onClose, onRefresh, userProfil
                   <div className="text-sm font-semibold text-gray-700 mb-2 flex items-center gap-2">
                     <FileText className="w-4 h-4" />商品链接
                   </div>
-                  <div className="bg-gray-50 rounded-lg p-3">
-                    <ReactMarkdown
-                      className="text-sm text-gray-700 prose prose-sm max-w-none [&_a]:text-blue-600 [&_a]:break-all"
-                      components={{
-                        a: ({ href, children }) => (
-                          <a href={href} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1">
-                            <ExternalLink className="w-3 h-3" />
-                            {children}
-                          </a>
-                        ),
-                      }}
-                    >
-                      {order.product_url}
-                    </ReactMarkdown>
+                  <div className="bg-gray-50 rounded-lg p-3 space-y-1">
+                    {order.product_url.split('\n').filter(Boolean).map((url, idx) => (
+                      <div key={idx} className="flex items-center gap-1.5">
+                        <ExternalLink className="w-3 h-3 text-gray-400 shrink-0" />
+                        <a
+                          href={url.trim()}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-sm text-blue-600 hover:text-blue-800 hover:underline block truncate"
+                          title={url.trim()}
+                        >
+                          {url.trim()}
+                        </a>
+                      </div>
+                    ))}
                   </div>
                 </div>
               )}
@@ -344,10 +345,10 @@ export default function OrderDetailPanel({ order, onClose, onRefresh, userProfil
                     <span className="text-gray-500">商品名称</span>
                     <span className="font-medium text-gray-900">{order.product_name}</span>
                   </div>
-                  <div className="flex justify-between">
+                  {/* <div className="flex justify-between">
                     <span className="text-gray-500">数量</span>
                     <span className="font-medium text-gray-900">×{order.quantity}</span>
-                  </div>
+                  </div> */}
                   <div className="flex justify-between">
                     <span className="text-gray-500">订单状态</span>
                     <Badge className={`text-xs ${statusColor}`}>{statusLabel}</Badge>
@@ -366,6 +367,7 @@ export default function OrderDetailPanel({ order, onClose, onRefresh, userProfil
               </div>
 
               {/* Payment info */}
+              {order.order_status !== 'payment_pending' && (
               <div className="bg-gray-50 rounded-lg p-4 space-y-2">
                 <div className="text-sm font-semibold text-gray-700 mb-2">支付信息</div>
                 <div className="space-y-1.5 text-sm">
@@ -408,6 +410,7 @@ export default function OrderDetailPanel({ order, onClose, onRefresh, userProfil
                   )}
                 </div>
               </div>
+              )}
 
               {/* Addons */}
               {((order.selected_addons || []).length > 0 || (order.selected_addon_ids || []).length > 0) && (
@@ -520,7 +523,7 @@ export default function OrderDetailPanel({ order, onClose, onRefresh, userProfil
                 <div className="space-y-2 text-sm">
                   {/* Base item cost */}
                   <div className="flex justify-between items-center py-1">
-                    <span className="text-green-700">商品日元估价</span>
+                    <span className="text-green-700">商品日元货款</span>
                     <span className="font-medium text-green-900">
                       {order.estimated_jpy ? `${Math.round(order.estimated_jpy).toLocaleString()} JPY` : "-"}
                     </span>
@@ -575,12 +578,14 @@ export default function OrderDetailPanel({ order, onClose, onRefresh, userProfil
                   )}
 
                   {/* Subtotal */}
+                  {order.payment_mode !== 'fullpay_once' && (
                   <div className="border-t border-green-300 pt-2 flex justify-between items-center text-base">
                     <span className="font-semibold text-green-900">预付款总额</span>
                     <span className="font-bold text-green-900">
                       {formatCurrency(order.prepayment_amount_jpy || 0, order.prepayment_currency)}
                     </span>
                   </div>
+                  )}
 
                   {/* Paid amount */}
                   {(order.paid_amount || 0) > 0 && (() => {
@@ -609,10 +614,7 @@ export default function OrderDetailPanel({ order, onClose, onRefresh, userProfil
                   <div className="border-t-2 border-green-400 pt-3 flex justify-between items-center text-lg bg-green-100/50 rounded px-3 py-2">
                     <span className="font-bold text-green-900">待付金额</span>
                     <span className="font-bold text-green-900">
-                       {formatCurrency(
-                        (order.estimated_jpy || 0) - (order.prepayment_amount || 0) - (order.balance_credit || 0),
-                        "JPY"
-                      )}
+                       {formatCurrency(order?.full_payment_amount, "JPY")}
                     </span>
                   </div>
                 </div>

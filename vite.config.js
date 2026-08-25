@@ -39,6 +39,10 @@ export default defineConfig(({ mode }) => {
   },
   server: {
     proxy: {
+      '/api/scraper': {
+        target: 'http://localhost:3002',
+        changeOrigin: true,
+      },
       '/func': {
         target: 'http://localhost:3001',
         changeOrigin: true,

@@ -80,6 +80,8 @@ export default function Payment() {
   const [settings, setSettings] = useState({});
   const [paymentMethods, setPaymentMethods] = useState([]);
   const [rates, setRates] = useState(null);
+  const [tenantRates, setTenantRates] = useState(null);
+  const [platformRates, setPlatformRates] = useState(null);
   const [proofFile, setProofFile] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [submitted, setSubmitted] = useState(false);
@@ -149,7 +151,9 @@ export default function Payment() {
             ? data.payment_methods
             : data.payment_methods?.payment_methods || [];
           setPaymentMethods(methodsList);
-          setRates(data.rates || null); 
+          setRates(data.raw_rates || null); 
+          setTenantRates(data.tenant_rates || null);
+          setPlatformRates(data.platform_rates || null);
           setOtherPaymentConfig(data.other_payment_config || null);
           setServerPaymentData({
             isFullPayOnce: data.is_full_pay_once || false,
@@ -333,12 +337,15 @@ export default function Payment() {
   let rateValue = null;
   
   if (!isJpy) {
-    // 优先用下单时的汇率，fallback 到实时汇率
-    const orderRate = order?.prepaymentRateJpyCny || order?.prepayment_rate_jpy_cny;
-    if (payCurrency === "CNY" && orderRate) {
-      rateValue = orderRate;
-    } else if (rates && rates[payCurrency]) {
-      rateValue = rates[payCurrency];
+    // 计算最终汇率 = raw + platform + tenant
+    if (rates && rates[payCurrency]) {
+      const rawRate = rates[payCurrency] || 0;
+      const platformRate = platformRates?.[payCurrency] || 0;
+      const tenantRate = tenantRates?.[payCurrency] || 0;
+      rateValue = rawRate + platformRate + tenantRate;
+    } else if (payCurrency === "CNY") {
+      // fallback: 用下单时的汇率
+      rateValue = order?.prepaymentRateJpyCny || order?.prepayment_rate_jpy_cny || null;
     }
     if (rateValue) {
       const converted = amountJpy * rateValue;
@@ -476,13 +483,18 @@ export default function Payment() {
                 <div className="flex items-center justify-between">
                   <div>
                     <div className="text-xs text-orange-600 font-medium">实际应付（{payCurrency}）</div>
-                    <div className="text-xs text-gray-400 mt-0.5">汇率：1 JPY ≈ {rateValue?.toFixed(4)} {payCurrency}</div>
+                    <div className="text-xs text-gray-400 mt-0.5">汇率：1 JPY ≈ {rateValue?.toFixed(5)} {payCurrency}</div>
                   </div>
                   <div className="text-right">
                     <div className="text-2xl font-bold text-orange-600">{paySymbol}{convertedAmount}</div>
                     <div className="text-xs text-orange-500">{payCurrency}</div>
                   </div>
                 </div>
+                {rates?.[payCurrency] && (
+                  <p className="text-xs text-gray-400 mt-1">
+                    最终汇率 = 市场汇率[{(rates[payCurrency] || 0).toFixed(5)}] + 平台增量[{(platformRates?.[payCurrency] || 0).toFixed(5)}] + 租户增量[{(tenantRates?.[payCurrency] || 0).toFixed(5)}]
+                  </p>
+                )}
                 <p className="text-xs text-orange-400 mt-2">请按以上 {payCurrency} 金额付款，汇率实时参考，以实际到账为准</p>
               </div>
             )}

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { parseNaturalPrice } from "@/lib/naturalNumber";
 import { detectPrimaryStoreTagResult } from "@/lib/onlineStoreTag";
 import { base44 } from "@/api/base44Client";
@@ -7,7 +7,8 @@ import { useAuth } from "@/lib/AuthContext";
 import { timePage } from "@/lib/timing";
 import { useNavigate } from "react-router-dom";
 import { createPageUrl } from "@/utils";
-import { ShoppingBag, Info, Upload, Plus, X, HelpCircle, AlertTriangle, Lock, Truck } from "lucide-react";
+import { ShoppingBag, Info, Upload, Plus, X, HelpCircle, AlertTriangle, Lock, Truck, Loader2, ChevronDown } from "lucide-react";
+import { isMercariUrl, fetchMercariItemInfo } from "@/lib/mercariApi";
 import { usePermissions } from "@/hooks/usePermissions";
 import FeeCalculator from "@/components/orders/FeeCalculator";
 import PaymentSection from "@/components/orders/PaymentSection";
@@ -20,6 +21,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import ConfirmDialog from "@/components/common/ConfirmDialog";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/components/ui/collapsible";
 import { toast } from "sonner";
 import { t, getLocale } from "@/lib/i18n";
 
@@ -50,6 +52,7 @@ export default function SubmitOrder() {
   const [selectedAddons, setSelectedAddons] = useState([]);
   const [addonCustomFees, setAddonCustomFees] = useState({});
   const [addonFeeErrors, setAddonFeeErrors] = useState({});
+  const [addonsOpen, setAddonsOpen] = useState(false);
   const [form, setForm] = useState({
     order_name: "", product_description: "",
     estimated_jpy: "", prepayment_currency: "JPY",
@@ -58,8 +61,11 @@ export default function SubmitOrder() {
   const [calculated, setCalculated] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [dontShowAgain, setDontShowAgain] = useState(false);
   const [pendingForm, setPendingForm] = useState(null);
   const [uploading, setUploading] = useState(false);
+  const [fetchingPrice, setFetchingPrice] = useState(false);
+  const fetchingRef = useRef(false);
   const [paymentMethod, setPaymentMethod] = useState("");
   const [paymentMethods, setPaymentMethods] = useState([]);
   const [paymentMode, setPaymentMode] = useState("");
@@ -67,6 +73,7 @@ export default function SubmitOrder() {
   const [creditDowngradeMsg, setCreditDowngradeMsg] = useState(null);
   const [shippingMethods, setShippingMethods] = useState([]);
   const [pageDataLoading, setPageDataLoading] = useState(true);
+  const [userPreference, setUserPreference] = useState(null);
 
   useEffect(() => {
     setPageDataLoading(true);
@@ -106,6 +113,7 @@ export default function SubmitOrder() {
       timer.done('data ready');
 
       setPaymentMethods(r?.data?.payment_methods || []);
+      setUserPreference(r?.data?.user_preference || null);
       setPageDataLoading(false);
     }).catch((err) => {
       console.error('SubmitOrder data load failed:', err);
@@ -116,9 +124,9 @@ export default function SubmitOrder() {
     //   .then((r) => { setPaymentMethods(r?.data?.payment_methods || []); })
     //   .catch(() => {});
     
-    base44.functions.invoke('shipping/getTenantShippingPools', { action: 'list_shipping_methods' })
-      .then((r) => { setShippingMethods(r.data?.methods || []); })
-      .catch(() => {});
+    // base44.functions.invoke('shipping/getTenantShippingPools', { action: 'list_shipping_methods' })
+    //   .then((r) => { setShippingMethods(r.data?.methods || []); })
+    //   .catch(() => {});
   }, []);
 
   const getAddonTotal = () => selectedAddons.reduce((sum, id) => {
@@ -199,6 +207,37 @@ export default function SubmitOrder() {
   };
 
   useEffect(() => { if (form.estimated_jpy) calculate(); }, [form.estimated_jpy, selectedAddons, addonCustomFees, settings, activeRule]);
+
+  // 自动抓取 Mercari 价格（多个链接累加）
+  useEffect(() => {
+    const mercariUrls = productUrls.map(u => u.trim()).filter(u => isMercariUrl(u));
+    if (mercariUrls.length === 0) return;
+
+    const timer = setTimeout(async () => {
+      if (fetchingRef.current) return;
+      fetchingRef.current = true;
+      setFetchingPrice(true);
+      try {
+        const results = await Promise.allSettled(mercariUrls.map(u => fetchMercariItemInfo(u)));
+        const totalPrice = results
+          .filter(r => r.status === 'fulfilled')
+          .reduce((sum, r) => sum + (r.value.price || 0), 0);
+
+        if (totalPrice > 0) {
+          setForm(f => ({ ...f, estimated_jpy: String(totalPrice) }));
+          const successCount = results.filter(r => r.status === 'fulfilled').length;
+          toast.success(`已自动获取 ${successCount} 个 Mercari 商品，合计 ¥${totalPrice}`);
+        }
+      } catch (err) {
+        console.warn('Mercari 价格自动获取失败:', err.message);
+      } finally {
+        setFetchingPrice(false);
+        fetchingRef.current = false;
+      }
+    }, 800);
+
+    return () => clearTimeout(timer);
+  }, [productUrls]);
 
   const deleteImageByUrl = async (imageUrl, path = "submitOrder") => {
     if (!imageUrl) return;
@@ -378,12 +417,21 @@ export default function SubmitOrder() {
             payment_rate_jpy_cny: selectedCurrency === 'CNY' ? (rates?.jpy_cny || null) : null,
             notice_key: 'order_created',
             selected_addon_ids: selectedAddons,
-            selected_addons: selectedAddonObjects.map((a) => ({ id: a.id, service_name: a.service_name, fee: parseFloat(a.fee) || 0, fee_currency: a.fee_currency || "JPY" }))
+            selected_addons: selectedAddonObjects.map((a) => ({ id: a.id, service_name: a.service_name, fee: parseFloat(a.fee) || 0, fee_currency: a.fee_currency || "JPY" })),
+            show_prompt: !dontShowAgain
       };
 
-      // 弹窗确认，确认后才调后端
-      setPendingForm(submitForm);
-      setConfirmOpen(true);
+      // 判断是否需要弹窗确认
+      const shouldShowConfirm = userPreference?.confirm_order_count > 0 && userPreference?.show_prompt !== false;
+      
+      if (shouldShowConfirm) {
+        // 弹窗确认，确认后才调后端
+        setPendingForm(submitForm);
+        setConfirmOpen(true);
+      } else {
+        // 直接提交（首次下单或用户选择不再提示）
+        await confirmSubmitOrder(submitForm);
+      }
     } catch (error) {
       toast.error(t('提交失败：', locale) + error.message);
       setSubmitting(false);
@@ -391,12 +439,19 @@ export default function SubmitOrder() {
   };
 
   // 确认提交订单（弹窗点"是"后执行）
-  const confirmSubmitOrder = async () => {
-    if (!pendingForm) return;
+  const confirmSubmitOrder = async (formData) => {
+    const formToSubmit = formData || pendingForm;
+    if (!formToSubmit) return;
     setConfirmOpen(false);
+    
+    // 根据 checkbox 状态更新 show_prompt
+    const finalForm = { ...formToSubmit, show_prompt: !dontShowAgain };
+    setDontShowAgain(false);
     setSubmitting(true);
+
     try {
-      const res = await base44.functions.invoke('order/info/createTenantOrder', pendingForm);
+
+      const res = await base44.functions.invoke('order/info/createTenantOrder', finalForm);
 
       const order = res?.data;
       
@@ -476,40 +531,44 @@ export default function SubmitOrder() {
     const selectedCurrencyForPre = selectedMethodObjForPre?.paymentCurrency || "JPY";
 
     try {
-      const res = IS_DEV_MOCK
-        ? { data: { order: { id: 'dev-order-pre-' + Date.now() } } }
-        : await base44.functions.invoke('createTenantOrder', {
-            ...form,
-            product_link: urlsText,
-            user_email: user.email,
-            user_name: user.full_name || user.email,
-            quantity: 1,
-            estimated_jpy: parseFloat(form.estimated_jpy) || 0,
-            service_fee_rate: parseFloat(settings.service_fee_rate) || 10,
-            service_fee_amount: calculated ? calculated.serviceFeeJpy : null,
-            service_fee_rule_id: activeRule?.id || null,
-            service_fee_rule_name: activeRule?.name || null,
-            service_fee_rule_version: activeRule?.version || null,
-            prepayment_amount: prepaymentAmount,
-            prepayment_currency: "JPY",
-            payment_method: paymentMethod,
-            online_store_tag: tagResult.tag_label,
-            online_store_tag_color: tagResult.tag_color,
-            payment_mode: paymentMode || "prepay",
-            order_status: "payment_pending",
-            payment_status: "awaiting_payment",
-            user_note: form.user_note || "",
-            note_image_url: form.note_image_url || "",
-            selected_addon_ids: selectedAddons,
-            selected_addons: selectedAddons.map(id => {
-              const addon = addonOptions.find(a => a.id === id);
-              if (!addon) return null;
-              const customFee = addonCustomFees[id];
-              const isCustomizable = addon.is_user_customizable;
-              const fee = isCustomizable && customFee !== undefined ? customFee : parseFloat(addon.fee) || 0;
-              return { id: addon.id, name: addon.name, fee, fee_currency: addon.fee_currency || "JPY" };
-            }).filter(Boolean)
-          });
+      const payload = {
+        ...form,
+        product_link: urlsText,
+        user_email: user.email,
+        user_name: user.full_name || user.email,
+        quantity: 1,
+        estimated_jpy: parseFloat(form.estimated_jpy) || 0,
+        service_fee_rate: parseFloat(settings.service_fee_rate) || 10,
+        service_fee_amount: calculated ? calculated.serviceFeeJpy : null,
+        service_fee_rule_id: activeRule?.id || null,
+        service_fee_rule_name: activeRule?.name || null,
+        service_fee_rule_version: activeRule?.version || null,
+        prepayment_amount: prepaymentAmount,
+        prepayment_currency: "JPY",
+        payment_method: paymentMethod,
+        online_store_tag: tagResult.tag_label,
+        online_store_tag_color: tagResult.tag_color,
+        payment_mode: paymentMode || "prepay",
+        order_status: "payment_pending",
+        payment_status: "awaiting_payment",
+        user_note: form.user_note || "",
+        note_image_url: form.note_image_url || "",
+        selected_addon_ids: selectedAddons,
+        selected_addons: selectedAddons.map(id => {
+          const addon = addonOptions.find(a => a.id === id);
+          if (!addon) return null;
+          const customFee = addonCustomFees[id];
+          const isCustomizable = addon.is_user_customizable;
+          const fee = isCustomizable && customFee !== undefined ? customFee : parseFloat(addon.fee) || 0;
+          return { id: addon.id, name: addon.name, fee, fee_currency: addon.fee_currency || "JPY" };
+        }).filter(Boolean)
+      };
+
+      console.log(payload)
+setSubmitting(false);
+      return;
+
+      await base44.functions.invoke('createTenantOrder', payload);
       setSubmitting(false);
       
       if (res.data?.error) {
@@ -596,13 +655,21 @@ export default function SubmitOrder() {
               </div>
 
               {urlMode === "textarea" ? (
-                <Textarea
-                  placeholder={t("https://www.amazon.co.jp/...（必填）", locale)}
-                  value={productUrls[0] || ""}
-                  onChange={(e) => setProductUrls([e.target.value])}
-                  className={`mt-1 text-sm font-mono ${!(productUrls[0] || "").trim() ? "border-red-400 placeholder:text-red-400 focus-visible:ring-red-300" : ""}`}
-                  rows={3}
-                />
+                <div>
+                  <Textarea
+                    placeholder={t("https://www.amazon.co.jp/...（必填）", locale)}
+                    value={productUrls[0] || ""}
+                    onChange={(e) => setProductUrls([e.target.value])}
+                    className={`mt-1 text-sm font-mono ${!(productUrls[0] || "").trim() ? "border-red-400 placeholder:text-red-400 focus-visible:ring-red-300" : ""}`}
+                    rows={3}
+                  />
+                  {fetchingPrice && isMercariUrl(productUrls[0]) && (
+                    <div className="flex items-center gap-1.5 mt-1">
+                      <Loader2 className="w-3.5 h-3.5 text-blue-500 animate-spin" />
+                      <span className="text-xs text-blue-500">{t("正在获取商品信息...", locale)}</span>
+                    </div>
+                  )}
+                </div>
               ) : (
                 <div className="mt-1 space-y-2">
                   {productUrls.map((url, idx) => (
@@ -623,6 +690,9 @@ export default function SubmitOrder() {
                         <button type="button" onClick={addUrl} className="text-gray-400 hover:text-blue-600">
                           <Plus className="w-4 h-4" />
                         </button>
+                      )}
+                      {fetchingPrice && idx === 0 && isMercariUrl(url) && (
+                        <Loader2 className="w-4 h-4 text-blue-500 animate-spin shrink-0" />
                       )}
                     </div>
                   ))}
@@ -664,7 +734,7 @@ export default function SubmitOrder() {
               </div>
             </div>
 
-            <div>
+            <div style={{ display: 'none' }}>
               <Label className="text-sm font-medium">{t("商品描述 / 规格", locale)}</Label>
               <Textarea 
                 placeholder={t("数量、颜色、尺码等（可选）", locale)} 
@@ -677,71 +747,87 @@ export default function SubmitOrder() {
 
             {/* 增值服务 - 可折叠 */}
             {(pageDataLoading || addonOptions.length > 0) && canSelectOrderAddons && (
-              <div className="border-t border-gray-100 pt-3">
-                <Label className="text-sm font-medium mb-2 block">{t("增值服务（可选）", locale)}</Label>
-                {pageDataLoading ? (
-                  <div className="space-y-2">
-                    {[1, 2, 3].map(i => (
-                      <div key={i} className="h-16 rounded-lg border border-gray-100 bg-gray-50 animate-pulse" />
-                    ))}
-                  </div>
-                ) : (
-                <div className="space-y-2 max-h-[280px] overflow-y-auto">
-                  {addonOptions.map((opt) => {
-                    const isSelected = selectedAddons.includes(opt.id);
-                    const isCustomizable = opt.is_user_customizable;
-                    const customFee = addonCustomFees[opt.id];
-                    const effectiveFee = isCustomizable && customFee !== undefined ? customFee : parseFloat(opt.fee) || 0;
-                    const feeCur = opt.fee_currency || "JPY";
-                    return (
-                      <div key={opt.id} className={`rounded-lg border p-2.5 transition-colors ${isSelected ? "border-yellow-400 bg-yellow-50" : "border-gray-200"}`}>
-                        <label className="flex items-start gap-3 cursor-pointer">
-                          <Checkbox
-                            checked={isSelected}
-                            onCheckedChange={() => toggleAddon(opt.id)}
-                            className="mt-0.5"
-                          />
-                          <div className="flex-1">
-                            <div className="flex items-center justify-between gap-2 flex-wrap mb-1">
-                              <span className="text-sm font-medium text-gray-800">{opt.service_name}</span>
-                              <span className="text-sm text-red-600 font-semibold">
-                                +{feeCur} {feeCur === "JPY" ? Math.round(effectiveFee) : effectiveFee}
-                              </span>
-                            </div>
-                            {opt.user_description && <p className="text-xs text-gray-500 mt-0.5">{t(opt.user_description, locale)}</p>}
-                            {isCustomizable && isSelected && (
-                              <div className="mt-2 space-y-1.5">
-                                <div className="flex items-center gap-2">
-                                  <Label className="text-xs text-gray-600">{t("自定义金额", locale)} ({opt.fee_min || 0} - {opt.fee_max || '∞'} {feeCur})</Label>
-                                  <Input
-                                    type="number"
-                                    min={opt.fee_min || 0}
-                                    max={opt.fee_max || undefined}
-                                    step="1"
-                                    placeholder={opt.fee_min || "0"}
-                                    value={customFee !== undefined ? customFee : ""}
-                                    onChange={(e) => handleAddonFeeChange(opt.id, e.target.value)}
-                                    className={`h-7 text-xs w-32 ${
-                                      addonFeeErrors[opt.id] ? "border-red-500 focus-visible:ring-red-500" : ""
-                                    }`}
-                                  />
+              <Collapsible open={addonsOpen} onOpenChange={setAddonsOpen}>
+                <div className="border-t border-gray-100 pt-3">
+                  <CollapsibleTrigger asChild>
+                    <button type="button" className="flex items-center justify-between w-full mb-2 group">
+                      <div className="flex items-center gap-2">
+                        <Label className="text-sm font-medium cursor-pointer">{t("增值服务（可选）", locale)}</Label>
+                        {!pageDataLoading && selectedAddons.length > 0 && (
+                          <span className="inline-flex items-center justify-center h-5 min-w-5 px-1.5 rounded-full bg-red-500 text-white text-xs font-medium">
+                            {selectedAddons.length}
+                          </span>
+                        )}
+                      </div>
+                      <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${addonsOpen ? 'rotate-180' : ''}`} />
+                    </button>
+                  </CollapsibleTrigger>
+                  <CollapsibleContent>
+                    {pageDataLoading ? (
+                      <div className="space-y-2">
+                        {[1, 2, 3].map(i => (
+                          <div key={i} className="h-16 rounded-lg border border-gray-100 bg-gray-50 animate-pulse" />
+                        ))}
+                      </div>
+                    ) : (
+                    <div className="space-y-2 max-h-[280px] overflow-y-auto">
+                      {addonOptions.map((opt) => {
+                        const isSelected = selectedAddons.includes(opt.id);
+                        const isCustomizable = opt.is_user_customizable;
+                        const customFee = addonCustomFees[opt.id];
+                        const effectiveFee = isCustomizable && customFee !== undefined ? customFee : parseFloat(opt.fee) || 0;
+                        const feeCur = opt.fee_currency || "JPY";
+                        return (
+                          <div key={opt.id} className={`rounded-lg border p-2.5 transition-colors ${isSelected ? "border-yellow-400 bg-yellow-50" : "border-gray-200"}`}>
+                            <label className="flex items-start gap-3 cursor-pointer">
+                              <Checkbox
+                                checked={isSelected}
+                                onCheckedChange={() => toggleAddon(opt.id)}
+                                className="mt-0.5"
+                              />
+                              <div className="flex-1">
+                                <div className="flex items-center justify-between gap-2 flex-wrap mb-1">
+                                  <span className="text-sm font-medium text-gray-800">{opt.service_name}</span>
+                                  <span className="text-sm text-red-600 font-semibold">
+                                    +{feeCur} {feeCur === "JPY" ? Math.round(effectiveFee) : effectiveFee}
+                                  </span>
                                 </div>
-                                {addonFeeErrors[opt.id] && (
-                                  <p className="text-xs text-red-600 flex items-center gap-1">
-                                    <AlertTriangle className="w-3 h-3" />
-                                    {addonFeeErrors[opt.id]}
-                                  </p>
+                                {opt.user_description && <p className="text-xs text-gray-500 mt-0.5">{t(opt.user_description, locale)}</p>}
+                                {isCustomizable && isSelected && (
+                                  <div className="mt-2 space-y-1.5">
+                                    <div className="flex items-center gap-2">
+                                      <Label className="text-xs text-gray-600">{t("自定义金额", locale)} ({opt.fee_min || 0} - {opt.fee_max || '∞'} {feeCur})</Label>
+                                      <Input
+                                        type="number"
+                                        min={opt.fee_min || 0}
+                                        max={opt.fee_max || undefined}
+                                        step="1"
+                                        placeholder={opt.fee_min || "0"}
+                                        value={customFee !== undefined ? customFee : ""}
+                                        onChange={(e) => handleAddonFeeChange(opt.id, e.target.value)}
+                                        className={`h-7 text-xs w-32 ${
+                                          addonFeeErrors[opt.id] ? "border-red-500 focus-visible:ring-red-500" : ""
+                                        }`}
+                                      />
+                                    </div>
+                                    {addonFeeErrors[opt.id] && (
+                                      <p className="text-xs text-red-600 flex items-center gap-1">
+                                        <AlertTriangle className="w-3 h-3" />
+                                        {addonFeeErrors[opt.id]}
+                                      </p>
+                                    )}
+                                  </div>
                                 )}
                               </div>
-                            )}
+                            </label>
                           </div>
-                        </label>
-                      </div>
-                    );
-                  })}
+                        );
+                      })}
+                    </div>
+                    )}
+                  </CollapsibleContent>
                 </div>
-                )}
-              </div>
+              </Collapsible>
             )}
 
             {/* 图片上传 */}
@@ -861,6 +947,9 @@ export default function SubmitOrder() {
           confirmDisabled={submitting}
           cancelDisabled={submitting}
           confirmClassName="bg-red-600 hover:bg-red-700 text-white"
+          checkboxLabel={t("以后不再提示", locale)}
+          checkboxChecked={dontShowAgain}
+          onCheckboxChange={setDontShowAgain}
         />
       </form>
     </div>

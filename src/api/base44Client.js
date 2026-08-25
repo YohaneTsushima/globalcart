@@ -229,8 +229,9 @@ export const base44 = {
           const cache = JSON.parse(localStorage.getItem('auth_cache') || '{}');
           userId = cache.user?.id || '';
         } catch (_) {}
+        const API_BASE = import.meta.env.VITE_BACKEND_URL || window.location.origin;
         const fileUrl = typeof cleanPath === 'string'
-          ? `${window.location.origin}${imageUrlBase}/${cleanPath}`
+          ? `${API_BASE}${imageUrlBase}/${cleanPath}`
           : cleanPath;
         return { file_url: fileUrl };
       },

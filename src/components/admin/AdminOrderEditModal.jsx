@@ -420,8 +420,8 @@ export default function AdminOrderEditModal({ order, initialItemSizeTemplates, o
   })();
 
   return (
-    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-xl shadow-xl w-full max-w-lg max-h-[92vh] flex flex-col" onClick={e => e.stopPropagation()}>
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-4xl max-h-[92vh] flex flex-col" onClick={e => e.stopPropagation()}>
         {/* Header */}
         <div className="flex items-start justify-between px-5 py-4 border-b flex-shrink-0">
           <div className="min-w-0 flex-1">
@@ -535,29 +535,25 @@ export default function AdminOrderEditModal({ order, initialItemSizeTemplates, o
               )}
 
               {/* Product links */}
-              {productUrlText && (
+              {order.product_link && (
                 <div>
                   <div className="text-xs text-gray-400 mb-1">商品链接</div>
-                  <ReactMarkdown
-                    className="text-xs text-gray-700 prose prose-xs max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 [&_p]:my-0.5 [&_a]:text-blue-600 [&_a]:break-all"
-                    components={{
-                      hr: () => (
-                        <div className="flex items-center gap-2 my-2">
-                          <div className="flex-1 border-t border-indigo-300" />
-                          <span className="text-[10px] text-indigo-400 font-medium">— 拆单分隔线 —</span>
-                          <div className="flex-1 border-t border-indigo-300" />
-                        </div>
-                      ),
-                      a: ({ href, children }) => (
-                        <a href={href} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-800 break-all inline-flex items-center gap-1">
-                          <ExternalLink className="w-3 h-3 flex-shrink-0 inline" />{children}
+                  <div className="bg-gray-50 rounded-lg p-3 space-y-1">
+                    {order.product_link.split('\n').filter(Boolean).map((url, idx) => (
+                      <div key={idx} className="flex items-center gap-1.5">
+                        <ExternalLink className="w-3 h-3 text-gray-400 shrink-0" />
+                        <a
+                          href={url.trim()}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-sm text-blue-600 hover:text-blue-800 hover:underline block truncate"
+                          title={url.trim()}
+                        >
+                          {url.trim()}
                         </a>
-                      ),
-                      p: ({ children }) => <p className="my-0.5 break-all">{children}</p>,
-                    }}
-                  >
-                    {productUrlText}
-                  </ReactMarkdown>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
 

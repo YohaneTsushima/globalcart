@@ -158,13 +158,14 @@ export default function PlatformAdminSettings() {
   };
 
   // 重新分配用户到新租户（通过 relation_id 更新 tenant_id）
-  const handleReassign = async (relationId, newTenantId) => {
+  const handleReassign = async (relationId, newTenantId, userId) => {
     setReassigning(prev => ({ ...prev, [relationId]: true }));
 
     try {
       await tenantManage.assign('TenantsManage', {
-        relation_id: relationId,
-        tenant_id: Number(newTenantId)
+        id: relationId,
+        tenant_id: Number(newTenantId),
+        user_id: userId
       });
       toast.success('重新分配成功');
       await runDiagnose();
@@ -200,9 +201,7 @@ export default function PlatformAdminSettings() {
     setRemoving(prev => ({ ...prev, [relationId]: true }));
 
     try {
-      await tenantManage.remove('TenantsManage', {
-        relation_id: relationId
-      });
+      await tenantManage.delete('TenantsManage', relationId);
       toast.success('已移除该用户-租户关系');
       await runDiagnose();
     } catch (e) {
@@ -529,7 +528,7 @@ export default function PlatformAdminSettings() {
                                             <Button
                                               size="sm" variant="outline" className="h-6 text-xs px-2 border-blue-200 text-blue-600 hover:bg-blue-50"
                                               disabled={!reassignTarget[rkey] || reassigning[rkey] || availableForReassign.length === 0}
-                                              onClick={() => handleReassign(rel.relation_id, reassignTarget[rkey])}
+                                              onClick={() => handleReassign(rel.relation_id, reassignTarget[rkey], u.id)}
                                             >
                                               {reassigning[rkey] ? "..." : "改分配"}
                                             </Button>
