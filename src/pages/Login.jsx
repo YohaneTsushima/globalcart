@@ -75,6 +75,20 @@ export default function Login() {
       return;
     }
 
+    // OAuth2 回调失败：URL 带 error + message（支付宝等 redirect 模式出错）
+    const oauthError = searchParams.get('error');
+    const oauthMessage = searchParams.get('message');
+    if (oauthError) {
+      toast.error(t(oauthMessage || '支付宝登录失败，请重试', locale));
+      // 清理 URL 中的 error 参数，避免刷新页面重复提示
+      const next = searchParams.get('next');
+      const cleanParams = new URLSearchParams();
+      if (next) cleanParams.set('next', next);
+      const cleanUrl = `/${locale}/Login${cleanParams.toString() ? '?' + cleanParams.toString() : ''}`;
+      window.history.replaceState({}, '', cleanUrl);
+      return;
+    }
+
     // 如果已登录且初始化完成，直接跳转（尊重 next 参数）
     if(!isLoadingAuth && isAuthenticated) {
         const next = searchParams.get('next');

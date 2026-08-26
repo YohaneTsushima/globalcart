@@ -146,21 +146,27 @@ export const AuthProvider = ({ children }) => {
           const d = res?.data ?? res ?? {};
           const u = normalizeUser(d);
           const isActive = d.isActive ?? d.is_active ?? true;
+          const perms = Array.isArray(d.permissions) ? d.permissions : [];
+          const roles = Array.isArray(d.assigned_roles) ? d.assigned_roles : [];
 
-          unstable_batchedUpdates(() => {
-            setUser(u);
-            setIsAuthenticated(true);
-            writeAuthCache({
-              user: u,
-              permissions: Array.isArray(d.permissions) ? d.permissions : [],
-              assigned_roles: Array.isArray(d.assigned_roles) ? d.assigned_roles : [],
-              is_active: isActive,
-            });
-
-            if (isActive === false) {
-              setAuthError({ type: 'account_suspended', message: '您的账户已被停用，请联系管理员。' });
-            }
+          // 用户数据没变就不更新 user 引用，避免触发下游 useEffect 重渲染
+          setUser(prev => {
+            if (prev && prev.email === u.email && prev.full_name === u.full_name) return prev;
+            return u;
           });
+          setPermissions(perms);
+          setAssignedRoles(roles);
+          setIsAuthenticated(true);
+          writeAuthCache({
+            user: u,
+            permissions: perms,
+            assigned_roles: roles,
+            is_active: isActive,
+          });
+
+          if (isActive === false) {
+            setAuthError({ type: 'account_suspended', message: '您的账户已被停用，请联系管理员。' });
+          }
         })
         .catch(err => {
           if (isNetworkError(err)) {

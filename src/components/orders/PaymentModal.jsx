@@ -44,9 +44,11 @@ export default function PaymentModal({ order, mode = "prepay", onClose, onSucces
     ? order.supplement_amount
     : isShipping
     ? order.shipping_fee_amount
-    : order.prepayment_amount_jpy || order.prepayment_amount;
+    : mode === 'prepay'
+    ? order?.prepayment_amount_jpy
+    : order?.full_payment_amount;
 
-  const cur = isShipping ? (order.shipping_fee_currency || "CNY") : (order.prepayment_currency || order.payment_currency || "JPY");
+  let cur = isShipping ? (order.shipping_fee_currency || "CNY") : (order.prepayment_currency || order.payment_currency || "JPY");
 
   // For shipping: combine shipping fee + item size fee
   const itemSizeFee = isShipping && order.item_size_extra_fee > 0 ? order.item_size_extra_fee : 0;
@@ -73,6 +75,8 @@ export default function PaymentModal({ order, mode = "prepay", onClose, onSucces
   const [selectedMethodMeta, setSelectedMethodMeta] = useState(null); // { value, label, payment_note, image_url, payment_currency }
   const [paidAmount, setPaidAmount] = useState(String(defaultAmount));
   const [rates, setRates] = useState(null);
+  const [platformRates, setPlatformRates] = useState(null);
+  const [tenantRates, setTenantRates] = useState(null);
   const [paymentMethods, setPaymentMethods] = useState([]);
   // Store as state so async handlers (handleProofUploaded) capture the latest value
   const [snapshotRate, setSnapshotRate] = useState(null); // { payCurrency, rate } when non-JPY method selected
@@ -112,7 +116,9 @@ export default function PaymentModal({ order, mode = "prepay", onClose, onSucces
           setSurchargeJpy(sc);
           setFinalAmountJpy(total);
           setPaidAmount(String(Math.round(total)));
-          setRates(r?.data?.rates);
+          setRates(d.raw_rates || null);
+          setPlatformRates(d.platform_rates || null);
+          setTenantRates(d.tenant_rates || null);
         })
         .catch(() => {});
     } else if (!method) {
@@ -142,28 +148,33 @@ export default function PaymentModal({ order, mode = "prepay", onClose, onSucces
   const payCurrency = selectedMethodMeta?.paymentCurrency || selectedMethodMeta?.payment_currency || cur;
 
   // Compute converted amount from JPY base → payCurrency
-  // defaultAmount is in `cur`; rates are relative to JPY
+  // 与 Payment.jsx 一致：最终汇率 = raw + platform + tenant
+  let convertedAmount = null;
   let convertedDisplay = null;
-  let convertedRate = null;
-  if (payCurrency !== "JPY" && rates && rates[payCurrency] && rates[cur]) {
-    const amountInJpy = defaultAmount / rates[cur]; // cur → JPY
-    const converted = amountInJpy * rates[payCurrency]; // JPY → payCurrency
-    const decimals = ["TWD", "HKD", "CNY"].includes(payCurrency) ? 1 : 2;
-    const sym = CURRENCY_SYMBOLS[payCurrency] || payCurrency;
-    convertedDisplay = `${sym}${converted.toFixed(decimals)} ${payCurrency}`;
-    convertedRate = rates[payCurrency]; // JPY→payCurrency rate
-
-    console.log(`汇率=${rates[payCurrency]} 计算后= ${convertedDisplay}`)
+  let rateValue = null;
+  
+  if (payCurrency !== "JPY") {
+    // cur 是订单货币（如 JPY），payCurrency 是支付货币（如 CNY）
+    const rawRate = rates?.[payCurrency] || 0;
+    const platformRate = platformRates?.[payCurrency] || 0;
+    const tenantRate = tenantRates?.[payCurrency] || 0;
+    rateValue = rawRate + platformRate + tenantRate;
+    if (rateValue) {
+      const converted = defaultAmount * rateValue;
+      const decimals = ["TWD", "HKD", "CNY"].includes(payCurrency) ? 2 : 2;
+      convertedAmount = converted.toFixed(decimals);
+      convertedDisplay = `${payCurrency} ${parseFloat(convertedAmount).toLocaleString(undefined, { minimumFractionDigits: decimals, maximumFractionDigits: decimals })}`;
+    }
   }
 
-  // Keep snapshotRate in sync with current convertedRate so async handlers can read it reliably
+  // Keep snapshotRate in sync with current rateValue so async handlers can read it reliably
   useEffect(() => {
-    if (convertedRate && payCurrency && payCurrency !== "JPY") {
-      setSnapshotRate({ payCurrency, rate: convertedRate });
+    if (rateValue && payCurrency && payCurrency !== "JPY") {
+      setSnapshotRate({ payCurrency, rate: rateValue });
     } else if (!selectedMethodMeta || selectedMethodMeta.payment_currency === "JPY") {
       setSnapshotRate(null);
     }
-  }, [convertedRate, payCurrency, selectedMethodMeta]);
+  }, [rateValue, payCurrency, selectedMethodMeta]);
 
   // Alipay
   const [generating, setGenerating] = useState(false);
@@ -184,17 +195,17 @@ export default function PaymentModal({ order, mode = "prepay", onClose, onSucces
   const handleGenerateAlipay = async () => {
     setGenerating(true);
     const subject = isShipping
-      ? `${user.displayName}-运费 - ${order.product_name}`
-      : `${user.displayName}-代购 - ${order.product_name}`;
+      ? `${user.displayName || user?.display_name}-运费 - ${order.product_name}`
+      : `${user.displayName || user?.display_name}-代购 - ${order.product_name}`;
 
     // For prepay, use finalAmountJpy (includes surcharge); for shipping/supplement use paidAmount as-is
     const amountJpy = (!isShipping && !isSupp && surchargeJpy > 0) ? finalAmountJpy : parseFloat(paidAmount);
 
-    // 如果选了非 JPY 的支付方式，转成对应货币金额
+    // 如果选了非 JPY 的支付方式，转成对应货币金额（使用完整汇率）
     let amountToCharge = amountJpy;
     let currencyToSend = "JPY";
-    if (payCurrency !== "JPY" && rates && rates[payCurrency]) {
-      amountToCharge = Math.round(amountJpy * rates[payCurrency] * 100) / 100;
+    if (payCurrency !== "JPY" && rateValue) {
+      amountToCharge = Math.round(amountJpy * rateValue * 100) / 100;
       currencyToSend = payCurrency;
     }
 
@@ -202,17 +213,17 @@ export default function PaymentModal({ order, mode = "prepay", onClose, onSucces
 
     //用于更新Payment Method
     const newMethod = {
-      payable_amount: amountToCharge,
+      // payable_amount: amountToCharge,
       method_name: method,
       payment_currency: selectedObj?.payment_currency,
       payment_currency_type: selectedObj?.payment_currency,
-      prepayment_rate_jpy_cny: rates[payCurrency],
+      prepayment_rate_jpy_cny: rateValue,
       provider_key: method
     }
-
+console.log('Amount to Charge is - ' + amountToCharge)
     const payParam = {
       orderId: order.id,
-      amount: amountToCharge,
+      // amount: 0.1,
       currency: currencyToSend,
       subject,
       paymentType: isShipping ? "shipping" : "order",
@@ -221,7 +232,7 @@ export default function PaymentModal({ order, mode = "prepay", onClose, onSucces
     };
 
     const res = await base44.functions.invoke("alipay/pay", payParam);
-    console.log(res)
+    
     if(!res?.data?.success) {
       toast.error(`下单失败: ${res?.data?.result}`);
       setGenerating(false);
@@ -325,8 +336,8 @@ export default function PaymentModal({ order, mode = "prepay", onClose, onSucces
 
   return (
     <>
-    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-xl shadow-xl w-full max-w-md" onMouseDown={e => e.stopPropagation()}>
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-lg" onMouseDown={e => e.stopPropagation()}>
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b">
           <div>
@@ -367,17 +378,24 @@ export default function PaymentModal({ order, mode = "prepay", onClose, onSucces
            )}
 
            {/* Non-JPY currency conversion notice — only show when a method is selected */}
-           {convertedDisplay && method && (
-             <div className="bg-orange-50 border border-orange-200 rounded-lg px-4 py-3 space-y-1">
-               <div className="flex items-center justify-between text-xs text-gray-500">
-                 <span>汇率换算参考</span>
-                 <span>1 JPY ≈ {convertedRate?.toFixed(4)} {payCurrency}</span>
-               </div>
+           {convertedAmount && method && (
+             <div className="bg-orange-50 border border-orange-200 rounded-lg px-4 py-3">
                <div className="flex items-center justify-between">
-                 <span className="text-sm font-semibold text-orange-700">实际应付（{payCurrency}）</span>
-                 <span className="text-lg font-bold text-orange-600">{convertedDisplay}</span>
+                 <div>
+                   <div className="text-xs text-orange-600 font-medium">实际应付（{payCurrency}）</div>
+                   <div className="text-xs text-gray-400 mt-0.5">汇率：1 JPY ≈ {rateValue?.toFixed(5)} {payCurrency}</div>
+                 </div>
+                 <div className="text-right">
+                   <div className="text-2xl font-bold text-orange-600">{CURRENCY_SYMBOLS[payCurrency] || payCurrency}{convertedAmount}</div>
+                   <div className="text-xs text-orange-500">{payCurrency}</div>
+                 </div>
                </div>
-               <p className="text-xs text-orange-400">汇率实时参考，以实际到账为准</p>
+               {rates?.[payCurrency] && (
+                 <p className="text-xs text-gray-400 mt-1">
+                   最终汇率 = 市场汇率[{(rates[payCurrency] || 0).toFixed(5)}] + 平台增量[{(platformRates?.[payCurrency] || 0).toFixed(5)}] + 租户增量[{(tenantRates?.[payCurrency] || 0).toFixed(5)}]
+                 </p>
+               )}
+               <p className="text-xs text-orange-400 mt-2">请按以上 {payCurrency} 金额付款，汇率实时参考，以实际到账为准</p>
              </div>
            )}
 
@@ -402,7 +420,7 @@ export default function PaymentModal({ order, mode = "prepay", onClose, onSucces
            )}
 
           {/* Only show editable amount for supplement/shipping; for prepay show read-only */}
-          <div>
+          {/* <div>
             <Label className="text-sm">付款金额 ({cur})</Label>
             {mode === "prepay" ? (
               <div className="mt-1 h-9 flex items-center px-3 rounded-md border border-input bg-muted text-sm font-medium text-gray-700">
@@ -413,7 +431,7 @@ export default function PaymentModal({ order, mode = "prepay", onClose, onSucces
                 onChange={e => setPaidAmount((cur === "CNY" || cur === "JPY") ? String(Math.round(parseFloat(e.target.value) || 0)) : e.target.value)}
                 step={(cur === "CNY" || cur === "JPY") ? "1" : "0.01"} />
             )}
-          </div>
+          </div> */}
 
           {/* Method selection */}
           <div>

@@ -98,7 +98,7 @@ export default function Payment() {
   const [otherPaymentConfig, setOtherPaymentConfig] = useState(null);
   const { user } = useCurrentUser();
 
-  const subject = `${user?.displayName} - ${order?.product_name}`;
+  const subject = `${user?.displayName || user?.display_name} - ${order?.product_name}`;
 
   const loadPaymentData = (payMethodKey = null) => {
     if (!orderId) {
@@ -198,11 +198,14 @@ export default function Payment() {
     const payCurrency = activeMethod?.paymentCurrency  || activeMethod?.payment_currency || urlPayCurrency || "JPY";
     let amountToCharge = amountJpy;
     let currencyToSend = "JPY";
+    let fullRate = null;
     if (payCurrency !== "JPY") {
       const orderRate = order?.prepaymentRateJpyCny || order?.prepayment_rate_jpy_cny; //下单时的汇率
-      const rate = (payCurrency === "CNY" && orderRate) ? orderRate : (rates && rates[payCurrency]); //当无法从当前订单获取汇率，只能够按照当前的汇率
-      if (rate) {
-        amountToCharge = Math.round(amountJpy * rate * 100) / 100;
+      // const rawRate = (payCurrency === "CNY" && orderRate) ? orderRate : (rates && rates[payCurrency]); //当无法从当前订单获取汇率，只能够按照当前的汇率
+      const rawRate = rates[payCurrency];
+      fullRate = rawRate + (platformRates?.[payCurrency] || 0) + (tenantRates?.[payCurrency] || 0); //加上平台增量和租户增量，与显示一致
+      if (fullRate) {
+        amountToCharge = Math.round(amountJpy * fullRate * 100) / 100;
         currencyToSend = payCurrency;
       }
     }
@@ -211,17 +214,17 @@ export default function Payment() {
 
     //用于更新Payment Method
     const newMethod = {
-      payable_amount: amountToCharge,
+      // payable_amount: amountToCharge,
       method_name: method,
       payment_currency: selectedObj?.payment_currency,
       payment_currency_type: selectedObj?.payment_currency,
-      prepayment_rate_jpy_cny: rates[payCurrency],
+      prepayment_rate_jpy_cny: fullRate,
       provider_key: method
     }
 
     const payParam = {
       orderId: order.id,
-      amount: amountToCharge,
+      // amount: amountToCharge,
       currency: currencyToSend,
       subject,
       paymentType: "order",
@@ -349,7 +352,7 @@ export default function Payment() {
     }
     if (rateValue) {
       const converted = amountJpy * rateValue;
-      const decimals = ["TWD", "HKD", "CNY"].includes(payCurrency) ? 1 : 2;
+      const decimals = ["TWD", "HKD"].includes(payCurrency) ? 1 : 2;
       convertedAmount = converted.toFixed(decimals);
       convertedDisplay = `${payCurrency} ${parseFloat(convertedAmount).toLocaleString(undefined, { minimumFractionDigits: decimals, maximumFractionDigits: decimals })}`;
     }

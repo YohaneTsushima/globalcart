@@ -80,7 +80,7 @@ function scheduleReconnect() {
 }
 
 // 供 base44Client 拦截器在刷新 token 后调用：只重连，不刷新 token
-export function reconnectWebSocket() {
+function reconnectWebSocket() {
   if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
     return; // 连接还活着，不动它
   }

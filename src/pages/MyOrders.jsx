@@ -3,7 +3,7 @@ import { usePageSize } from "@/hooks/usePageSize";
 import PaginationBar from "@/components/common/PaginationBar";
 import { base44 } from "@/api/base44Client";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
-import { useAuth } from "@/lib/AuthContext";
+
 import { Package, RefreshCw, Search, CreditCard, Truck, CheckCircle, ChevronUp, ChevronDown, ChevronsUpDown, Send, Archive, ArchiveRestore, RotateCcw, Zap, MapPin } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { usePermissions } from "@/hooks/usePermissions";
@@ -173,7 +173,6 @@ function CellValue({ col, order }) {
 export default function MyOrders() {
   const navigate = useNavigate();
   const { user, loading: authLoading } = useCurrentUser();
-  const { setUser: setAuthUser, setPermissions: setAuthPermissions } = useAuth();
   const { can } = usePermissions();
   const canArchiveOrder = can("order:archive_order");
   const canRequestRewarehouse = can("shipping:request_rewarehouse");
@@ -309,21 +308,6 @@ export default function MyOrders() {
   // 首次加载
   useEffect(() => {
     if (!user) { if (!authLoading) setLoading(false); return; }
-    
-    // 刷新用户权限（只在首次加载时执行）
-    if (!isInitialized.current) {
-      base44.auth.me().then(res => {
-        const d = res?.data ?? res ?? {};
-        const u = {
-          ...d,
-          email: d.userEmail ?? d.email ?? d.user_email,
-          full_name: d.displayName ?? d.full_name ?? d.fullName ?? d.user_name,
-        };
-        setAuthUser(u);
-        if (Array.isArray(d.permissions)) setAuthPermissions(d.permissions);
-      }).catch(() => {});
-    }
-    
     fetchOrders(user);
   }, [user, authLoading]);
 
@@ -846,7 +830,7 @@ export default function MyOrders() {
       {paymentOrder && (
         <PaymentModal
           order={paymentOrder}
-          mode="prepay"
+          mode={paymentOrder?.payment_mode}
           onClose={() => setPaymentOrder(null)}
           onSuccess={() => {
             setPaymentOrder(null);

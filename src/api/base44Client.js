@@ -114,7 +114,8 @@ api.interceptors.response.use(
     }
 
     try {
-      const res = await axios.post('/globalcart/auth/refresh', { refreshToken: refreshToken });
+      const backendUrl = import.meta.env.VITE_BACKEND_URL || '';
+      const res = await axios.post(`${backendUrl}/globalcart/auth/refresh`, { refreshToken: refreshToken });
       const { token: newToken, refreshToken: newRefreshToken } = res.data?.data || res.data || {};
       if (!newToken) throw new Error('no token');
 

@@ -182,18 +182,18 @@ export default function SubmitOrder() {
         feeSteps = res.data?.steps || null;
       } else {
         const fallbackRate = (parseFloat(settings.service_fee_rate) || 10) / 100;
-        serviceFeeJpy = jpy * fallbackRate;
+        serviceFeeJpy = Math.round(jpy * fallbackRate);
         feeRateDisplay = `${(parseFloat(settings.service_fee_rate) || 10).toFixed(0)}%`;
       }
     } catch (err) {
       console.error('calculate serviceFee failed:', err);
       const fallbackRate = (parseFloat(settings.service_fee_rate) || 10) / 100;
-      serviceFeeJpy = jpy * fallbackRate;
+      serviceFeeJpy = Math.round(jpy * fallbackRate);
       feeRateDisplay = `${(parseFloat(settings.service_fee_rate) || 10).toFixed(0)}%`;
     }
 
-    const totalJpy = jpy + serviceFeeJpy + addonTotalJpy;
-    const prepayJpy = totalJpy * prepayRate;
+    const totalJpy = Math.round(jpy + serviceFeeJpy + addonTotalJpy);
+    const prepayJpy = Math.round(totalJpy * prepayRate);
     setCalculated({
       jpy,
       serviceFeeJpy,
@@ -452,7 +452,7 @@ export default function SubmitOrder() {
     try {
 
       const res = await base44.functions.invoke('order/info/createTenantOrder', finalForm);
-
+debugger
       const order = res?.data;
       
       if (res.data?.credit_downgraded) {
@@ -463,7 +463,7 @@ export default function SubmitOrder() {
       }
 
       // 记账订单：账目已直接记入记账系统，无需前往付款页
-      if (pendingForm.payment_mode === "credit") {
+      if (formToSubmit.payment_mode === "credit") {
         setSubmitting(false);
         toast.success(t("提交成功，本单已记账，无需付款", locale));
         navigate(createPageUrl("MyOrders"));
@@ -471,7 +471,7 @@ export default function SubmitOrder() {
       }
 
       // 后付款订单：下单阶段无需付款，货款将在支付运费时一并收取
-      if (pendingForm.payment_mode === "deferred") {
+      if (formToSubmit.payment_mode === "deferred") {
         setSubmitting(false);
         toast.success(t("提交成功，货款将在支付运费时一并支付", locale));
         navigate(createPageUrl("MyOrders"));
@@ -484,7 +484,7 @@ export default function SubmitOrder() {
         return;
       }
 
-      let paymentUrl = `/Payment?order_id=${order.id}&method=${pendingForm.payment_method || "other"}&pay_currency=${pendingForm.prepayment_currency}`;
+      let paymentUrl = `/Payment?order_id=${order.id}&method=${formToSubmit.payment_method || "other"}&pay_currency=${formToSubmit.prepayment_currency}`;
 
       navigate(paymentUrl);
     } catch (error) {
@@ -563,10 +563,6 @@ export default function SubmitOrder() {
           return { id: addon.id, name: addon.name, fee, fee_currency: addon.fee_currency || "JPY" };
         }).filter(Boolean)
       };
-
-      console.log(payload)
-setSubmitting(false);
-      return;
 
       await base44.functions.invoke('createTenantOrder', payload);
       setSubmitting(false);
