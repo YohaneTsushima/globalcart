@@ -3,6 +3,7 @@ import { base44 } from "@/api/base44Client";
 import { Link, useNavigate } from "react-router-dom";
 import { t, getLocale } from "@/lib/i18n";
 import { createPageUrl } from "@/utils";
+import { useAuth } from "@/lib/AuthContext";
 import {
   Bell, CreditCard, Truck, Package,
   ClipboardList, RefreshCw, ArrowRight, MessageSquare,
@@ -125,14 +126,13 @@ function BulkBar({ count, label, onClick, color = "blue" }) {
 // ──────────────────────────────────────────────────────────────────────────
 export default function UserTodo() {
   const navigate = useNavigate();  
+  const { isAuthenticated, isLoadingAuth } = useAuth();
   const [locale, setLocale_] = useState(getLocale());
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
 
   // 如果没登录，直接跳转登录
-  const token = localStorage.getItem('token');
-
-  if(!token) {
+  if(!isLoadingAuth && !isAuthenticated) {
       base44.auth.redirectToLogin(locale);
   }
 

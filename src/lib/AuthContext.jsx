@@ -23,8 +23,6 @@ const writeAuthCache = (data) => {
 };
 
 const clearAuthCache = () => {
-  localStorage.removeItem('token');
-  localStorage.removeItem('refresh_token');
   localStorage.removeItem(AUTH_CACHE_KEY);
 };
 
@@ -91,55 +89,55 @@ export const AuthProvider = ({ children }) => {
       });
     }
 
-    // 启动时验证 token + 后端连通性（而非仅读 localStorage 缓存）
-    const token = localStorage.getItem('token');
-    if (token) {
-      base44.auth.me()
-        .then(res => {
-          const d = res?.data ?? res ?? {};
-          const u = normalizeUser(d);
-          const perms = Array.isArray(d.permissions) ? d.permissions : [];
-          const roles = Array.isArray(d.assigned_roles) ? d.assigned_roles : [];
-          const isActive = d.isActive ?? d.is_active ?? true;
-
-          unstable_batchedUpdates(() => {
-            setUser(u);
-            setPermissions(perms);
-            setAssignedRoles(roles);
-            setIsAuthenticated(true);
-            writeAuthCache({ user: u, permissions: perms, assigned_roles: roles, is_active: isActive });
-
-            if (isActive === false) {
-              setAuthError({ type: 'account_suspended', message: '您的账户已被停用，请联系管理员。' });
-            }
-          });
-        })
-        .catch(err => {
-          // 网络不可达（后端没启动 / 断连）：清除状态，跳登录
-          if (isNetworkError(err)) {
-            console.warn('[Auth] 后端不可达，跳转登录页');
-            clearAuthCache();
-            unstable_batchedUpdates(() => {
-              setIsAuthenticated(false);
-              setUser(null);
-            });
-            redirectToLogin();
-            return;
-          }
-          // 其他错误（401 等）由 axios 拦截器处理，此处不做额外操作
-        })
-        .finally(() => {
-          setIsLoadingAuth(false);
-        });
-    } else {
+    // 启动时：没有缓存说明从未登录过，不发请求，直接显示登录页
+    const cached = readAuthCache();
+    if (!cached?.user) {
       setIsLoadingAuth(false);
+      return;
     }
+
+    // 有缓存 → 验证 session 是否还有效
+    base44.auth.me()
+      .then(res => {
+        const d = res?.data ?? res ?? {};
+        const u = normalizeUser(d);
+        const perms = Array.isArray(d.permissions) ? d.permissions : [];
+        const roles = Array.isArray(d.assigned_roles) ? d.assigned_roles : [];
+        const isActive = d.isActive ?? d.is_active ?? true;
+
+        unstable_batchedUpdates(() => {
+          setUser(u);
+          setPermissions(perms);
+          setAssignedRoles(roles);
+          setIsAuthenticated(true);
+          writeAuthCache({ user: u, permissions: perms, assigned_roles: roles, is_active: isActive });
+
+          if (isActive === false) {
+            setAuthError({ type: 'account_suspended', message: '您的账户已被停用，请联系管理员。' });
+          }
+        });
+      })
+      .catch(err => {
+        // 网络不可达（后端没启动 / 断连）：清除状态，跳登录
+        if (isNetworkError(err)) {
+          console.warn('[Auth] 后端不可达，跳转登录页');
+          clearAuthCache();
+          unstable_batchedUpdates(() => {
+            setIsAuthenticated(false);
+            setUser(null);
+          });
+          redirectToLogin();
+          return;
+        }
+        // 其他错误（401 等）由 axios 拦截器处理，此处不做额外操作
+      })
+      .finally(() => {
+        setIsLoadingAuth(false);
+      });
 
     // --- visibilitychange: 用户切回 tab 时重新验证后端连通性 ---
     const handleVisibilityChange = () => {
       if (document.visibilityState !== 'visible') return;
-      const currentToken = localStorage.getItem('token');
-      if (!currentToken) return;
 
       base44.auth.me()
         .then(res => {
@@ -195,15 +193,6 @@ export const AuthProvider = ({ children }) => {
         verifyCode
       });
 
-      const token = r?.token || r?.access_token || r?.data?.token || r?.data?.access_token;
-      const refreshToken = r?.refreshToken || r?.refresh_token || r?.data?.refreshToken || r?.data?.refresh_token;
-      if (!token) {
-        setAuthError({ type: 'login_failed', message: '登录失败，未收到 token' });
-        return { ok: false, error: 'no_token' };
-      }
-      localStorage.setItem('token', token);
-      if (refreshToken) localStorage.setItem('refresh_token', refreshToken);
-
       const u = normalizeUser(r?.user || r?.data?.user || null);
       const perms = Array.isArray(r?.permissions) ? r.permissions : (Array.isArray(r?.data?.permissions) ? r.data.permissions : []);
       const roles = Array.isArray(r?.assigned_roles) ? r.assigned_roles : (Array.isArray(r?.data?.assigned_roles) ? r.data.assigned_roles : []);
@@ -236,16 +225,10 @@ export const AuthProvider = ({ children }) => {
   };
 
   // 通用 OAuth 登录（Google / 支付宝 / QQ / 微信等）
-  const loginWithOAuth = async ({ token, refreshToken, userId }) => {
+  const loginWithOAuth = async () => {
     setAuthError(null);
-    if (!token) {
-      setAuthError({ type: 'login_failed', message: '登录失败，未收到 token' });
-      return { ok: false, error: 'no_token' };
-    }
-    localStorage.setItem('token', token);
-    if (refreshToken) localStorage.setItem('refresh_token', refreshToken);
     try {
-      const me = await base44.auth.me(userId);
+      const me = await base44.auth.me();
       const d = me?.data ?? me ?? {};
       const u = normalizeUser(d);
       const perms = Array.isArray(d.permissions) ? d.permissions : [];
@@ -280,11 +263,8 @@ export const AuthProvider = ({ children }) => {
   };
 
   const logout = (shouldRedirect = true) => {
-    // 先调后端把 refresh_token 加入黑名单
-    const refreshToken = localStorage.getItem('refresh_token');
-    if (refreshToken) {
-      base44.functions.invoke('auth/logout', { refresh_token: refreshToken }).catch(() => {});
-    }
+    // 先调后端把 cookie 清除
+    base44.functions.invoke('auth/logout').catch(() => {});
     unstable_batchedUpdates(() => {
       setUser(null);
       setIsAuthenticated(false);

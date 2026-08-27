@@ -611,12 +611,17 @@ export default function OrderDetailPanel({ order, onClose, onRefresh, userProfil
                   )}
 
                   {/* Final total */}
-                  <div className="border-t-2 border-green-400 pt-3 flex justify-between items-center text-lg bg-green-100/50 rounded px-3 py-2">
-                    <span className="font-bold text-green-900">待付金额</span>
-                    <span className="font-bold text-green-900">
-                       {formatCurrency(order?.full_payment_amount, "JPY")}
-                    </span>
-                  </div>
+                 {order.payment_status !== 'paid' && order.payment_status !== 'confirmed' && (
+                    <div className="border-t-2 border-green-400 pt-3 flex justify-between items-center text-lg bg-green-100/50 rounded px-3 py-2">
+                      <span className="font-bold text-green-900">待付金额</span>
+                      <span className="font-bold text-green-900">
+                        {formatCurrency(
+                          (order.full_payment_amount || 0) - (order.paid_amount || 0),
+                          "JPY"
+                        )}
+                      </span>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

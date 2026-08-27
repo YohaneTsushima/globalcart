@@ -55,13 +55,11 @@ export default function Login() {
   }, [countdown > 0]);
 
   useEffect(() => {
-    // OAuth2 回调：URL 带 token + refreshToken + userId（Google / 支付宝等 redirect 模式通用）
-    const oauthToken = searchParams.get('token');
-    const oauthRefreshToken = searchParams.get('refreshToken');
-    const oauthUserId = searchParams.get('userId');
-    if (oauthToken) {
+    // OAuth2 回调：后端已设置 cookie，URL 只带 userId 和 next
+    const result = searchParams.get('success');
+    if (result) {
       setSubmitting(true);
-      loginWithOAuth({ token: oauthToken, refreshToken: oauthRefreshToken, userId: oauthUserId }).then(result => {
+      loginWithOAuth().then(result => {
         setSubmitting(false);
         if (result.ok) {
           const next = searchParams.get('next');
@@ -126,8 +124,6 @@ export default function Login() {
         navigate(next ? decodeURIComponent(next) : `/${locale}/home`, { replace: true });
       } else if (result.error === 'account_suspended') {
         toast.error(t('您的账户已被停用，请联系管理员', locale));
-      } else if (result.error === 'no_token') {
-        toast.error(t('登录失败，未收到 token', locale));
       } else {
         toast.error(t(result.error || '登录失败，请检查验证码', locale));
       }

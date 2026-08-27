@@ -9,8 +9,8 @@ const tenantCode = import.meta.env.VITE_TENANT_CODE ||
 // 后端地址写环境变量
 const api = axios.create({
   baseURL: '',
+  withCredentials: true,
   headers: {
-    'Content-Type': 'application/json',
     'X-Tenant': tenantCode
   }
 });
@@ -28,13 +28,6 @@ const processQueue = (error, token = null) => {
 
 
 
-// ── 请求拦截：自动带 access_token ─────────────────────────────────────────────
-api.interceptors.request.use(cfg => {
-  const token = localStorage.getItem('token');
-  if (token) cfg.headers.Authorization = `Bearer ${token}`;
-  return cfg;
-});
-
 // ── 响应拦截：401 自动 refresh → 重试 ─────────────────────────────────────────
 api.interceptors.response.use(
   res => res,
@@ -45,8 +38,6 @@ api.interceptors.response.use(
     // 502/503/504 直接跳登录
     if ([502, 503, 504].includes(status)) {
       const path = window.location.pathname;
-      localStorage.removeItem('token');
-      localStorage.removeItem('refresh_token');
       localStorage.removeItem('auth_cache');
       if (!path.includes('/Login')) {
         const next = encodeURIComponent(path + window.location.search);
@@ -76,9 +67,6 @@ api.interceptors.response.use(
 
     // 如果是 refresh 接口本身 401，直接清 token 跳登录
     if (originalRequest?.url?.includes('/auth/refresh')) {
-      localStorage.removeItem('access_token');
-      localStorage.removeItem('refresh_token');
-      localStorage.removeItem('token');
       localStorage.removeItem('auth_cache');
       const path = window.location.pathname;
       if (!path.includes('/Login')) {
@@ -92,47 +80,26 @@ api.interceptors.response.use(
     if (isRefreshing) {
       return new Promise((resolve, reject) => {
         failedQueue.push({ resolve, reject });
-      }).then(token => {
-        const retryConfig = { ...originalRequest, headers: { ...originalRequest.headers, Authorization: `Bearer ${token}` } };
-        return api(retryConfig);
+      }).then(() => {
+        return api(originalRequest);
       }).catch(Promise.reject);
     }
 
     isRefreshing = true;
 
-    const refreshToken = localStorage.getItem('refresh_token');
-    if (!refreshToken) {
-      isRefreshing = false;
-      const path = window.location.pathname;
-      localStorage.removeItem('token');
-      localStorage.removeItem('auth_cache');
-      if (!path.includes('/Login')) {
-        const next = encodeURIComponent(path + window.location.search);
-        window.location.href = `/${path.split('/')[1] || 'zhcn'}/Login?next=${next}`;
-      }
-      return Promise.reject(err);
-    }
-
     try {
-      const backendUrl = import.meta.env.VITE_BACKEND_URL || '';
-      const res = await axios.post(`${backendUrl}/globalcart/auth/refresh`, { refreshToken: refreshToken });
-      const { token: newToken, refreshToken: newRefreshToken } = res.data?.data || res.data || {};
+      const refreshBase = import.meta.env.DEV ? '' : (import.meta.env.VITE_BACKEND_URL || '');
+      const res = await axios.post(`${refreshBase}/globalcart/auth/refresh`, null, { withCredentials: true });
+      const { token: newToken } = res.data?.data || res.data || {};
       if (!newToken) throw new Error('no token');
 
-      localStorage.setItem('token', newToken);
-      if (newRefreshToken) localStorage.setItem('refresh_token', newRefreshToken);
-
-      // token 已由拦截器刷新并存入 localStorage，这里只需重连 WebSocket（不再二次刷新）
       reconnectWebSocket();
 
-      // 创建新请求（不复用 originalRequest，避免 headers 冻结问题）
-      const retryConfig = { ...originalRequest, headers: { ...originalRequest.headers, Authorization: `Bearer ${newToken}` } };
+      const retryConfig = { ...originalRequest };
       processQueue(null, newToken);
       return api(retryConfig);
     } catch (refreshErr) {
       processQueue(refreshErr, null);
-      localStorage.removeItem('token');
-      localStorage.removeItem('refresh_token');
       localStorage.removeItem('auth_cache');
       const path = window.location.pathname;
       if (!path.includes('/Login')) {
@@ -185,18 +152,15 @@ export const base44 = {
     }
   },
   auth: {
-    me: (userId) => api.get('/globalcart/user/stats/me', { params: userId ? { userId } : {} }).then(r => r.data),
+    me: () => api.get('/globalcart/user/stats/me').then(r => r.data),
     redirectToLogin: (locale) => {
       const currentLang = locale || 'zhcn';
       window.location.href = `/${currentLang}/Login`;
     },
     logout: async (redirectUrl) => {
-      const refreshToken = localStorage.getItem('refresh_token');
       try {
-        await api.post('/globalcart/auth/logout', { refreshToken: refreshToken });
+        await api.post('/globalcart/auth/logout');
       } catch (_) {}
-      localStorage.removeItem('token');
-      localStorage.removeItem('refresh_token');
       localStorage.removeItem('auth_cache');
       const path = window.location.pathname;
       const lang = path.split('/')[1] || 'zhcn';
@@ -228,7 +192,6 @@ export const base44 = {
         const formData = new FormData();
         formData.append('file', file);
         formData.append('savePath', path);
-        const token = localStorage.getItem('token');
         const uploadUrl = path
           ? `/globalcart/common/image/upload`
           : '/globalcart/order/info/uploadImage';
@@ -236,9 +199,7 @@ export const base44 = {
           ? `/globalcart/common/image`
           : '/globalcart/order/info/image';
 
-        const res = await axios.post(uploadUrl, formData, {
-          headers: { 'Content-Type': 'multipart/form-data', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-        });
+        const res = await api.post(uploadUrl, formData);
 
         const fileName = res.data?.data || res.data;
         const cleanPath = typeof fileName === 'string' ? fileName.replace(/\\/g, '/') : fileName;
@@ -247,7 +208,7 @@ export const base44 = {
           const cache = JSON.parse(localStorage.getItem('auth_cache') || '{}');
           userId = cache.user?.id || '';
         } catch (_) {}
-        const API_BASE = import.meta.env.VITE_BACKEND_URL || window.location.origin;
+        const API_BASE = import.meta.env.DEV ? '' : (import.meta.env.VITE_BACKEND_URL || window.location.origin);
         const fileUrl = typeof cleanPath === 'string'
           ? `${API_BASE}${imageUrlBase}/${cleanPath}`
           : cleanPath;

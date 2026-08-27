@@ -27,9 +27,16 @@ import { fileURLToPath } from 'url'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
+// 防御：Deploy.bat 的 set 可能泄漏到 process.env，覆盖 .env.local
+if (process.env.VITE_BACKEND_URL && !process.env.VITE_BACKEND_URL.startsWith('http://localhost')) {
+  delete process.env.VITE_BACKEND_URL;
+}
+
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
-  const backendUrl = env.VITE_BACKEND_URL || 'http://localhost:8080'
+  const backendUrl = mode === 'development'
+    ? 'http://localhost:8080'
+    : (env.VITE_BACKEND_URL || 'https://api.beday.cc')
 
   return {
   logLevel: 'info',
@@ -72,7 +79,7 @@ export default defineConfig(({ mode }) => {
         changeOrigin: true,
       },
       '/globalcart/ws': {
-        target: backendUrl.replace('http', 'ws') + '/globalcart',
+        target: backendUrl.replace('http', 'ws'),
         ws: true,
         changeOrigin: true,
       }

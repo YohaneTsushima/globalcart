@@ -73,19 +73,11 @@ export default function AdminReports() {
             
             console.log('[handleExport] 开始导出', { format, startDate, endDate });
             
-            // 使用 fetch 调用后端函数，从 base44 SDK 获取认证 token
-            // base44 客户端在创建时已经设置了 token，存储在 appParams.token 中
-            const authToken = appParams.token;
-            
-            if (!authToken) {
-                throw new Error('未获取到认证 token，请重新登录');
-            }
-            
             const response = await fetch(`${appParams.appBaseUrl}/api/functions/exportReportData`, {
                 method: 'POST',
+                credentials: 'include',
                 headers: {
                     'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${authToken}`,
                 },
                 body: JSON.stringify({
                     startDate, endDate, dimension, granularity, compare, filters, format,

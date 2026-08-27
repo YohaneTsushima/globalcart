@@ -12,14 +12,12 @@ const MAX_RECONNECT_DELAY = 30000;
 const HEARTBEAT_INTERVAL = 30000;
 const listeners = new Map();
 
-function getToken() {
-  return localStorage.getItem('token');
-}
-
 function getWsUrl() {
-  const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8080';
-  const wsHost = backendUrl.replace('http://', '').replace('https://', '');
-  const protocol = backendUrl.startsWith('https') ? 'wss:' : 'ws:';
+  const wsOrigin = import.meta.env.DEV
+    ? window.location.origin
+    : (import.meta.env.VITE_BACKEND_URL || 'http://localhost:8080');
+  const wsHost = wsOrigin.replace('http://', '').replace('https://', '');
+  const protocol = wsOrigin.startsWith('https') ? 'wss:' : 'ws:';
   return `${protocol}//${wsHost}/globalcart/ws`;
 }
 
@@ -29,28 +27,21 @@ let refreshPromise = null;
 function refreshTokens() {
   refreshPromise ??= (async () => {
     try {
-      const refreshToken = localStorage.getItem('refresh_token');
-      if (!refreshToken) {
-        console.warn('[WebSocket] no refresh token available');
-        return null;
-      }
-      const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8080';
-      const res = await fetch(`${backendUrl}/globalcart/auth/refresh`, {
+      const refreshBase = import.meta.env.DEV ? '' : (import.meta.env.VITE_BACKEND_URL || 'http://localhost:8080');
+      const res = await fetch(`${refreshBase}/globalcart/auth/refresh`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ refreshToken })
+        credentials: 'include',
       });
-      // 后端已改为失败时返回 HTTP 401（不再是 200 + body code 401）
       if (!res.ok) {
         console.warn('[WebSocket] refresh token failed, status:', res.status);
         return null;
       }
-      const data = await res.json();
-      const { token: newToken, refreshToken: newRefreshToken } = data?.data || data || {};
-      if (!newToken) return null;
-      localStorage.setItem('token', newToken);
-      if (newRefreshToken) localStorage.setItem('refresh_token', newRefreshToken);
-      return newToken;
+      const data = await res.json().catch(() => null);
+      // const { token: newToken } = data?.data || data || {};
+      // if (!newToken) return null;
+      // return newToken;
+      const token = data?.data?.token;
+      return token || true;   // 有 token 返回 token，否则只要请求成功就算刷新成功
     } catch (e) {
       console.error('[WebSocket] refresh token error:', e);
       return null;
@@ -88,28 +79,19 @@ function reconnectWebSocket() {
   connect();
 }
 
-// 解析本地 JWT 的 exp，判断 access token 是否已过期（提前 30 秒余量）
-function isTokenExpired() {
-  try {
-    const token = localStorage.getItem('token');
-    if (!token) return true;
-    const payload = JSON.parse(atob(token.split('.')[1]));
-    return payload.exp * 1000 <= Date.now() + 30_000;
-  } catch {
-    return true;
-  }
-}
-
 function connect() {
   stopped = false;
   if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
     return;
   }
 
-  const token = getToken();
-  if (!token) return;
+  let url = getWsUrl();
 
-  const url = `${getWsUrl()}?token=${encodeURIComponent(token)}`;
+  // 本地开发环境保留 ?token= 参数（后端 auth.cookie.enabled=false）
+  if (import.meta.env.DEV) {
+    const token = localStorage.getItem('token');
+    if (token) url += `?token=${encodeURIComponent(token)}`;
+  }
 
   try {
     ws = new WebSocket(url);
@@ -152,20 +134,7 @@ function connect() {
       return;
     }
 
-    // 1006: 握手失败（可能是 token 过期，也可能是网络/后端不可用，无法从关闭码区分）
-    // 解析本地 JWT 的 exp 判断 token 是否真的过期（提前 30 秒余量）
-    if (event.code === 1006 && isTokenExpired()) {
-      refreshAndReconnect();
-      return;
-    }
-
-    // 连续失败 3 的倍数次时强制尝试刷新一次（覆盖 token 被服务端吊销等 exp 检测不到的场景）
-    if (event.code === 1006 && reconnectAttempts > 0 && reconnectAttempts % 3 === 0) {
-      refreshAndReconnect();
-      return;
-    }
-
-    // 其余情况（1000 正常关闭 / 1001 服务端关闭 / 网络问题）→ 退避重连，不刷新
+    // 其余情况（1000 正常关闭 / 1001 服务端关闭 / 1006 网络问题等）→ 退避重连
     scheduleReconnect();
   };
 

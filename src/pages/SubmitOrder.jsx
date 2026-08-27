@@ -452,7 +452,7 @@ export default function SubmitOrder() {
     try {
 
       const res = await base44.functions.invoke('order/info/createTenantOrder', finalForm);
-debugger
+
       const order = res?.data;
       
       if (res.data?.credit_downgraded) {
