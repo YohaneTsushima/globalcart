@@ -3,6 +3,7 @@ import { base44 } from "@/api/base44Client";
 import { useNavigate } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import { ExternalLink, Copy, CheckCircle, AlertCircle, ArrowLeft, Upload, Loader2, Calculator } from "lucide-react";
+import { ImageWithViewer } from "@/components/common/ImageViewer";
 import { usePermissions } from "@/hooks/usePermissions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -91,7 +92,8 @@ export default function Payment() {
   const [showAlipayConfirm, setShowAlipayConfirm] = useState(false);
   const [alipayFormData, setAlipayFormData] = useState(null);
 
-  const method = selectedMethod || order?.payment_method || "alipay";
+  const methodId = selectedMethod || null;
+  const methodKey = order?.payment_method || "alipay";
   // Server-computed payment data (avoids client-side re-derivation bugs)
   const [serverPaymentData, setServerPaymentData] = useState(null);
   const [paymentPendingReminder, setPaymentPendingReminder] = useState("");
@@ -210,16 +212,16 @@ export default function Payment() {
       }
     }
 
-    const selectedObj = paymentMethods.find(m => (m.provider_key || m.id) === method);
+    const selectedObj = methodId ? paymentMethods.find(m => m.id === methodId) : paymentMethods.find(m => (m.provider_key || m.method_name) === methodKey);
 
     //用于更新Payment Method
     const newMethod = {
       // payable_amount: amountToCharge,
-      method_name: method,
+      method_name: methodKey,
       payment_currency: selectedObj?.payment_currency,
       payment_currency_type: selectedObj?.payment_currency,
       prepayment_rate_jpy_cny: fullRate,
-      provider_key: method
+      provider_key: methodKey
     }
 
     const payParam = {
@@ -270,7 +272,7 @@ export default function Payment() {
     await base44.functions.invoke('updateTenantOrder', {
       order_id: order.id,
       payment_proof_url: file_url,
-      payment_method: method,
+      payment_method: methodKey,
       payment_status: "paid",
       // Supplement payment must not regress order_status; clear the supplement flag instead
       ...(isSupplement ? { supplement_requested: false } : { order_status: "pending_purchase" }),
@@ -313,19 +315,19 @@ export default function Payment() {
   const newPaidAmount = (isShippingOnlyPayment || isSupplement) ? (order?.paid_amount || 0) + baseAmountJpy : baseAmountJpy;
 
   // Find the configured payment method for current selection
-  const activeMethod = paymentMethods.find(m => (m.provider_key || m.meghod_name) === method);
+  const activeMethod = methodId ? paymentMethods.find(m => m.id === methodId) : paymentMethods.find(m => (m.provider_key || m.method_name) === methodKey);
   // Automatic callback methods (e.g. alipay) should not show QR / upload proof UI
   const isAutoCallback = !!activeMethod?.provider_key;
   // Alipay gateway info: prefer PaymentMethod entity, fall back to SiteSettings
   const alipayAccount = settings["alipay_account"] || "";
   const alipayName = settings["alipay_account_name"] || "";
   const alipayQr = activeMethod?.image_url || settings["alipay_qr_url"] || "";
-  const methodLabel = activeMethod?.name || (method === "other" ? (otherPaymentConfig?.name || "其它支付方式") : method);
+  const methodLabel = activeMethod?.name || (methodKey === "other" ? (otherPaymentConfig?.name || "其它支付方式") : methodKey);
 
   // "其它支付方式" special handling:
   // - skip_proof_override=true: OVERRIDES ALL user permission checks for proof upload skip.
   //   This is set exclusively by tenant admins and is independent of canSkipProof.
-  const isOtherMethod = method === "other";
+  const isOtherMethod = methodKey === "other";
   const otherProofEnabled = isOtherMethod ? (otherPaymentConfig?.proof_enabled !== false) : true;
   // ⚠️ skip_proof_override bypasses canSkipProof entirely — do NOT add any additional permission gate here.
   const effectiveCanSkipProof = isOtherMethod
@@ -513,11 +515,11 @@ export default function Payment() {
           </CardHeader>
           <CardContent>
             <PaymentMethodSelector
-              value={method}
+              value={methodKey}
               onChange={(m) => {
-                console.log(order)
-                setSelectedMethod(m.value)}
-              }
+                const found = paymentMethods.find(pm => (pm.provider_key || pm.method_name) === m.value);
+                setSelectedMethod(found?.id || m.value);
+              }}
               prefetched={paymentMethods}
               activeColor="border-red-500 bg-red-50 text-red-700"
             />
@@ -526,7 +528,7 @@ export default function Payment() {
       )}
 
       {/* Payment Method: Alipay */}
-      {method === "alipay" && canSelfPay && (
+      {methodKey === "alipay" && canSelfPay && (
         <Card className="border-blue-200">
           <CardHeader className="pb-3">
             <CardTitle className="text-sm font-semibold text-gray-700 flex items-center gap-2">
@@ -576,7 +578,7 @@ export default function Payment() {
       )}
 
       {/* Other methods — show QR and note from admin config */}
-      {method !== "alipay" && (!isAutoCallback || canSelfPay) && canManualPay && (
+      {methodKey !== "alipay" && (!isAutoCallback || canSelfPay) && canManualPay && (
         <Card className="border-gray-200">
           <CardHeader className="pb-3">
             <CardTitle className="text-sm font-semibold text-gray-700 flex items-center gap-2">
@@ -588,10 +590,10 @@ export default function Payment() {
             {!isAutoCallback && (activeMethod?.image_url || (isOtherMethod && otherPaymentConfig?.image_url)) && (
               <div className="text-center">
                 <p className="text-xs text-gray-500 mb-2">扫描二维码付款</p>
-                <img
+                <ImageWithViewer
                   src={activeMethod?.image_url || otherPaymentConfig?.image_url}
                   alt="收款码"
-                  className="w-48 h-48 mx-auto border border-gray-200 rounded-lg object-contain"
+                  thumbClassName="w-48 h-48 mx-auto border border-gray-200 rounded-lg object-contain"
                 />
               </div>
             )}
@@ -619,7 +621,7 @@ export default function Payment() {
             onClick={async () => {
               await base44.functions.invoke('updateTenantOrder', {
                 order_id: order.id,
-                payment_method: method,
+                payment_method: methodKey,
                 payment_status: "paid",
                 ...(isSupplement ? { supplement_requested: false } : { order_status: "pending_purchase" }),
                 paid_amount: newPaidAmount,

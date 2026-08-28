@@ -332,9 +332,10 @@ export default function AdminSettings() {
     }
   }, [activeTab]);  // 仅在 tab 切换时触发，不依赖 addons（避免编辑时重复触发）
 
-  const isTenantAdmin = user?.role === "admin" || user?.role === "tenant_admin" || user?.role === "ROLE_ADMIN";
-  const isPlatformAdmin = user?.role === "platform_admin";
-
+  // const isTenantAdmin = user?.role === "admin" || user?.role === "tenant_admin" || user?.role === "ROLE_ADMIN";
+  const isTenantAdmin = user?.role === 'TENANT_ADMIN' || user?.role === 'ROLE_ADMIN';
+  // const isPlatformAdmin = user?.role === "platform_admin";
+  const isPlatformAdmin = user?.role === 'ROLE_ADMIN'
   useEffect(() => { load(); }, [load]);
 
     const ADMIN_NAV = [

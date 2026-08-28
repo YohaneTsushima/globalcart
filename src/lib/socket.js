@@ -13,12 +13,8 @@ const HEARTBEAT_INTERVAL = 30000;
 const listeners = new Map();
 
 function getWsUrl() {
-  const wsOrigin = import.meta.env.DEV
-    ? window.location.origin
-    : (import.meta.env.VITE_BACKEND_URL || 'http://localhost:8080');
-  const wsHost = wsOrigin.replace('http://', '').replace('https://', '');
-  const protocol = wsOrigin.startsWith('https') ? 'wss:' : 'ws:';
-  return `${protocol}//${wsHost}/globalcart/ws`;
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  return `${protocol}//${window.location.host}/globalcart/ws`;
 }
 
 // 单飞：并发调用共享同一个 Promise，避免多个入口同时用旧 refresh token 轮换
@@ -27,21 +23,21 @@ let refreshPromise = null;
 function refreshTokens() {
   refreshPromise ??= (async () => {
     try {
-      const refreshBase = import.meta.env.DEV ? '' : (import.meta.env.VITE_BACKEND_URL || 'http://localhost:8080');
-      const res = await fetch(`${refreshBase}/globalcart/auth/refresh`, {
+      
+      const res = await fetch(`/globalcart/auth/refresh`, {
         method: 'POST',
         credentials: 'include',
       });
-      if (!res.ok) {
+      if (!res.success) {
         console.warn('[WebSocket] refresh token failed, status:', res.status);
         return null;
       }
-      const data = await res.json().catch(() => null);
+      // const data = await res.json().catch(() => null);
       // const { token: newToken } = data?.data || data || {};
       // if (!newToken) return null;
       // return newToken;
-      const token = data?.data?.token;
-      return token || true;   // 有 token 返回 token，否则只要请求成功就算刷新成功
+      // const token = data?.data?.token;
+      return true;   // 有 token 返回 token，否则只要请求成功就算刷新成功
     } catch (e) {
       console.error('[WebSocket] refresh token error:', e);
       return null;

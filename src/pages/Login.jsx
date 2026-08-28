@@ -57,7 +57,7 @@ export default function Login() {
   useEffect(() => {
     // OAuth2 回调：后端已设置 cookie，URL 只带 userId 和 next
     const result = searchParams.get('success');
-    if (result) {
+    if (result && result === 'true') {
       setSubmitting(true);
       loginWithOAuth().then(result => {
         setSubmitting(false);

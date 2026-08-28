@@ -66,7 +66,7 @@ export default function SubmitOrder() {
   const [uploading, setUploading] = useState(false);
   const [fetchingPrice, setFetchingPrice] = useState(false);
   const fetchingRef = useRef(false);
-  const [paymentMethod, setPaymentMethod] = useState("");
+  const [paymentMethod, setPaymentMethod] = useState(null);
   const [paymentMethods, setPaymentMethods] = useState([]);
   const [paymentMode, setPaymentMode] = useState("");
   const [userCredit, setUserCredit] = useState(null);
@@ -383,9 +383,7 @@ export default function SubmitOrder() {
     const paymentModeMap = { prepay: "prepay", fullpay: "fullpay_once", deferred: "deferred", credit_weekly: "credit", credit_monthly: "credit" };
     
     // 获取用户选择的付款方式和对应货币
-    const selectedMethodObj = paymentMethods.find((m) => (m.provider_key || m.id) === paymentMethod);
-    const selectedCurrency = selectedMethodObj?.payment_currency || "JPY";
-    
+    const selectedCurrency = paymentMethod?.payment_currency || "";
     try {
       const submitForm = {
             ...form,
@@ -394,7 +392,7 @@ export default function SubmitOrder() {
             user_name: user.full_name || user.email,
             // userId: user.id,
             quantity: 1,
-            provider_key: selectedMethodObj?.provider_key,
+            provider_key: paymentMethod?.provider_key,
             estimated_jpy: parseFloat(form.estimated_jpy) || 0,
             service_fee_rate: (parseFloat(settings.service_fee_rate) || 10),
             service_fee_amount: calculated ? calculated.serviceFeeJpy : null,
@@ -403,12 +401,12 @@ export default function SubmitOrder() {
             service_fee_rule_version: activeRule?.version || null,
             full_payment_amount: (!prePayEnabled) ? prepaymentAmount : 0,
             prepayment_amount: prePayEnabled ? prepaymentAmount : 0,
-            prepayment_currency: selectedCurrency,
+            prepayment_currency: prePayEnabled ? selectedCurrency : "",
             payable_amount: prepaymentAmount,
             payment_currency: selectedCurrency,
             online_store_tag: tagResult.tag_label,
             online_store_tag_color: tagResult.tag_color,
-            payment_method: paymentMethod,
+            payment_method: paymentMethod?.provider_key || paymentMethod?.method_name,
             payment_mode: paymentModeMap[paymentMode] || "prepay",
             credit_cycle: isCredit ? (paymentMode === "credit_weekly" ? "weekly" : "monthly") : null,
             order_status: isCredit ? "paid" : "payment_pending",
@@ -420,10 +418,8 @@ export default function SubmitOrder() {
             selected_addons: selectedAddonObjects.map((a) => ({ id: a.id, service_name: a.service_name, fee: parseFloat(a.fee) || 0, fee_currency: a.fee_currency || "JPY" })),
             show_prompt: !dontShowAgain
       };
-
       // 判断是否需要弹窗确认
       const shouldShowConfirm = userPreference?.confirm_order_count > 0 && userPreference?.show_prompt !== false;
-      
       if (shouldShowConfirm) {
         // 弹窗确认，确认后才调后端
         setPendingForm(submitForm);
@@ -450,6 +446,8 @@ export default function SubmitOrder() {
     setSubmitting(true);
 
     try {
+
+      console.log(finalForm);
 
       const res = await base44.functions.invoke('order/info/createTenantOrder', finalForm);
 
@@ -484,7 +482,7 @@ export default function SubmitOrder() {
         return;
       }
 
-      let paymentUrl = `/Payment?order_id=${order.id}&method=${formToSubmit.payment_method || "other"}&pay_currency=${formToSubmit.prepayment_currency}`;
+      let paymentUrl = `/Payment?order_id=${order.id}&method=${paymentMethod?.id || "other"}&pay_currency=${formToSubmit.prepayment_currency}`;
 
       navigate(paymentUrl);
     } catch (error) {
@@ -527,8 +525,7 @@ export default function SubmitOrder() {
     const prepaymentAmount = calculated ? parseFloat(calculated.prepayJpy) : 0;
     
     // 获取用户选择的付款方式和对应货币
-    const selectedMethodObjForPre = paymentMethods.find((m) => (m.providerKey || m.methodName) === paymentMethod);
-    const selectedCurrencyForPre = selectedMethodObjForPre?.paymentCurrency || "JPY";
+    const selectedCurrencyForPre = paymentMethod?.payment_currency || "";
 
     try {
       const payload = {
@@ -544,8 +541,8 @@ export default function SubmitOrder() {
         service_fee_rule_name: activeRule?.name || null,
         service_fee_rule_version: activeRule?.version || null,
         prepayment_amount: prepaymentAmount,
-        prepayment_currency: "JPY",
-        payment_method: paymentMethod,
+        prepayment_currency: selectedCurrencyForPre,
+        payment_method: paymentMethod?.provider_key || paymentMethod?.method_name,
         online_store_tag: tagResult.tag_label,
         online_store_tag_color: tagResult.tag_color,
         payment_mode: paymentMode || "prepay",
@@ -902,7 +899,7 @@ export default function SubmitOrder() {
               type="button"
               variant="outline"
               className="w-full border-purple-300 text-purple-700 hover:bg-purple-50"
-              disabled={submitting || !form.order_name || !form.estimated_jpy || !(productUrls.some(u => u.trim()))}
+              disabled={submitting || !form.order_name || !form.estimated_jpy || !paymentMethod || !(productUrls.some(u => u.trim()))}
               onClick={handlePreShipmentSubmit}
             >
               <Truck className="w-4 h-4 mr-2" />
@@ -911,7 +908,7 @@ export default function SubmitOrder() {
             )}
             <Button
               type="submit"
-              disabled={submitting || !form.order_name || !form.estimated_jpy || !(productUrls.some(u => u.trim()))}
+              disabled={submitting || !form.order_name || !form.estimated_jpy || !paymentMethod || !(productUrls.some(u => u.trim()))}
               className="w-full bg-red-600 hover:bg-red-700"
             >
               <ShoppingBag className="w-4 h-4 mr-2" />

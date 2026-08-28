@@ -134,8 +134,11 @@ export default function PaymentSection({
         {/* 支付方式选择 */}
         {(paymentMode === "prepay" || paymentMode === "fullpay") && paymentMethods.length > 0 && (
           <PaymentMethodSelector
-            value={paymentMethod}
-            onChange={(m) => setPaymentMethod(m.value)}
+            value={paymentMethod?.provider_key || paymentMethod?.method_name}
+            onChange={(m) => {
+              const fullMethod = paymentMethods.find(pm => (pm.provider_key || pm.method_name) === m.value);
+              setPaymentMethod(fullMethod || m);
+            }}
             prefetched={paymentMethods}
             activeColor="border-red-500 bg-red-50 text-red-700"
           />

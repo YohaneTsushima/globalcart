@@ -20,6 +20,7 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import PaymentMethodSelector from "@/components/common/PaymentMethodSelector";
+import { ImageWithViewer } from "@/components/common/ImageViewer";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { toast } from "sonner";
 
@@ -220,7 +221,7 @@ export default function PaymentModal({ order, mode = "prepay", onClose, onSucces
       prepayment_rate_jpy_cny: rateValue,
       provider_key: method
     }
-console.log('Amount to Charge is - ' + amountToCharge)
+
     const payParam = {
       orderId: order.id,
       // amount: 0.1,
@@ -438,7 +439,12 @@ console.log('Amount to Charge is - ' + amountToCharge)
             <Label className="text-sm mb-2 block">选择支付方式</Label>
             <PaymentMethodSelector
               value={method}
-              onChange={m => { setMethod(m.value); setSelectedMethodMeta(m); setProofUrl(""); }}
+              onChange={m => {
+                const fullMethod = paymentMethods.find(pm => (pm.provider_key || pm.method_name) === m.value);
+                setMethod(m.value);
+                setSelectedMethodMeta(fullMethod || m);
+                setProofUrl("");
+              }}
               onMethodsLoaded={setPaymentMethods}
               disabled={!canPayment}
             />
@@ -463,15 +469,19 @@ console.log('Amount to Charge is - ' + amountToCharge)
           {method && method !== "alipay" && canPayment && (
             <div className="space-y-3">
               {/* Show payment note + QR from admin config if available */}
-              {(selectedMethodMeta?.paymentDescription || selectedMethodMeta?.payment_note || selectedMethodMeta?.paymentQrCode || selectedMethodMeta?.image_url) ? (
+              {(selectedMethodMeta?.method_description || selectedMethodMeta?.payment_note || selectedMethodMeta?.payment_qr_code || selectedMethodMeta?.image_url) ? (
                 <div className="p-3 bg-gray-50 border border-gray-200 rounded-lg space-y-2">
-                  {(selectedMethodMeta.paymentQrCode || selectedMethodMeta.image_url) && (
+                  {(selectedMethodMeta.payment_qr_code || selectedMethodMeta.image_url) && (
                     <div className="text-center">
-                      <img src={selectedMethodMeta.paymentQrCode || selectedMethodMeta.image_url} alt="收款码" className="h-40 mx-auto rounded object-contain border border-gray-200" />
+                      <ImageWithViewer
+                        src={selectedMethodMeta.payment_qr_code || selectedMethodMeta.image_url}
+                        alt="收款码"
+                        thumbClassName="h-40 mx-auto rounded object-contain border border-gray-200"
+                      />
                     </div>
                   )}
-                  {(selectedMethodMeta.paymentDescription || selectedMethodMeta.payment_note) && (
-                    <p className="text-sm text-gray-700 whitespace-pre-wrap text-center">{selectedMethodMeta.paymentDescription || selectedMethodMeta.payment_note}</p>
+                  {(selectedMethodMeta.method_description || selectedMethodMeta.payment_note) && (
+                    <p className="text-sm text-gray-700 whitespace-pre-wrap text-center">{selectedMethodMeta.method_description || selectedMethodMeta.payment_note}</p>
                   )}
                 </div>
               ) : (

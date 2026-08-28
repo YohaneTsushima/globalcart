@@ -27,16 +27,21 @@ import { fileURLToPath } from 'url'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
-// 防御：Deploy.bat 的 set 可能泄漏到 process.env，覆盖 .env.local
-if (process.env.VITE_BACKEND_URL && !process.env.VITE_BACKEND_URL.startsWith('http://localhost')) {
-  delete process.env.VITE_BACKEND_URL;
-}
-
 export default defineConfig(({ mode }) => {
+  // 防御：Deploy.bat 的 set 可能泄漏到 process.env，覆盖 .env.local（仅 dev）
+  if (mode === 'development' &&
+      process.env.VITE_BACKEND_URL &&
+      !process.env.VITE_BACKEND_URL.startsWith('http://localhost')) {
+    delete process.env.VITE_BACKEND_URL;
+  }
   const env = loadEnv(mode, process.cwd(), '')
-  const backendUrl = mode === 'development'
+  const isDev = mode === 'development'
+  const backendUrl = isDev
     ? 'http://localhost:8080'
     : (env.VITE_BACKEND_URL || 'https://api.beday.cc')
+  const wsBackendUrl = isDev
+    ? 'ws://localhost:8080'
+    : (env.VITE_BACKEND_URL || 'https://api.beday.cc').replace('http', 'ws')
 
   return {
   logLevel: 'info',
@@ -62,6 +67,18 @@ export default defineConfig(({ mode }) => {
         target: 'http://localhost:3001',
         changeOrigin: true,
       },
+      '/globalcart/ws': {
+        target: wsBackendUrl,
+        secure: false,
+        ws: true,
+        changeOrigin: true,
+        configure: (proxy) => {
+          proxy.on('error', (err) => {
+            if (err.code === 'ECONNABORTED' || err.code === 'ECONNRESET') return;
+            console.warn('[vite ws proxy]', err.code || err.message);
+          });
+        },
+      },
       '/globalcart': {
         target: backendUrl,
         changeOrigin: true,
@@ -76,11 +93,6 @@ export default defineConfig(({ mode }) => {
       },
       '/uploads': {
         target: backendUrl,
-        changeOrigin: true,
-      },
-      '/globalcart/ws': {
-        target: backendUrl.replace('http', 'ws'),
-        ws: true,
         changeOrigin: true,
       }
     }

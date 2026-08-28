@@ -31,5 +31,9 @@ COPY --from=builder /app/dist /usr/share/nginx/html
 COPY --from=scraper-builder /app /app/scraper
 COPY --from=scraper-builder /root/.cache/ms-playwright /root/.cache/ms-playwright
 
+WORKDIR /app/scraper
+RUN npx playwright install-deps chromium && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /
 EXPOSE 80
 CMD ["supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]

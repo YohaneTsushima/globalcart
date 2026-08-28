@@ -88,15 +88,14 @@ api.interceptors.response.use(
     isRefreshing = true;
 
     try {
-      const refreshBase = import.meta.env.DEV ? '' : (import.meta.env.VITE_BACKEND_URL || '');
-      const res = await axios.post(`${refreshBase}/globalcart/auth/refresh`, null, { withCredentials: true });
-      const { token: newToken } = res.data?.data || res.data || {};
-      if (!newToken) throw new Error('no token');
+      await axios.post(`/globalcart/auth/refresh`, null, { withCredentials: true });
+      // const { token: newToken } = res.data?.data || res.data || {};
+      // if (!newToken) throw new Error('no token');
 
       reconnectWebSocket();
 
       const retryConfig = { ...originalRequest };
-      processQueue(null, newToken);
+      processQueue(null, true);
       return api(retryConfig);
     } catch (refreshErr) {
       processQueue(refreshErr, null);
@@ -208,7 +207,8 @@ export const base44 = {
           const cache = JSON.parse(localStorage.getItem('auth_cache') || '{}');
           userId = cache.user?.id || '';
         } catch (_) {}
-        const API_BASE = import.meta.env.DEV ? '' : (import.meta.env.VITE_BACKEND_URL || window.location.origin);
+        // const API_BASE = import.meta.env.DEV ? '' : (import.meta.env.VITE_BACKEND_URL || window.location.origin);
+        const API_BASE = '';
         const fileUrl = typeof cleanPath === 'string'
           ? `${API_BASE}${imageUrlBase}/${cleanPath}`
           : cleanPath;

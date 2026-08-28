@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
-import { Plus, Edit2, Trash2, X, Upload, Image as ImageIcon } from "lucide-react";
+import { Plus, Edit2, Trash2 } from "lucide-react";
+import { toast } from "sonner";
 import { base44 } from "@/api/base44Client";
 import { tenantEntity } from "@/lib/tenantApi";
 import { Button } from "@/components/ui/button";
@@ -59,12 +60,14 @@ export default function ItemSizeTemplateManager({ initialData = null, onReload }
     setShowForm(false);
     resetForm();
     setSaving(false);
+    toast.success(editingId ? "模板已更新" : "模板已添加");
   };
 
   const handleDelete = async (id) => {
     await tenantEntity.delete('ItemSizeTemplate', id);
     await loadTemplates();
     setDeleting(null);
+    toast.success("模板已删除");
   };
 
   const handleEdit = (template) => {

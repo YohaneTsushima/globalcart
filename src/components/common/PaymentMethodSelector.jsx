@@ -63,11 +63,12 @@ export default function PaymentMethodSelector({ value, onChange, className = "",
     const methodValue = m.provider_key || m.method_name;
     const isActive = value === methodValue;
     const isDisabled = m.is_active === false;
+
     return (
       <button
         key={m.id || methodValue}
         type="button"
-        onClick={() => !isDisabled && onChange({ value: methodValue, label: m.method_name, payment_description: m.payment_description || "", payment_qr_code: m.payment_qr_code || "", icon: m.icon || "", color: m.color || "", payment_currency: m.payment_currency || null, payment_method_fee_rate: m.payment_method_fee_rate || 0, payment_method_fee_rate: m.payment_method_fee_rate || 0 })}
+        onClick={() => !isDisabled && onChange({ value: methodValue, label: m.method_name, payment_description: m.payment_description || "", payment_qr_code: m.payment_qr_code || "", icon: m.icon || "", color: m.color || "", payment_currency: m.payment_currency || null, payment_method_fee_rate: m.payment_method_fee_rate || 0 })}
         disabled={isDisabled}
         className={`p-3 rounded-lg border-2 text-sm font-medium transition-all flex items-center gap-2 ${
           isDisabled

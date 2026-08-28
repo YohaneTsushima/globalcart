@@ -79,7 +79,7 @@ export default function PlatformAdminSettings() {
   ];
 
   // const isPlatformAdmin = user?.role?.includes('platform_admin', 'ROLE_ADMIN', 'TENANT_ADMIN');
-  const isPlatformAdmin = ['ROLE_ADMIN', 'TENANT_ADMIN', 'platform_admin'].includes(user?.role);
+  const isPlatformAdmin = ['ROLE_ADMIN', 'platform_admin'].includes(user?.role);
 
   const loadInitData = async () => {
     const res = await tenantManage.init('TenantsManage');

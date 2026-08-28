@@ -13,9 +13,10 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import {
-  Plus, Pencil, Trash2, CheckCircle, XCircle, Upload,
+  Plus, Pencil, Trash2, CheckCircle, XCircle,
   ChevronDown, ChevronUp, Eye, EyeOff, Save, AlertCircle, Zap, ImageIcon, HelpCircle
 } from "lucide-react";
+import ImageUploader from "@/components/common/ImageUploader";
 
 const CURRENCIES = ["JPY", "CNY", "USD", "TWD", "HKD", "EUR", "SGD"];
 
@@ -27,9 +28,9 @@ const ALIPAY_KEY_FIELDS = [
 ];
 
 const EMPTY_MANUAL_FORM = {
-  name: "", description: "", icon: "", color: "bg-gray-100 text-gray-700",
+  method_name: "", method_description: "", icon: "", color: "bg-gray-100 text-gray-700",
   image_url: "", payment_note: "", provider_key: "", payment_currency: "JPY",
-  surcharge_rate: 0, surcharge_fixed_jpy: 0,
+  surcharge_rate: 0, surcharge_fixed_jpy: 0, payment_atmt: "MT",
 };
 
 // ── Alipay Keys inline form ────────────────────────────────────────────────
@@ -196,38 +197,49 @@ function EditForm({ form, onChange, onSave, onCancel, saving, onUpload, uploadin
       <div className="grid grid-cols-2 gap-3">
         <div>
           <Label className="text-xs text-gray-500">名称</Label>
-          <Input className="mt-0.5 h-8 text-sm" value={form.name} onChange={e => onChange('name', e.target.value)} />
+          <Input className="mt-0.5 h-8 text-sm" value={form.method_name} onChange={e => onChange('method_name', e.target.value)} />
         </div>
         <div>
           <Label className="text-xs text-gray-500">图标（emoji）</Label>
           <Input className="mt-0.5 h-8 text-sm" value={form.icon} onChange={e => onChange('icon', e.target.value)} placeholder="💳" />
         </div>
-        <div>
-          <Label className="text-xs text-gray-500">颜色（Tailwind class）</Label>
-          <Input className="mt-0.5 h-8 text-sm" value={form.color} onChange={e => onChange('color', e.target.value)} />
-        </div>
-        <div>
-          <Label className="text-xs text-gray-500">图片（收款码）</Label>
-          <div className="flex gap-1 mt-0.5">
-            <Input className="h-8 text-sm flex-1" value={form.image_url} onChange={e => onChange('image_url', e.target.value)} placeholder="https://..." />
-            <label className="cursor-pointer">
-              <div className="h-8 w-8 flex items-center justify-center border border-gray-200 rounded hover:bg-gray-50">
-                <Upload className="w-3.5 h-3.5 text-gray-400" />
-              </div>
-              <input type="file" accept="image/*" className="hidden" onChange={e => { const f = e.target.files[0]; if (f) onUpload(f); }} disabled={uploading} />
-            </label>
+        <div className="flex flex-col justify-end">
+          <div>
+            <Label className="text-xs text-gray-500">颜色（Tailwind class）</Label>
+            <Input className="mt-0.5 h-8 text-sm" value={form.color} onChange={e => onChange('color', e.target.value)} />
+          </div>
+          <div className="mt-3">
+            <Label className="text-xs text-gray-500">支付货币</Label>
+            <select className="mt-0.5 h-8 w-full rounded-md border border-input bg-transparent px-3 text-sm"
+              value={form.payment_currency || 'JPY'} onChange={e => onChange('payment_currency', e.target.value)}>
+              {CURRENCIES.map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
           </div>
         </div>
         <div>
-          <Label className="text-xs text-gray-500">支付货币</Label>
-          <select className="mt-0.5 h-8 w-full rounded-md border border-input bg-transparent px-3 text-sm"
-            value={form.payment_currency || 'JPY'} onChange={e => onChange('payment_currency', e.target.value)}>
-            {CURRENCIES.map(c => <option key={c} value={c}>{c}</option>)}
-          </select>
+          <ImageUploader
+            value={form.image_url}
+            onChange={(fileOrUrl) => {
+              if (typeof fileOrUrl === "string") {
+                onChange('image_url', fileOrUrl);
+              } else {
+                onUpload(fileOrUrl);
+              }
+            }}
+            onDelete={async () => {
+              if (form.image_url) {
+                try { await base44.integrations.Core.DeleteFile({ imageUrl: form.image_url, path: "payment" }); } catch (_) {}
+              }
+              onChange('image_url', '');
+            }}
+            uploading={uploading}
+            label="图片（收款码）"
+            id={`edit-method-image-${form.method_name}`}
+          />
         </div>
         <div className="col-span-2">
           <Label className="text-xs text-gray-500">说明</Label>
-          <Input className="mt-0.5 h-8 text-sm" value={form.description} onChange={e => onChange('description', e.target.value)} />
+          <Input className="mt-0.5 h-8 text-sm" value={form.method_description} onChange={e => onChange('method_description', e.target.value)} />
         </div>
         <div className="col-span-2">
           <Label className="text-xs text-gray-500">付款时说明（显示给用户）</Label>
@@ -251,7 +263,6 @@ function EditForm({ form, onChange, onSave, onCancel, saving, onUpload, uploadin
           <p className="text-[10px] text-gray-400 mt-0.5">每笔支付额外收取的固定手续费</p>
         </div>
       </div>
-      {form.image_url && <img src={form.image_url} alt="" className="h-16 rounded object-contain border border-gray-200" />}
       <div className="flex gap-2">
         <Button size="sm" className="bg-gray-900 hover:bg-gray-800 h-7 text-xs" onClick={onSave} disabled={saving}>
           {saving ? "保存中..." : "保存"}
@@ -308,7 +319,7 @@ function OtherPaymentConfig() {
 
   const handleUpload = async (file) => {
     setUploading(true);
-    const { file_url } = await base44.integrations.Core.UploadFile({ file });
+    const { file_url } = await base44.integrations.Core.UploadFile({ file, path: "payment" });
     set('other_payment_image_url', file_url);
     setUploading(false);
   };
@@ -331,20 +342,25 @@ function OtherPaymentConfig() {
               placeholder="其它支付方式" />
           </div>
           <div>
-            <Label className="text-xs text-gray-500">图片（收款码/说明图）</Label>
-            <div className="flex gap-1 mt-0.5">
-              <Input className="h-8 text-sm flex-1" value={config.other_payment_image_url}
-                onChange={e => set('other_payment_image_url', e.target.value)} placeholder="https://..." />
-              <label className="cursor-pointer">
-                <div className="h-8 w-8 flex items-center justify-center border border-gray-200 rounded hover:bg-gray-100 bg-white">
-                  <Upload className="w-3.5 h-3.5 text-gray-400" />
-                </div>
-                <input type="file" accept="image/*" className="hidden"
-                  onChange={e => { const f = e.target.files[0]; if (f) handleUpload(f); }}
-                  disabled={uploading} />
-              </label>
-            </div>
-            {uploading && <p className="text-xs text-blue-500 mt-0.5">上传中...</p>}
+            <ImageUploader
+              value={config.other_payment_image_url}
+              onChange={(fileOrUrl) => {
+                if (typeof fileOrUrl === "string") {
+                  set('other_payment_image_url', fileOrUrl);
+                } else {
+                  handleUpload(fileOrUrl);
+                }
+              }}
+              onDelete={async () => {
+                if (config.other_payment_image_url) {
+                  try { await base44.integrations.Core.DeleteFile({ imageUrl: config.other_payment_image_url, path: "payment" }); } catch (_) {}
+                }
+                set('other_payment_image_url', '');
+              }}
+              uploading={uploading}
+              label="图片（收款码/说明图）"
+              id="other-payment-image"
+            />
           </div>
           <div className="col-span-2">
             <Label className="text-xs text-gray-500">付款时说明（显示给用户）</Label>
@@ -421,10 +437,10 @@ export default function PaymentMethodManager({ onReload }) {
     setLoading(true);
     const [methodsRes, settingsRes] = await Promise.all([
       // base44.functions.invoke('managePaymentMethod', { action: 'list' }),
-      [],
+      tenantEntity.list('PaymentConfig'),
       base44.functions.invoke('admin/settings/getAdminSettingsPageData', {}),
     ]);
-    setMethods(settingsRes?.data?.data?.methods || []);
+    setMethods(settingsRes?.data?.data?.paymentMethods || []);
 
     // setConfig({
     //   other_payment_name: c.other_payment_name ?? DEFAULT.other_payment_name,
@@ -442,14 +458,13 @@ export default function PaymentMethodManager({ onReload }) {
     setAlipayKeyIds(ids);
 
     setLoading(false);
-    onReload?.();
   };
 
   useEffect(() => { reload(); }, []); // eslint-disable-line
 
   const handleUpload = async (file, target) => {
     setUploading(true);
-    const { file_url } = await base44.integrations.Core.UploadFile({ file });
+    const { file_url } = await base44.integrations.Core.UploadFile({ file, path: "payment" });
     if (target === 'manual') setManualForm(f => ({ ...f, image_url: file_url }));
     else setEditForm(f => ({ ...f, image_url: file_url }));
     setUploading(false);
@@ -474,9 +489,11 @@ export default function PaymentMethodManager({ onReload }) {
   };
 
   const handleAddManual = async () => {
-    if (!manualForm.name) return;
+    if (!manualForm.method_name) return;
     setSaving(true);
-    await base44.functions.invoke('managePaymentMethod', { action: 'create', ...manualForm });
+    
+    // await base44.functions.invoke('managePaymentMethod', { action: 'create', ...manualForm });
+    await tenantEntity.create('PaymentConfig', { ... manualForm });
     setManualForm({ ...EMPTY_MANUAL_FORM });
     setShowManualAdd(false);
     await reload();
@@ -486,7 +503,7 @@ export default function PaymentMethodManager({ onReload }) {
   const handleEdit = (m) => {
     setEditingId(m.id);
     setEditForm({
-      name: m.name, description: m.description || '', icon: m.icon || '',
+      method_name: m.method_name, method_description: m.method_description || '', icon: m.icon || '',
       color: m.color || '', image_url: m.image_url || '',
       payment_note: m.payment_note || '', payment_currency: m.payment_currency || 'JPY',
       surcharge_rate: m.surcharge_rate ?? 0, surcharge_fixed_jpy: m.surcharge_fixed_jpy ?? 0,
@@ -495,7 +512,8 @@ export default function PaymentMethodManager({ onReload }) {
 
   const handleSaveEdit = async (id) => {
     setSaving(true);
-    await base44.functions.invoke('managePaymentMethod', { action: 'update', id, ...editForm });
+    // await base44.functions.invoke('managePaymentMethod', { action: 'update', id, ...editForm });
+    await tenantEntity.update('PaymentConfig', id, { ...editForm });
     setEditingId(null);
     await reload();
     setSaving(false);
@@ -640,46 +658,53 @@ export default function PaymentMethodManager({ onReload }) {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label className="text-xs text-gray-500">名称 *</Label>
-                <Input className="mt-0.5 h-8 text-sm" value={manualForm.name}
-                  onChange={e => setManualForm(f => ({ ...f, name: e.target.value }))} placeholder="微信支付" />
+                <Input className="mt-0.5 h-8 text-sm" value={manualForm.method_name}
+                  onChange={e => setManualForm(f => ({ ...f, method_name: e.target.value }))} placeholder="微信支付" />
               </div>
               <div>
                 <Label className="text-xs text-gray-500">图标（emoji）</Label>
                 <Input className="mt-0.5 h-8 text-sm" value={manualForm.icon}
                   onChange={e => setManualForm(f => ({ ...f, icon: e.target.value }))} placeholder="💬" />
               </div>
-              <div>
-                <Label className="text-xs text-gray-500">颜色（Tailwind class）</Label>
-                <Input className="mt-0.5 h-8 text-sm" value={manualForm.color}
-                  onChange={e => setManualForm(f => ({ ...f, color: e.target.value }))} placeholder="bg-green-100 text-green-700" />
-              </div>
-              <div>
-                <Label className="text-xs text-gray-500">图片（收款码）</Label>
-                <div className="flex gap-1 mt-0.5">
-                  <Input className="h-8 text-sm flex-1" value={manualForm.image_url}
-                    onChange={e => setManualForm(f => ({ ...f, image_url: e.target.value }))} placeholder="https://..." />
-                  <label className="cursor-pointer">
-                    <div className="h-8 w-8 flex items-center justify-center border border-gray-200 rounded bg-white hover:bg-gray-50">
-                      <Upload className="w-3.5 h-3.5 text-gray-400" />
-                    </div>
-                    <input type="file" accept="image/*" className="hidden"
-                      onChange={e => { const f = e.target.files[0]; if (f) handleUpload(f, 'manual'); }}
-                      disabled={uploading} />
-                  </label>
+              <div className="flex flex-col justify-end">
+                <div>
+                  <Label className="text-xs text-gray-500">颜色（Tailwind class）</Label>
+                  <Input className="mt-0.5 h-8 text-sm" value={manualForm.color}
+                    onChange={e => setManualForm(f => ({ ...f, color: e.target.value }))} placeholder="bg-green-100 text-green-700" />
                 </div>
-                {uploading && <p className="text-xs text-blue-500 mt-0.5">上传中...</p>}
+                <div className="mt-3">
+                  <Label className="text-xs text-gray-500">支付货币</Label>
+                  <select className="mt-0.5 h-8 w-full rounded-md border border-input bg-transparent px-3 text-sm"
+                    value={manualForm.payment_currency} onChange={e => setManualForm(f => ({ ...f, payment_currency: e.target.value }))}>
+                    {CURRENCIES.map(c => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                </div>
               </div>
               <div>
-                <Label className="text-xs text-gray-500">支付货币</Label>
-                <select className="mt-0.5 h-8 w-full rounded-md border border-input bg-transparent px-3 text-sm"
-                  value={manualForm.payment_currency} onChange={e => setManualForm(f => ({ ...f, payment_currency: e.target.value }))}>
-                  {CURRENCIES.map(c => <option key={c} value={c}>{c}</option>)}
-                </select>
+                <ImageUploader
+                  value={manualForm.image_url}
+                  onChange={(fileOrUrl) => {
+                    if (typeof fileOrUrl === "string") {
+                      setManualForm(f => ({ ...f, image_url: fileOrUrl }));
+                    } else {
+                      handleUpload(fileOrUrl, 'manual');
+                    }
+                  }}
+                  onDelete={async () => {
+                    if (manualForm.image_url) {
+                      try { await base44.integrations.Core.DeleteFile({ imageUrl: manualForm.image_url, path: "payment" }); } catch (_) {}
+                    }
+                    setManualForm(f => ({ ...f, image_url: "" }));
+                  }}
+                  uploading={uploading}
+                  label="图片（收款码）"
+                  id="manual-method-image"
+                />
               </div>
               <div className="col-span-2">
                 <Label className="text-xs text-gray-500">说明</Label>
-                <Input className="mt-0.5 h-8 text-sm" value={manualForm.description}
-                  onChange={e => setManualForm(f => ({ ...f, description: e.target.value }))} placeholder="微信扫码支付" />
+                <Input className="mt-0.5 h-8 text-sm" value={manualForm.method_description}
+                  onChange={e => setManualForm(f => ({ ...f, method_description: e.target.value }))} placeholder="微信扫码支付" />
               </div>
               <div className="col-span-2">
                 <Label className="text-xs text-gray-500">付款时说明（显示给用户）</Label>
@@ -704,10 +729,7 @@ export default function PaymentMethodManager({ onReload }) {
                 <p className="text-[10px] text-gray-400 mt-0.5">每笔支付额外收取的固定手续费</p>
               </div>
             </div>
-            {manualForm.image_url && (
-              <img src={manualForm.image_url} alt="" className="h-20 rounded object-contain border border-gray-200" />
-            )}
-            <Button size="sm" className="bg-gray-900 hover:bg-gray-800 text-xs" onClick={handleAddManual} disabled={saving || !manualForm.name}>
+            <Button size="sm" className="bg-gray-900 hover:bg-gray-800 text-xs" onClick={handleAddManual} disabled={saving || !manualForm.method_name}>
               <Plus className="w-3.5 h-3.5 mr-1" />{saving ? "添加中..." : "添加"}
             </Button>
           </div>
