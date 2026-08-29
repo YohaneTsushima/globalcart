@@ -68,8 +68,12 @@ export const PhysicalOrderController = {
     const formatAmount = (amount, currency) => {
       if (!amount || amount <= 0) return "-";
       if (currency === "JPY") return `${Math.round(amount).toLocaleString()} yen`;
-      if (currency === "CNY") return `${Math.round(amount)} yuan`;
-      return `${currency} ${amount.toFixed(2)}`;
+      if (currency === "CNY") {
+        const num = parseFloat(amount);
+        const display = num % 1 === 0 ? String(num) : String(parseFloat(num.toFixed(2)));
+        return `${display} yuan`;
+      }
+      return `${currency} ${parseFloat(amount).toFixed(2)}`;
     };
 
     switch (col.key) {
@@ -457,7 +461,7 @@ export const PhysicalOrderController = {
   /**
    * 批量操作
    */
-  getBulkActions: (selectedOrders, sharedStatus) => {
+  getBulkActions: (selectedOrders, sharedStatus, customHandlers = {}) => {
     const actions = [];
     
     if (!sharedStatus) return actions;
@@ -497,8 +501,20 @@ export const PhysicalOrderController = {
         updateData: { order_status: "delivered" }
       });
     }
-    
-    return actions;
+
+    if (sharedStatus === "awaiting_payment_confirmation") {
+      actions.push({
+        key: "awaiting_payment_confirmation",
+        label: "一键确认收款",
+        color: "bg-green-700 hover:bg-green-800",
+        updateData: { order_status: "paid" }
+      });
+    }
+
+    return actions.map(a => ({
+      ...a,
+      ...(customHandlers[a.key] ? { handler: customHandlers[a.key] } : {}),
+    }));
   },
 
   /**

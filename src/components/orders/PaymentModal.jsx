@@ -9,7 +9,7 @@ import { useNavigate } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import QRCode from 'qrcode';
 import { X, CreditCard, ExternalLink, CheckCircle, Loader2, Lock } from "lucide-react";
-import FileDropzone from "@/components/common/FileDropzone";
+import ImageUploader from "@/components/common/ImageUploader";
 import ConfirmDialog from "@/components/common/ConfirmDialog";
 import { base44 } from "@/api/base44Client";
 import { openAlipayPopup } from "@/lib/alipayUtils";
@@ -72,7 +72,7 @@ export default function PaymentModal({ order, mode = "prepay", onClose, onSucces
     ? `${title}金额：${Math.round(defaultAmount)} yuan`
     : `${title}金额：${cur} ${Math.round(defaultAmount)}`;
 
-  const [method, setMethod] = useState("");
+  const [methodId, setMethodId] = useState("");
   const [selectedMethodMeta, setSelectedMethodMeta] = useState(null); // { value, label, payment_note, image_url, payment_currency }
   const [paidAmount, setPaidAmount] = useState(String(defaultAmount));
   const [rates, setRates] = useState(null);
@@ -108,8 +108,8 @@ export default function PaymentModal({ order, mode = "prepay", onClose, onSucces
 
   // When method changes (for prepay mode), reload surcharge from backend
   useEffect(() => {
-    if (!isShipping && !isSupp && order?.id && method) {
-      base44.functions.invoke('payment/getPaymentPageData', { order_id: order.id, payment_method_key: method })
+    if (!isShipping && !isSupp && order?.id && methodId) {
+      base44.functions.invoke('payment/getPaymentPageData', { order_id: order.id, payment_method_key: methodId })
         .then(r => {
           const d = r.data || {};
           const sc = d.surchargeJpy ?? 0;
@@ -122,12 +122,12 @@ export default function PaymentModal({ order, mode = "prepay", onClose, onSucces
           setTenantRates(d.tenant_rates || null);
         })
         .catch(() => {});
-    } else if (!method) {
+    } else if (!methodId) {
       setSurchargeJpy(0);
       setFinalAmountJpy(defaultAmount);
       setPaidAmount(String(defaultAmount));
     }
-  }, [method]);
+  }, [methodId]);
 
   // 监听支付宝回调的 postMessage（PaymentClose 发送）
   useEffect(() => {
@@ -210,16 +210,16 @@ export default function PaymentModal({ order, mode = "prepay", onClose, onSucces
       currencyToSend = payCurrency;
     }
 
-    const selectedObj = paymentMethods.find(m => (m.provider_key || m.id) === method);
+    const selectedObj = paymentMethods.find(m => m.id === methodId);
 
     //用于更新Payment Method
     const newMethod = {
       // payable_amount: amountToCharge,
-      method_name: method,
+      method_name: selectedMethodMeta?.label || selectedMethodMeta?.method_name || "",
       payment_currency: selectedObj?.payment_currency,
       payment_currency_type: selectedObj?.payment_currency,
       prepayment_rate_jpy_cny: rateValue,
-      provider_key: method
+      provider_key: selectedObj?.provider_key || ""
     }
 
     const payParam = {
@@ -278,7 +278,7 @@ export default function PaymentModal({ order, mode = "prepay", onClose, onSucces
     setSubmitting(true);
     const currentPaidAmount = paidAmount;
     const updates = {
-      payment_method: method,
+      payment_method: selectedMethodMeta?.provider_key || selectedMethodMeta?.method_name || "",
       payment_proof_url: proofUrl,
       payment_status: "paid",
     };
@@ -298,47 +298,46 @@ export default function PaymentModal({ order, mode = "prepay", onClose, onSucces
     onSuccess?.();
   };
 
-  // Upload proof then auto-submit and navigate to MyOrders
-  const handleProofUploaded = async (file) => {
-    // Capture current values before any async gaps
-    const currentPaidAmount = paidAmount;
-    const currencyUpdates = buildActualCurrencyUpdates(currentPaidAmount);
-
+  const handleProofChange = async (file) => {
+    if (!file) return;
     setUploading(true);
-    const { file_url } = await base44.integrations.Core.UploadFile({ file });
-    setProofUrl(file_url);
-    setUploading(false);
-    // Auto-submit
-    setSubmitting(true);
-    const updates = {
-      payment_method: method,
-      payment_proof_url: file_url,
-      payment_status: "paid",
-      order_status: "pending_purchase",
-    };
-    if (isShipping) {
-      updates.order_status = "ready_to_ship";
-    } else if (isSupp) {
-      updates.supplement_requested = false;
-      updates.paid_amount = (order.paid_amount || 0) + parseFloat(currentPaidAmount);
-      Object.assign(updates, currencyUpdates);
-    } else {
-      updates.paid_amount = (order.paid_amount || 0) + parseFloat(currentPaidAmount);
-      Object.assign(updates, currencyUpdates);
-    }
-    await updateOrder(order.id, updates);
-    setSubmitting(false);
-    if (onSuccess) {
-      onSuccess();
-    } else {
-      navigate(createPageUrl("MyOrders"));
+    try {
+      const { file_url } = await base44.integrations.Core.UploadFile({ file, path: "proof" });
+      setProofUrl(file_url);
+      
+      // TODO: 触发更新状态的方法
+      let payload = {
+        id: order.id,
+        data: {
+          order_id: order.id,
+          payment_proof_url: file_url,
+          method: selectedMethodMeta
+        }
+      };
+
+      await base44.functions.invoke('order/info/updateProofUrlOrder', payload);
+      toast.success(`订单 [${order.order_number}] 的支付凭证上传成功！`);
+      setTimeout(() =>  onSuccess?.(), 2000);
+      // onSuccess?.();
+    } catch (err) {
+      debugger
+      let message = err?.message || err?.response?.data?.message;
+      toast.error("上传失败: " + message ? message : err);
+    } finally {
+      setUploading(false);
     }
   };
 
   return (
     <>
-    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="bg-white rounded-xl shadow-xl w-full max-w-lg" onMouseDown={e => e.stopPropagation()}>
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={e => { if (e.target === e.currentTarget && !uploading) onClose(); }}>
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-lg relative" onMouseDown={e => e.stopPropagation()}>
+        {uploading && (
+          <div className="absolute inset-0 bg-white/80 backdrop-blur-sm rounded-xl z-10 flex flex-col items-center justify-center gap-3">
+            <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
+            <p className="text-sm text-gray-600">上传中...</p>
+          </div>
+        )}
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b">
           <div>
@@ -361,7 +360,7 @@ export default function PaymentModal({ order, mode = "prepay", onClose, onSucces
            </Alert>
 
            {/* Surcharge breakdown — only for prepay mode when a surcharge applies */}
-           {!isShipping && !isSupp && surchargeJpy > 0 && method && (
+           {!isShipping && !isSupp && surchargeJpy > 0 && methodId && (
              <div className="bg-yellow-50 border border-yellow-200 rounded-lg px-3 py-2 text-xs space-y-1">
                <div className="flex justify-between text-yellow-700">
                  <span>订单金额</span>
@@ -379,7 +378,7 @@ export default function PaymentModal({ order, mode = "prepay", onClose, onSucces
            )}
 
            {/* Non-JPY currency conversion notice — only show when a method is selected */}
-           {convertedAmount && method && (
+            {convertedAmount && methodId && (
              <div className="bg-orange-50 border border-orange-200 rounded-lg px-4 py-3">
                <div className="flex items-center justify-between">
                  <div>
@@ -438,10 +437,10 @@ export default function PaymentModal({ order, mode = "prepay", onClose, onSucces
           <div>
             <Label className="text-sm mb-2 block">选择支付方式</Label>
             <PaymentMethodSelector
-              value={method}
+              value={methodId}
               onChange={m => {
-                const fullMethod = paymentMethods.find(pm => (pm.provider_key || pm.method_name) === m.value);
-                setMethod(m.value);
+                const fullMethod = paymentMethods.find(pm => pm.id === m.id);
+                setMethodId(m.id);
                 setSelectedMethodMeta(fullMethod || m);
                 setProofUrl("");
               }}
@@ -451,7 +450,7 @@ export default function PaymentModal({ order, mode = "prepay", onClose, onSucces
           </div>
 
           {/* Alipay flow */}
-          {method === "alipay" && canPayment && (
+          {selectedMethodMeta?.provider_key === "alipay" && canPayment && (
             <div className="space-y-3">
               <Button className="w-full bg-blue-600 hover:bg-blue-700"
                 onClick={handleGenerateAlipay} disabled={generating || !paidAmount || !canPayment}>
@@ -466,7 +465,7 @@ export default function PaymentModal({ order, mode = "prepay", onClose, onSucces
           )}
 
           {/* Other methods: upload proof */}
-          {method && method !== "alipay" && canPayment && (
+          {methodId && selectedMethodMeta?.provider_key !== "alipay" && canPayment && (
             <div className="space-y-3">
               {/* Show payment note + QR from admin config if available */}
               {(selectedMethodMeta?.method_description || selectedMethodMeta?.payment_note || selectedMethodMeta?.payment_qr_code || selectedMethodMeta?.image_url) ? (
@@ -489,17 +488,14 @@ export default function PaymentModal({ order, mode = "prepay", onClose, onSucces
                   请联系客服获取收款账号，完成付款后上传凭证
                 </div>
               )}
-              <div>
-                <Label className="text-sm">上传付款凭证（上传后自动提交）</Label>
-                <FileDropzone
-                  className="mt-1"
-                  onFile={handleProofUploaded}
-                  uploading={uploading || submitting}
-                  uploaded={!!proofUrl}
-                  label="凭证已上传，正在提交..."
-                  placeholder="点击选择图片或拖拽到此处"
-                />
-              </div>
+              <ImageUploader
+                value={proofUrl}
+                onChange={handleProofChange}
+                onDelete={() => setProofUrl("")}
+                uploading={uploading}
+                label="上传付款凭证（上传后自动提交）"
+                id="payment-modal-proof"
+              />
             </div>
           )}
         </div>

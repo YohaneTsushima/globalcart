@@ -53,10 +53,11 @@ async function refreshAndReconnect() {
   if (newToken) {
     console.log('[WebSocket] token refreshed, reconnecting...');
     connect();
-  } else {
-    // 刷新失败也要安排退避重连，避免 ws 静默死亡再也不恢复
-    scheduleReconnect();
-  }
+  } 
+  // else {
+  //   // 刷新失败也要安排退避重连，避免 ws 静默死亡再也不恢复
+  //   scheduleReconnect();
+  // }
 }
 
 // 指数退避重连（从原 onclose else 分支提取）
@@ -131,6 +132,10 @@ function connect() {
     }
 
     // 其余情况（1000 正常关闭 / 1001 服务端关闭 / 1006 网络问题等）→ 退避重连
+    if (event.code === 1006) {
+      refreshAndReconnect();
+      return;
+    }
     scheduleReconnect();
   };
 

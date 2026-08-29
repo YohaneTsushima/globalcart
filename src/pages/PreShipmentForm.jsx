@@ -555,7 +555,7 @@ export default function PreShipmentForm() {
       const m = paymentMethods.find((pm) => (pm.provider_key || pm.name) === paymentMethod || pm.value === paymentMethod);
       const cur = m?.payment_currency || "JPY";
       const method = paymentMethod || "other";
-      navigate(`/Payment?order_id=${orderId}&method=${method}&pay_currency=${cur}`);
+      navigate(`/Payment?order_id=${orderId}&pm_id=${method}&pay_currency=${cur}`);
       return;
     }
 
@@ -618,7 +618,7 @@ export default function PreShipmentForm() {
           onClick={() => {
             const m = paymentMethods.find((pm) => (pm.provider_key || pm.name) === paymentMethod);
             const cur = m?.payment_currency || "JPY";
-            navigate(`/Payment?order_id=${orderId}&method=${paymentMethod || "other"}&pay_currency=${cur}`);
+            navigate(`/Payment?order_id=${orderId}&pm_id=${paymentMethod || "other"}&pay_currency=${cur}`);
           }}>
               前往付款
             </Button>

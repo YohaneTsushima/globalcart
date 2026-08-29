@@ -482,7 +482,7 @@ export default function SubmitOrder() {
         return;
       }
 
-      let paymentUrl = `/Payment?order_id=${order.id}&method=${paymentMethod?.id || "other"}&pay_currency=${formToSubmit.prepayment_currency}`;
+      let paymentUrl = `/Payment?order_id=${order.id}&pm_id=${paymentMethod?.id || "other"}&pay_currency=${formToSubmit.prepayment_currency}`;
 
       navigate(paymentUrl);
     } catch (error) {

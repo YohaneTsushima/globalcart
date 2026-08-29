@@ -189,7 +189,7 @@ export default function SubmitTicketOrder() {
       // Rebuild breakdown using server-authoritative prepaid total so the Payment page shows the correct amount
       const feeBreakdown = buildFeeBreakdown(order.prepayment_amount);
       const breakdownEncoded = encodeURIComponent(JSON.stringify(feeBreakdown));
-      navigate(`${createPageUrl("Payment")}?order_id=${order.id}&method=${paymentMethod?.value || "other"}&pay_currency=${selectedCurrency}&ticket_breakdown=${breakdownEncoded}`);
+      navigate(`${createPageUrl("Payment")}?order_id=${order.id}&pm_id=${paymentMethod?.value || "other"}&pay_currency=${selectedCurrency}&ticket_breakdown=${breakdownEncoded}`);
     } catch (err) {
       toast.error(err.message);
       setSubmitting(false);

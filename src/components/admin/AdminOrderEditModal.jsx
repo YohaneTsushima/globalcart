@@ -27,6 +27,7 @@ import ConfirmDialog from "@/components/common/ConfirmDialog";
 const ALL_STATUSES = [
   { v: "pending_confirmation", l: "后付款待确认" },
   { v: "payment_pending", l: "待付款" },
+  { v: "awaiting_payment_confirmation", l: "待付款确认" },
   { v: "paid", l: "已付款" },
   { v: "pending_purchase", l: "待下单" },
   { v: "purchased", l: "已下单" },
@@ -269,19 +270,40 @@ export default function AdminOrderEditModal({ order, initialItemSizeTemplates, o
   // paid → purchased
   const handleMarkPurchased = async () => {
     setSaving(true);
-    const updates = {
-      order_status: "purchased",
-      purchased_date: new Date().toISOString().split("T")[0],
-      admin_note: form.admin_note,
-      notice_key: 'order_purchased'
-    };
+    // const updates = {
+    //   order_status: "purchased",
+    //   purchased_date: new Date().toISOString().split("T")[0],
+    //   admin_note: form.admin_note,
+    //   notice_key: 'order_purchased'
+    // };
+    const updates = [{
+      id: order.id,
+      data: {
+        admin_note: form.admin_note,
+        purchase_screenshot_url: purchaseScreenshot ? purchaseScreenshot : ''
+      }
+    }];
+    // const result = await updateOrder(order.id, updates);  
+    
+    const result = await base44.functions.invoke('order/info/handleMarkPurchased', updates);
 
-    if (purchaseScreenshot) updates.purchase_screenshot_url = purchaseScreenshot;
-    const result = await updateOrder(order.id, updates);
     if (!result) {
       setSaving(false);
       return;
     }
+
+    if(result?.data?.code === 200) {
+      toast.success(`订单 [${order.order_number}] 下单成功！`);
+    } else {
+      const errors = res?.data?.errorInfo?.errors || [];
+      if (errors.length > 0) {
+        setBulkErrors(errors.map(e => e.errorMessage));
+        setShowBulkErrors(true);
+      } else {
+        toast.error(res?.data?.message || "操作失败");
+      }
+    }
+
     savedRef.current = true;
     onSaved();
   };
@@ -468,19 +490,19 @@ export default function AdminOrderEditModal({ order, initialItemSizeTemplates, o
                 {order.prepayment_amount > 0 && (
                   <div className="bg-gray-50 rounded-lg p-2.5">
                     <div className="text-gray-400">预付款</div>
-                    <div className="font-medium">{cur === "JPY" ? `${Math.round(order.prepayment_amount).toLocaleString()} yen` : `${cur} ${Math.round(order.prepayment_amount)}`}</div>
+                    <div className="font-medium">{cur === "JPY" ? `${Math.round(order.prepayment_amount).toLocaleString()} yen` : (() => { const num = parseFloat(order.prepayment_amount); const d = num % 1 === 0 ? String(num) : String(parseFloat(num.toFixed(2))); return `${cur} ${d}`; })()}</div>
                   </div>
                 )}
                 {order.paid_amount > 0 && (
                   <div className="bg-green-50 rounded-lg p-2.5">
                     <div className="text-gray-400">已付金额</div>
-                    <div className="font-medium text-green-700">{cur === "JPY" ? `${Math.round(order.paid_amount).toLocaleString()} yen` : `${cur} ${Math.round(order.paid_amount)}`}</div>
+                    <div className="font-medium text-green-700">{cur === "JPY" ? `${Math.round(order.paid_amount).toLocaleString()} yen` : (() => { const num = parseFloat(order.paid_amount); const d = num % 1 === 0 ? String(num) : String(parseFloat(num.toFixed(2))); return `${cur} ${d}`; })()}</div>
                   </div>
                 )}
                 {order.balance_credit > 0 && (
                   <div className="bg-blue-50 rounded-lg p-2.5">
                     <div className="text-gray-400">余额</div>
-                    <div className="font-medium text-blue-700">{cur === "JPY" ? `${Math.round(order.balance_credit).toLocaleString()} yen` : `${cur} ${Math.round(order.balance_credit)}`}</div>
+                    <div className="font-medium text-blue-700">{cur === "JPY" ? `${Math.round(order.balance_credit).toLocaleString()} yen` : (() => { const num = parseFloat(order.balance_credit); const d = num % 1 === 0 ? String(num) : String(parseFloat(num.toFixed(2))); return `${cur} ${d}`; })()}</div>
                   </div>
                 )}
               </div>

@@ -37,7 +37,7 @@ const ALL_COLUMNS = [
   { key: "product_image_url", label: "商品图片", defaultVisible: true, sortable: false, isImage: true },
   { key: "order_number", label: "订单号", defaultVisible: true, sortable: true },
   { key: "product_name", label: "商品名", defaultVisible: true, sortable: true },
-  { key: "order_stage_payment_jpy", label: "下单实付", defaultVisible: true, sortable: true },
+  { key: "payable_amount", label: "下单实付", defaultVisible: true, sortable: true },
   { key: "paid_amount", label: "已付总额", defaultVisible: false, sortable: true },
   { key: "weight_g", label: "订单重量", defaultVisible: true, sortable: true },
   { key: "order_status", label: "订单状态", defaultVisible: true, sortable: true },
@@ -78,6 +78,7 @@ function loadColumns() {
 const STATUS_FILTERS = [
   { v: "all", l: "全部" },
   { v: "payment_pending", l: "待付款" },
+  { v: "awaiting_payment_confirmation", l: "待付款确认" },
   { v: "paid", l: "已付款" },
   { v: "purchased", l: "已下单" },
   { v: "in_warehouse", l: "已入库" },
@@ -110,11 +111,26 @@ function CellValue({ col, order }) {
       return (
         <span className="text-sm font-medium text-gray-900 truncate">{order.product_name}</span>
       );
-    case "order_stage_payment_jpy": {
-      const amt = order.order_stage_payment_jpy;
+    case "payable_amount": {
+      if (order.order_status === "payment_pending" || order.order_status === "awaiting_payment_confirmation") {
+        return <span className="text-sm text-gray-400">-</span>;
+      }
+      const amt = order.payable_amount;
+      const cur = order.payment_currency || order.prepayment_currency || "JPY";
       if (!amt || amt <= 0) {
         const legacy = order.prepayment_amount_jpy || order.paid_amount || order.full_payment_amount;
-        return <span className="text-sm text-gray-700">{legacy ? `${Math.round(legacy).toLocaleString()} yen` : "-"}</span>;
+        if (!legacy) return <span className="text-sm text-gray-700">-</span>;
+        if (cur === "CNY") {
+          const num = parseFloat(legacy);
+          const display = num % 1 === 0 ? String(num) : String(parseFloat(num.toFixed(2)));
+          return <span className="text-sm text-gray-700">{`${display} yuan`}</span>;
+        }
+        return <span className="text-sm text-gray-700">{`${Math.round(legacy).toLocaleString()} yen`}</span>;
+      }
+      if (cur === "CNY") {
+        const num = parseFloat(amt);
+        const display = num % 1 === 0 ? String(num) : String(parseFloat(num.toFixed(2)));
+        return <span className="text-sm text-gray-700 font-medium">{`${display} yuan`}</span>;
       }
       return <span className="text-sm text-gray-700 font-medium">{`${Math.round(amt).toLocaleString()} yen`}</span>;
     }
@@ -165,6 +181,17 @@ function CellValue({ col, order }) {
       return <span className="text-xs text-gray-700">{order.in_warehouse_date ? new Date(order.in_warehouse_date).toLocaleDateString("zh-CN") : "-"}</span>;
     case "shipped_date":
       return <span className="text-xs text-gray-700">{order.shipped_date ? new Date(order.shipped_date).toLocaleDateString("zh-CN") : "-"}</span>;
+    case "paid_amount": {
+      const amt = order.paid_amount;
+      if (!amt || amt <= 0) return <span className="text-sm text-gray-400">-</span>;
+      const cur = order.payment_currency || order.prepayment_currency || "JPY";
+      if (cur === "CNY") {
+        const num = parseFloat(amt);
+        const display = num % 1 === 0 ? String(num) : String(parseFloat(num.toFixed(2)));
+        return <span className="text-sm text-gray-700">{`${display} yuan`}</span>;
+      }
+      return <span className="text-sm text-gray-700">{`${Math.round(amt).toLocaleString()} yen`}</span>;
+    }
     default:
       return "-";
   }
@@ -359,7 +386,16 @@ export default function MyOrders() {
   };
 
   const handleConfirmDelivered = async (order) => {
-    await base44.functions.invoke('order/info/updateTenantOrder', [{ order_id: order.id, order_status: "delivered", notice_key: 'order_delivered' }]);
+
+    let payload = [{
+      id: order.id,
+      data: {
+        notice_key: ''
+      }
+    }];
+
+    await base44.functions.invoke('order/info/handleDelivered', payload);
+    // await base44.functions.invoke('order/info/handleDelivered', [{ order_id: order.id, order_status: "delivered", notice_key: 'order_delivered' }]);
     // Also mark the associated shipping pool as delivered
     // const orderId = String(order.id);
     // const pool = shippingPools.find(p => (p.order_ids || []).some(id => String(id) === orderId));
@@ -370,14 +406,29 @@ export default function MyOrders() {
   };
 
   const handleArchiveOrder = async (order) => {
-    await base44.functions.invoke('order/info/updateTenantOrder', [{ order_id: order.id, is_archived: true, archived_at: new Date().toISOString() }]);
+
+    let payload = [{
+      id: order.id
+    }];
+
+    console.log(selectedIds)
+    return 
+
+    await base44.functions.invoke('order/info/handleArchive', payload);
+    // await base44.functions.invoke('order/info/handleArchive', [{ order_id: order.id, is_archived: true, archived_at: new Date().toISOString() }]);
     fetchOrders(user);
   };
 
   const handleBulkArchive = async () => {
     const deliveredSelected = filtered.filter(o => selectedIds.includes(o.id) && o.order_status === "delivered");
     const dtoList = deliveredSelected.map(o => ({ order_id: o.id, is_archived: true, archived_at: new Date().toISOString() }));
-    await base44.functions.invoke('order/info/updateTenantOrder', dtoList);
+
+    const payload = [];
+    console.log(selectedIds)
+
+    return;
+
+    await base44.functions.invoke('order/info/handleArchive', payload);
     setSelectedIds([]);
     fetchOrders(user);
   };
@@ -474,7 +525,7 @@ export default function MyOrders() {
           <Input placeholder="搜索商品名、订单号..." className="pl-8 h-8 text-sm"
             value={search} onChange={e => setSearch(e.target.value)} />
         </div>
-        <Select value={statusFilter} onValueChange={setStatusFilter}>
+        <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v); setSelectedIds([]); }}>
           <SelectTrigger className="w-36 h-8 text-sm"><SelectValue /></SelectTrigger>
           <SelectContent>
             {STATUS_FILTERS.map(s => <SelectItem key={s.v} value={s.v}>{s.l}</SelectItem>)}

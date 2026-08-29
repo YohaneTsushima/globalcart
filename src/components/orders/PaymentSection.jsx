@@ -134,9 +134,11 @@ export default function PaymentSection({
         {/* 支付方式选择 */}
         {(paymentMode === "prepay" || paymentMode === "fullpay") && paymentMethods.length > 0 && (
           <PaymentMethodSelector
-            value={paymentMethod?.provider_key || paymentMethod?.method_name}
+            // value={paymentMethod?.provider_key || paymentMethod?.method_name}
+            value={paymentMethod?.id}
             onChange={(m) => {
-              const fullMethod = paymentMethods.find(pm => (pm.provider_key || pm.method_name) === m.value);
+              // const fullMethod = paymentMethods.find(pm => (pm.provider_key || pm.method_name) === m.value);
+               const fullMethod = paymentMethods.find(pm => pm.id === m.id);
               setPaymentMethod(fullMethod || m);
             }}
             prefetched={paymentMethods}

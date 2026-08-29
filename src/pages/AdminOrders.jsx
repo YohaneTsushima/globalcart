@@ -4,7 +4,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Package, Ticket } from "lucide-react";
 import AdminTicketOrders from "@/pages/AdminTicketOrders";
 import { orderRegistry } from "@/lib/orderRegistry";
-import { Search, RefreshCw, Filter, ChevronUp, ChevronDown, ChevronsUpDown, Trash2, AlertCircle, Layers, Send, LayoutList, Archive, ArchiveRestore, Scissors, X } from "lucide-react";
+import { Search, RefreshCw, Filter, ChevronUp, ChevronDown, ChevronsUpDown, Trash2, AlertCircle, Layers, Send, LayoutList, Archive, ArchiveRestore, Scissors, X, Loader2 } from "lucide-react";
 import DateRangeFilter from "@/components/orders/DateRangeFilter";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -24,12 +24,15 @@ import PaginationBar from "@/components/common/PaginationBar";
 import { MOCK_ADMIN_ORDERS_DATA } from "@/mock/adminOrdersMock";
 import { updateOrder } from "@/lib/tenantApi";
 import ConfirmDialog from "@/components/common/ConfirmDialog";
+import { toast } from "sonner";
+import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogAction } from "@/components/ui/alert-dialog";
 
 const STORAGE_KEY = "admin_orders_columns";
 
 const ALL_STATUSES = [
   { v: "pending_confirmation", l: "后付款待确认" },
   { v: "payment_pending", l: "待付款" },
+  { v: "awaiting_payment_confirmation", l: "待付款确认" },
   { v: "paid", l: "已付款" },
   { v: "pending_purchase", l: "待下单" },
   { v: "purchased", l: "已下单" },
@@ -106,6 +109,8 @@ export default function AdminOrders() {
   const [actualWeight, setActualWeight] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
   const [orderedConfirmOrder, setOrderedConfirmOrder] = useState(null);
+  const [bulkErrors, setBulkErrors] = useState([]);
+  const [showBulkErrors, setShowBulkErrors] = useState(false);
 
   const fetchOrders = async () => {
     if (fetchingRef.current) return;
@@ -209,6 +214,11 @@ export default function AdminOrders() {
     }))));
   };
 
+  const getStatusLabel = (status) => {
+    const found = ALL_STATUSES.find(item => item.v === status);
+    return found ? found.l : "未知状态";
+  };
+
   const handleSort = (key) => {
     if (sortKey === key) {
       setSortDir(d => d === "asc" ? "desc" : "asc");
@@ -250,9 +260,27 @@ export default function AdminOrders() {
   const handleBulkUpdate = async () => {
     if (!bulkStatus || selectedIds.length === 0) return;
     setBulkUpdating(true);
-    await Promise.all(selectedIds.map(id =>
-      base44.functions.invoke('updateTenantOrder', { order_id: id, order_status: bulkStatus })
-    ));
+    // await Promise.all(selectedIds.map(id =>
+    //   base44.functions.invoke('updateTenantOrder', { order_id: id, order_status: bulkStatus })
+    // ));
+    let payload = selectedIds.map(i => { return { id: i, data: { status: bulkStatus }}; });
+   
+    const res = await base44.functions.invoke('order/info/forceUpdate', payload);
+
+    const innerCode = res?.data?.code;
+    if (innerCode === 200) {
+      toast.success(`批量更新为成功，状态为  ${getStatusLabel(bulkStatus)} `);
+    } else {
+      const errors = res?.data?.errorInfo?.errors || [];
+      if (errors.length > 0) {
+        setBulkErrors(errors.map(e => e.errorMessage));
+        setShowBulkErrors(true);
+      } else {
+        toast.error(res?.data?.message || "操作失败");
+      }
+    }
+
+    fetchOrders();
     setBulkUpdating(false);
     setSelectedIds([]);
     setBulkStatus("");
@@ -325,6 +353,61 @@ export default function AdminOrders() {
     fetchOrders();
   };
 
+  const handleConfirmPaid = async (order) => {
+
+    let payload = [{
+      id: order.id
+    }];
+
+    await base44.functions.invoke('order/info/confirmProof', payload);
+    fetchOrders();
+  };
+
+  const builkMarkPurchased = async () => {
+   
+    const payload = selectedIds.map(i => { return { id: i }; });
+   debugger
+   
+    const res = await base44.functions.invoke('order/info/handleMarkPurchased', payload);
+debugger
+    const innerCode = res?.data?.code;
+    if (innerCode === 200) {
+      toast.success("批量已下单成功");
+    } else {
+      const errors = res?.data?.errorInfo?.errors || [];
+      if (errors.length > 0) {
+        setBulkErrors(errors.map(e => e.errorMessage));
+        setShowBulkErrors(true);
+      } else {
+        toast.error(res?.data?.message || "操作失败");
+      }
+    }
+
+    fetchOrders();
+
+  }
+
+  const builkConfirmPaid = async () => {
+
+    const payload = selectedIds.map(i => { return { id: i }; });
+   
+    const res = await base44.functions.invoke('order/info/confirmProof', payload);
+
+    const innerCode = res?.data?.code;
+    if (innerCode === 200) {
+      toast.success("确认收款成功");
+    } else {
+      const errors = res?.data?.errorInfo?.errors || [];
+      if (errors.length > 0) {
+        setBulkErrors(errors.map(e => e.errorMessage));
+        setShowBulkErrors(true);
+      } else {
+        toast.error(res?.data?.message || "操作失败");
+      }
+    }
+    fetchOrders();
+  }
+
   // Find the shipping pool for a notified_shipment order
   const getOrderPool = (order) => {
     const orderId = String(order.id);
@@ -375,7 +458,7 @@ export default function AdminOrders() {
         </div>
 
         {/* 订单状态 - 固定宽度 */}
-        <Select value={statusFilter} onValueChange={setStatusFilter}>
+        <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v); setSelectedIds([]); }}>
           <SelectTrigger className="w-36 h-8 text-xs shrink-0">
             <Filter className="w-3.5 h-3.5 mr-1 text-gray-400 shrink-0" />
             <SelectValue placeholder="所有状态" />
@@ -463,7 +546,7 @@ export default function AdminOrders() {
         {/* 清除筛选 - 固定宽度 */}
         {(statusFilter !== "all" || storeTagFilter !== "all" || weightFilter !== "all" || itemSizeFilter !== "all" || replyFilter !== "all" || dateRangeFilter) && (
           <button
-            onClick={() => { setStatusFilter("all"); setStoreTagFilter("all"); setWeightFilter("all"); setItemSizeFilter("all"); setReplyFilter("all"); setDateRangeFilter(null); }}
+            onClick={() => { setStatusFilter("all"); setStoreTagFilter("all"); setWeightFilter("all"); setItemSizeFilter("all"); setReplyFilter("all"); setDateRangeFilter(null); setSelectedIds([]); }}
             className="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600 h-8 px-1 shrink-0"
           >
             <X className="w-3 h-3" />清除
@@ -478,7 +561,10 @@ export default function AdminOrders() {
 
           {/* Context-aware quick actions when all selected share the same status */}
           {(() => {
-            const bulkActions = physicalController.getBulkActions(selectedOrders, sharedStatus);
+            const bulkActions = physicalController.getBulkActions(selectedOrders, sharedStatus, {
+              awaiting_payment_confirmation: builkConfirmPaid,
+              quick_ordered: builkMarkPurchased,
+            });
             return bulkActions.length > 0 ? (
               <div className="flex items-center gap-1.5 border-r border-blue-200 pr-2 mr-1">
                 <span className="text-xs text-blue-500 shrink-0">快捷操作：</span>
@@ -486,9 +572,13 @@ export default function AdminOrders() {
                   <Button key={action.key} size="sm" className={`h-7 text-xs ${action.color}`}
                     onClick={async () => {
                       setBulkUpdating(true);
-                      await Promise.all(selectedIds.map(id =>
-                        base44.functions.invoke('updateTenantOrder', { order_id: id, ...action.updateData })
-                      ));
+                      if (action.handler) {
+                        await action.handler(selectedIds);
+                      } else {
+                        await Promise.all(selectedIds.map(id =>
+                          base44.functions.invoke('updateTenantOrder', { order_id: id, ...action.updateData })
+                        ));
+                      }
                       setBulkUpdating(false);
                       setSelectedIds([]);
                       fetchOrders();
@@ -512,12 +602,12 @@ export default function AdminOrders() {
             onClick={handleBulkUpdate} disabled={!bulkStatus || bulkUpdating}>
             {bulkUpdating ? "更新中..." : "确认更新"}
           </Button>
-          <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setSelectedIds([])}>取消</Button>
+          <Button size="sm" variant="ghost" className="h-7 text-xs" disabled={bulkUpdating} onClick={() => setSelectedIds([])}>取消</Button>
         </div>
       )}
 
       {/* Orders table */}
-      <div className="border border-gray-200 rounded-xl overflow-x-auto">
+      <div className="relative border border-gray-200 rounded-xl overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="bg-gray-50 border-b border-gray-200">
@@ -600,6 +690,12 @@ export default function AdminOrders() {
                             <AlertCircle className="w-3 h-3" />
                             {pendingEdit.edit_type === 'cancel_shipment' ? '申请重新入库' : '申请移至其他发货申请'}
                           </span>
+                        )}
+                        {order.order_status === "awaiting_payment_confirmation" && canPlaceOrder && (
+                          <Button size="sm" variant="outline" className="h-6 text-xs px-2 text-green-600 border-green-200 hover:bg-green-50"
+                            onClick={() => handleConfirmPaid(order)}>
+                            确认已付款
+                          </Button>
                         )}
                         {(order.order_status === "paid" || order.order_status === "pending_purchase") && canPlaceOrder && (
                           order.has_split_marker
@@ -736,6 +832,12 @@ export default function AdminOrders() {
             })()}
           </tbody>
         </table>
+        {bulkUpdating && (
+          <div className="absolute inset-0 bg-white/60 flex items-center justify-center z-20">
+            <Loader2 className="w-5 h-5 text-blue-500 animate-spin mr-2" />
+            <span className="text-sm text-gray-500">更新中...</span>
+          </div>
+        )}
       </div>
 
       <PaginationBar
@@ -918,6 +1020,25 @@ export default function AdminOrders() {
           }
         }}
       />
+      <AlertDialog open={showBulkErrors} onOpenChange={setShowBulkErrors}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>部分操作失败</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-1 max-h-60 overflow-y-auto">
+                {bulkErrors.map((msg, i) => (
+                  <div key={i} className="text-sm text-red-600">· {msg}</div>
+                ))}
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogAction onClick={() => { setShowBulkErrors(false); setBulkErrors([]); }}>
+              知道了
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Tabs>
   );
 }

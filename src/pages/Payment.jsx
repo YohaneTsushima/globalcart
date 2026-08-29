@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { base44 } from "@/api/base44Client";
 import { useNavigate } from "react-router-dom";
 import { createPageUrl } from "@/utils";
-import { ExternalLink, Copy, CheckCircle, AlertCircle, ArrowLeft, Upload, Loader2, Calculator } from "lucide-react";
+import { ExternalLink, Copy, CheckCircle, AlertCircle, ArrowLeft, Loader2, Calculator } from "lucide-react";
 import { ImageWithViewer } from "@/components/common/ImageViewer";
 import { usePermissions } from "@/hooks/usePermissions";
 import { Button } from "@/components/ui/button";
@@ -14,6 +14,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { useLocale } from "@/lib/LocaleContext";
 import { t } from "@/lib/i18n";
 import PaymentMethodSelector from "@/components/common/PaymentMethodSelector";
+import ImageUploader from "@/components/common/ImageUploader";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { toast } from "sonner";
 import ConfirmDialog from "@/components/common/ConfirmDialog";
@@ -68,7 +69,7 @@ export default function Payment() {
   const canManualPay = can("payment:manual_pay");
   const urlParams = new URLSearchParams(window.location.search);
   const orderId = urlParams.get("order_id");
-  const [selectedMethod, setSelectedMethod] = useState(urlParams.get("method") || "");
+  const [selectedMethod, setSelectedMethod] = useState(urlParams.get("pm_id") || "");
   const urlPayCurrency = urlParams.get("pay_currency") || null;
   // Ticket fee breakdown passed from SubmitTicketOrder
   const ticketBreakdown = (() => {
@@ -92,8 +93,8 @@ export default function Payment() {
   const [showAlipayConfirm, setShowAlipayConfirm] = useState(false);
   const [alipayFormData, setAlipayFormData] = useState(null);
 
-  const methodId = selectedMethod || null;
-  const methodKey = order?.payment_method || "alipay";
+  const methodId = parseInt(selectedMethod )|| null;
+  // const methodKey = order?.payment_method || "alipay";
   // Server-computed payment data (avoids client-side re-derivation bugs)
   const [serverPaymentData, setServerPaymentData] = useState(null);
   const [paymentPendingReminder, setPaymentPendingReminder] = useState("");
@@ -152,6 +153,8 @@ export default function Payment() {
           const methodsList = Array.isArray(data.payment_methods)
             ? data.payment_methods
             : data.payment_methods?.payment_methods || [];
+
+          
           setPaymentMethods(methodsList);
           setRates(data.raw_rates || null); 
           setTenantRates(data.tenant_rates || null);
@@ -212,7 +215,7 @@ export default function Payment() {
       }
     }
 
-    const selectedObj = methodId ? paymentMethods.find(m => m.id === methodId) : paymentMethods.find(m => (m.provider_key || m.method_name) === methodKey);
+    const selectedObj = paymentMethods.find(m => m.id === methodId);
 
     //用于更新Payment Method
     const newMethod = {
@@ -266,22 +269,31 @@ export default function Payment() {
   const handleUploadAndSubmit = async (file) => {
     if (!file) return;
     setUploading(true);
-    const { file_url } = await base44.integrations.Core.UploadFile({ file });
-    setProofFile(file_url);
-    setUploading(false);
-    await base44.functions.invoke('updateTenantOrder', {
-      order_id: order.id,
-      payment_proof_url: file_url,
-      payment_method: methodKey,
-      payment_status: "paid",
-      // Supplement payment must not regress order_status; clear the supplement flag instead
-      ...(isSupplement ? { supplement_requested: false } : { order_status: "pending_purchase" }),
-      paid_amount: newPaidAmount,
-      // Record surcharge for financial tracking
-      ...(surchargeJpy > 0 ? { payment_surcharge_jpy: Math.round(surchargeJpy) } : {}),
-    });
-    setSubmitted(true);
-    setTimeout(() => navigate(createPageUrl("MyOrders")), 2000);
+    try {
+      const { file_url } = await base44.integrations.Core.UploadFile({ file, path: "proof" });
+      setProofFile(file_url);
+      
+      // TODO: 触发更新状态的方法
+      let payload = {
+        id: order.id,
+        data: {
+          order_id: order.id,
+          payment_proof_url: file_url,
+          method: activeMethod
+        }
+        
+      };
+      setSubmitted(true);debugger
+
+      await base44.functions.invoke('order/info/updateProofUrlOrder', payload);
+      toast.success(`订单 [${order.order_number}] 的支付凭证上传成功！`);
+      setTimeout(() => navigate(createPageUrl("MyOrders")), 2000);
+    } catch (err) {
+      let message = err?.message || err?.response?.data?.message;
+      toast.error("上传失败: " + message ? message : err);
+    } finally {
+      setUploading(false);
+    }
   };
 
   if (loading) {
@@ -313,9 +325,9 @@ export default function Payment() {
   // Shipping-only second payment (fullpay-once) and supplements add to what's already paid
   const isShippingOnlyPayment = isFullPayOnce && paymentBreakdown && paymentBreakdown.product_fee === 0 && paymentBreakdown.shipping_fee > 0;
   const newPaidAmount = (isShippingOnlyPayment || isSupplement) ? (order?.paid_amount || 0) + baseAmountJpy : baseAmountJpy;
-
   // Find the configured payment method for current selection
-  const activeMethod = methodId ? paymentMethods.find(m => m.id === methodId) : paymentMethods.find(m => (m.provider_key || m.method_name) === methodKey);
+  const activeMethod = paymentMethods.find(m => m.id === methodId);
+  const methodKey = activeMethod?.provider_key || activeMethod?.method_name || order?.payment_method || "alipay"
   // Automatic callback methods (e.g. alipay) should not show QR / upload proof UI
   const isAutoCallback = !!activeMethod?.provider_key;
   // Alipay gateway info: prefer PaymentMethod entity, fall back to SiteSettings
@@ -515,10 +527,10 @@ export default function Payment() {
           </CardHeader>
           <CardContent>
             <PaymentMethodSelector
-              value={methodKey}
+              value={methodId}
               onChange={(m) => {
-                const found = paymentMethods.find(pm => (pm.provider_key || pm.method_name) === m.value);
-                setSelectedMethod(found?.id || m.value);
+                
+                setSelectedMethod(m.id);
               }}
               prefetched={paymentMethods}
               activeColor="border-red-500 bg-red-50 text-red-700"
@@ -612,7 +624,7 @@ export default function Payment() {
 
       {/* Upload proof - only for manual (non-auto-callback) methods */}
       {/* effectiveCanSkipProof: for method=other, skip_proof_override from admin OVERRIDES all permission checks */}
-      {!isAutoCallback && effectiveCanSkipProof && (
+      {!isAutoCallback && effectiveCanSkipProof && false && (
         <div className="flex justify-end">
           <Button
             variant="outline"
@@ -643,44 +655,14 @@ export default function Payment() {
             </CardHeader>
             <CardContent className="space-y-3">
               <p className="text-xs text-gray-400">请在付款完成后上传付款截图或凭证，上传后将自动提交</p>
-              <label
-                className="cursor-pointer block"
-                onDragOver={e => e.preventDefault()}
-                onDrop={e => {
-                  e.preventDefault();
-                  const file = e.dataTransfer.files[0];
-                  if (file && file.type.startsWith("image/")) handleUploadAndSubmit(file);
-                }}
-              >
-                <div className={`flex flex-col items-center gap-2 border-2 border-dashed rounded-lg p-6 text-center transition-colors ${
-                  proofFile ? "border-green-300 bg-green-50 text-green-700" :
-                  uploading ? "border-blue-200 bg-blue-50 text-blue-500" :
-                  "border-gray-200 text-gray-400 hover:border-blue-300 hover:text-blue-500"
-                }`}>
-                  {proofFile ? (
-                    <><CheckCircle className="w-8 h-8" /><p className="text-sm font-medium">凭证已上传，正在提交...</p></>
-                  ) : uploading ? (
-                    <><Loader2 className="w-8 h-8 animate-spin" /><p className="text-sm">上传中...</p></>
-                  ) : (
-                    <><Upload className="w-8 h-8" /><p className="text-sm">点击选择图片或拖拽到此处</p></>
-                  )}
-                </div>
-                <input type="file" accept="image/*" className="hidden"
-                  onChange={e => { const f = e.target.files[0]; if (f) handleUploadAndSubmit(f); }}
-                  disabled={uploading} />
-                </label>
-                <input
-                 type="text"
-                 placeholder="或点击此处后粘贴截图（Ctrl+V / ⌘V）"
-                 className="w-full h-9 px-3 text-xs border border-gray-300 rounded-md bg-white text-gray-500 placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-blue-400 focus:border-blue-400 transition-colors"
-                 disabled={uploading}
-                 onPaste={(e) => {
-                   const item = Array.from(e.clipboardData.items).find(i => i.type.startsWith("image/"));
-                   if (item) { e.preventDefault(); const f = item.getAsFile(); if (f) handleUploadAndSubmit(f); }
-                 }}
-                 onChange={() => {}}
-                />
-                </CardContent>
+              <ImageUploader
+                value={proofFile}
+                onChange={(f) => f && handleUploadAndSubmit(f)}
+                onDelete={() => setProofFile(null)}
+                uploading={uploading}
+                id="payment-proof"
+              />
+            </CardContent>
           </Card>
         ) : (
           <Alert className="border-green-200 bg-green-50">
