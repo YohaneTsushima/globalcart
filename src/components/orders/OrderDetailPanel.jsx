@@ -418,16 +418,27 @@ export default function OrderDetailPanel({ order, onClose, onRefresh, userProfil
                   <div className="text-sm font-semibold text-purple-700 mb-2">增值服务</div>
                   <div className="space-y-1">
                     {(order.selected_addons || []).length > 0
-                      ? (order.selected_addons).map((a, i) => (
-                          <div key={i} className="flex items-center justify-between text-sm">
-                            <span className="text-gray-700">{a.service_name || a.id}</span>
-                            {(parseFloat(a.fee) > 0) && (
-                              <span className="font-medium text-purple-700">
-                                +{a.fee_currency || "JPY"} {Math.round(parseFloat(a.fee))}
-                              </span>
-                            )}
-                          </div>
-                        ))
+                      ? (order.selected_addons).map((a, i) => {
+                          const customFee = (order.custom_addon_fee || []).find(c => c.id === a.id);
+                          const hasCustom = customFee && customFee.fee !== undefined;
+                          return (
+                            <div key={i} className="flex flex-col">
+                              <div className="flex items-center justify-between text-sm">
+                                <span className="text-gray-700">{a.service_name || a.id}</span>
+                                {(parseFloat(a.fee) > 0) && (
+                                  <span className={`font-medium ${hasCustom ? "line-through text-gray-400" : "text-purple-700"}`}>
+                                    +{a.fee_currency || "JPY"} {Math.round(parseFloat(a.fee))}
+                                  </span>
+                                )}
+                              </div>
+                              {hasCustom && (
+                                <div className="text-xs text-purple-500 text-right">
+                                  用户自定义 +{a.fee_currency || "JPY"} {Math.round(parseFloat(customFee.fee))}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })
                       : (order.selected_addon_ids || []).map((id, i) => (
                           <div key={i} className="flex items-center text-sm">
                             <span className="text-gray-500 font-mono">{id}</span>
@@ -535,16 +546,33 @@ export default function OrderDetailPanel({ order, onClose, onRefresh, userProfil
                       <div className="flex justify-between items-center py-1">
                         <span className="text-green-700">增值服务费</span>
                         <span className="font-medium text-green-900">
-                          {formatCurrency((order.selected_addons || []).reduce((sum, a) => sum + (parseFloat(a.fee) || 0), 0))}
+                          {formatCurrency((order.selected_addons || []).reduce((sum, a) => {
+                            const customFee = (order.custom_addon_fee || []).find(c => c.id === a.id);
+                            return sum + (customFee ? (parseFloat(customFee.fee) || 0) : (parseFloat(a.fee) || 0));
+                          }, 0))}
                         </span>
                       </div>
                       <div className="text-xs text-green-600 pl-3">
-                        {(order.selected_addons || []).map((a, i) => (
-                          <div key={i} className="flex justify-between">
-                            <span>{a.service_name || a.id}</span>
-                            <span>{formatCurrency(parseFloat(a.fee) || 0, a.fee_currency)}</span>
-                          </div>
-                        ))}
+                        {(order.selected_addons || []).map((a, i) => {
+                          const customFee = (order.custom_addon_fee || []).find(c => c.id === a.id);
+                          const hasCustom = customFee && customFee.fee !== undefined;
+                          return (
+                            <div key={i}>
+                              <div className="flex justify-between">
+                                <span>{a.service_name || a.id}</span>
+                                <span className={hasCustom ? "line-through text-gray-400" : ""}>
+                                  {formatCurrency(parseFloat(a.fee) || 0, a.fee_currency)}
+                                </span>
+                              </div>
+                              {hasCustom && (
+                                <div className="flex justify-between text-green-500">
+                                  <span>用户自定义</span>
+                                  <span>{formatCurrency(parseFloat(customFee.fee) || 0, a.fee_currency)}</span>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
                       </div>
                     </>
                   )}
@@ -597,7 +625,7 @@ export default function OrderDetailPanel({ order, onClose, onRefresh, userProfil
                     return (
                       <div className="flex justify-between items-center py-1 text-blue-700">
                         <span>已付金额</span>
-                        <span className="font-medium">-{formatCurrency(order.paid_amount, paidCurrency)}{paidCurrency !== 'JPY' ? ` (≈${paidAmountJpy} JPY)` : ''}</span>
+                        <span className="font-medium">{formatCurrency(order.paid_amount, paidCurrency)}{paidCurrency !== 'JPY' ? ` (≈${paidAmountJpy} JPY)` : ''}</span>
                       </div>
                     );
                   })()}
@@ -611,17 +639,28 @@ export default function OrderDetailPanel({ order, onClose, onRefresh, userProfil
                   )}
 
                   {/* Final total */}
-                 {order.payment_status !== 'paid' && order.payment_status !== 'confirmed' && (
-                    <div className="border-t-2 border-green-400 pt-3 flex justify-between items-center text-lg bg-green-100/50 rounded px-3 py-2">
-                      <span className="font-bold text-green-900">待付金额</span>
-                      <span className="font-bold text-green-900">
-                        {formatCurrency(
-                          (order.full_payment_amount || 0) - (order.paid_amount || 0),
-                          "JPY"
-                        )}
-                      </span>
-                    </div>
-                  )}
+                  {(() => {
+                    const addonTotal = (order.selected_addons || []).reduce((sum, a) => {
+                      const customFee = (order.custom_addon_fee || []).find(c => c.id === a.id);
+                      return sum + (customFee ? (parseFloat(customFee.fee) || 0) : (parseFloat(a.fee) || 0));
+                    }, 0);
+                    const pendingAmount = (order.full_payment_amount || 0)
+                      - (order.estimated_jpy || 0)
+                      - addonTotal
+                      - (parseInt(order.item_size_extra_fee) || 0)
+                      - (order.service_fee_amount || 0)
+                      - (order.shipping_fee_amount || 0);
+                    const displayAmount = Math.abs(pendingAmount);
+                    if (displayAmount <= 0) return null;
+                    return (
+                      <div className="border-t-2 border-green-400 pt-3 flex justify-between items-center text-lg bg-green-100/50 rounded px-3 py-2">
+                        <span className="font-bold text-green-900">待付金额</span>
+                        <span className="font-bold text-green-900">
+                          {Math.round(displayAmount).toLocaleString()} JPY
+                        </span>
+                      </div>
+                    );
+                  })()}
                 </div>
               </div>
             </div>

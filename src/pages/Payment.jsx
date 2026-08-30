@@ -19,6 +19,7 @@ import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { toast } from "sonner";
 import ConfirmDialog from "@/components/common/ConfirmDialog";
 import { openAlipayPopup } from "@/lib/alipayUtils";
+import { updateTenantOrder } from "@/lib/tenantApi";
 
 const IS_DEV_MOCK = import.meta.env.VITE_DEV_MOCK === 'true';
 
@@ -283,9 +284,11 @@ export default function Payment() {
         }
         
       };
-      setSubmitted(true);debugger
+      setSubmitted(true);
 
-      await base44.functions.invoke('order/info/updateProofUrlOrder', payload);
+      // await base44.functions.invoke('order/info/updateProofUrlOrder', payload);
+      updateTenantOrder('order/info/updateProofUrlOrder', payload);
+      
       toast.success(`订单 [${order.order_number}] 的支付凭证上传成功！`);
       setTimeout(() => navigate(createPageUrl("MyOrders")), 2000);
     } catch (err) {

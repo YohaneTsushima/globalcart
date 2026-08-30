@@ -51,16 +51,29 @@ export default function AddressBlock({
         // Show structured address form
         <div className="space-y-3">
           {hasSaved && (
-            <div className="relative">
-              <Select value="__new__" disabled>
-                <SelectTrigger className="h-10 bg-blue-50/50 border-blue-200">
-                  <SelectValue placeholder="已选择：输入新地址" />
-                </SelectTrigger>
-              </Select>
-              <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                <PlusCircle className="w-4 h-4 text-blue-500" />
-              </div>
-            </div>
+            <Select value="__new__" onValueChange={onSelect}>
+              <SelectTrigger className="h-10 bg-blue-50/50 border-blue-200">
+                <SelectValue placeholder="请选择收货地址" />
+              </SelectTrigger>
+              <SelectContent className="max-h-60">
+                {savedAddresses.map((addr) => (
+                  <SelectItem key={addr.id} value={addr.id} className="py-2.5">
+                    <div className="flex flex-col gap-1">
+                      <span className="font-semibold text-gray-800 text-sm">{addr.label || "地址"}</span>
+                      <span className="text-xs text-gray-500 line-clamp-2">
+                        {formatAddressPreview(addr)}
+                      </span>
+                    </div>
+                  </SelectItem>
+                ))}
+                <SelectItem value="__new__" className="py-2.5">
+                  <div className="flex items-center gap-2 text-blue-600">
+                    <PlusCircle className="w-4 h-4" />
+                    <span className="font-medium">输入新地址</span>
+                  </div>
+                </SelectItem>
+              </SelectContent>
+            </Select>
           )}
           <div className="border border-gray-200 rounded-lg p-3 bg-white shadow-sm">
             <AddressForm

@@ -22,7 +22,7 @@ import { usePermissions } from "@/hooks/usePermissions";
 import { usePageSize } from "@/hooks/usePageSize";
 import PaginationBar from "@/components/common/PaginationBar";
 import { MOCK_ADMIN_ORDERS_DATA } from "@/mock/adminOrdersMock";
-import { updateOrder } from "@/lib/tenantApi";
+import { updateOrder, updateTenantOrder } from "@/lib/tenantApi";
 import ConfirmDialog from "@/components/common/ConfirmDialog";
 import { toast } from "sonner";
 import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogAction } from "@/components/ui/alert-dialog";
@@ -112,14 +112,14 @@ export default function AdminOrders() {
   const [bulkErrors, setBulkErrors] = useState([]);
   const [showBulkErrors, setShowBulkErrors] = useState(false);
 
-  const fetchOrders = async () => {
+  const fetchOrders = async (overridePage) => {
     if (fetchingRef.current) return;
     fetchingRef.current = true;
     setLoading(true);
     try {
       const skipPagination = groupBy !== "none";
       const r = await base44.functions.invoke('admin/orders/getAdminOrdersPage', {
-        ...(skipPagination ? {} : { page: currentPage, pageSize }),
+        ...(skipPagination ? {} : { page: overridePage ?? currentPage, pageSize }),
         search,
         statusFilter,
         storeTagFilter,
@@ -179,17 +179,21 @@ export default function AdminOrders() {
     fetchOrders();
   }, [user]);
 
-  // 筛选/排序/groupBy 变化 → 直接拉取
+  // 筛选/排序/groupBy 变化 → 重置页码并拉取
   useEffect(() => {
     if (!isInitialized.current) return;
-    fetchOrders();
+    resetPage();
+    fetchOrders(1);
   }, [statusFilter, storeTagFilter, weightFilter, itemSizeFilter, replyFilter, dateRangeFilter, showArchived, sortKey, sortDir, groupBy]);
 
   // 搜索防抖 → 400ms 后拉取
   useEffect(() => {
     if (!isInitialized.current) return;
     clearTimeout(searchTimerRef.current);
-    searchTimerRef.current = setTimeout(() => fetchOrders(), 400);
+    searchTimerRef.current = setTimeout(() => {
+      resetPage();
+      fetchOrders(1);
+    }, 400);
     return () => clearTimeout(searchTimerRef.current);
   }, [search]);
 
@@ -359,17 +363,18 @@ export default function AdminOrders() {
       id: order.id
     }];
 
-    await base44.functions.invoke('order/info/confirmProof', payload);
+    // await base44.functions.invoke('order/info/confirmProof', payload);
+    await updateTenantOrder('order/info/confirmProof', payload);
     fetchOrders();
   };
 
   const builkMarkPurchased = async () => {
    
     const payload = selectedIds.map(i => { return { id: i }; });
-   debugger
    
-    const res = await base44.functions.invoke('order/info/handleMarkPurchased', payload);
-debugger
+    // const res = await base44.functions.invoke('order/info/handleMarkPurchased', payload);
+    const res = await updateTenantOrder('order/info/handleMarkPurchased', payload)
+
     const innerCode = res?.data?.code;
     if (innerCode === 200) {
       toast.success("批量已下单成功");
@@ -391,7 +396,8 @@ debugger
 
     const payload = selectedIds.map(i => { return { id: i }; });
    
-    const res = await base44.functions.invoke('order/info/confirmProof', payload);
+    // const res = await base44.functions.invoke('order/info/confirmProof', payload);
+    const res = await updateTenantOrder('order/info/confirmProof', payload);
 
     const innerCode = res?.data?.code;
     if (innerCode === 200) {
@@ -438,7 +444,7 @@ debugger
       <div className="flex items-center justify-between flex-wrap gap-2">
         <h1 className="text-xl font-bold text-gray-900">订单管理</h1>
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={fetchOrders}>
+          <Button variant="outline" size="sm" onClick={() => fetchOrders()}>
             <RefreshCw className="w-3.5 h-3.5 mr-1.5" />刷新
           </Button>
           <Button variant="outline" size="sm" onClick={() => { setShowArchived(v => !v); setSelectedIds([]); }}>
@@ -564,6 +570,7 @@ debugger
             const bulkActions = physicalController.getBulkActions(selectedOrders, sharedStatus, {
               awaiting_payment_confirmation: builkConfirmPaid,
               quick_ordered: builkMarkPurchased,
+              purchased: '',
             });
             return bulkActions.length > 0 ? (
               <div className="flex items-center gap-1.5 border-r border-blue-200 pr-2 mr-1">

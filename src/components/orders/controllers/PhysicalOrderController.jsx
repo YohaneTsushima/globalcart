@@ -511,6 +511,15 @@ export const PhysicalOrderController = {
       });
     }
 
+    if (sharedStatus === "purchased") {
+      actions.push({
+        key: "purchased",
+        label: "一键入库",
+        color: "bg-green-700 hover:bg-green-800",
+        updateData: { order_status: "paid" }
+      });
+    }
+
     return actions.map(a => ({
       ...a,
       ...(customHandlers[a.key] ? { handler: customHandlers[a.key] } : {}),

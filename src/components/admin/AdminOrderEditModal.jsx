@@ -6,7 +6,7 @@
 import { useState, useEffect, useRef } from "react";
 import ReactMarkdown from "react-markdown";
 import { base44 } from "@/api/base44Client";
-import { updateOrder, tenantEntity } from "@/lib/tenantApi";
+import { updateOrder, tenantEntity, updateTenantOrder } from "@/lib/tenantApi";
 import { usePermissions } from "@/hooks/usePermissions";
 import { X, ExternalLink, Copy, Loader2, CheckCircle, AlertTriangle, MessageCircle, Package, Send, Layers, Scissors, GitBranch, GitPullRequest, Lock, Zap } from "lucide-react";
 import ImageUploader from "@/components/common/ImageUploader";
@@ -90,7 +90,7 @@ export default function AdminOrderEditModal({ order, initialItemSizeTemplates, o
   // In-warehouse edit state (weight + size, for already-warehoused orders)
   const [warehouseEditMode, setWarehouseEditMode] = useState(false);
   const [warehouseWeight, setWarehouseWeight] = useState(order.weight_g || "");
-  const [warehouseSizeId, setWarehouseSizeId] = useState(order.item_size_template_id || "");
+  const [warehouseSizeId, setWarehouseSizeId] = useState(order.item_size_template_id || parseInt(order.item_size_template_id) || "");
   const [savingWarehouseEdit, setSavingWarehouseEdit] = useState(false);
 
   // Shipping fee form
@@ -311,28 +311,44 @@ export default function AdminOrderEditModal({ order, initialItemSizeTemplates, o
   // purchased → in_warehouse
   const handleMarkInWarehouse = async ({ andOpenPool = false } = {}) => {
     setSaving(true);
-    const updates = {
-      order_status: "in_warehouse",
-      storage_time: new Date().toISOString().split("T")[0],
-      admin_note: form.admin_note,
-      notice_key: 'order_in_warehouse'
-    };
-    if (arrivalPhoto) updates.storage_image = arrivalPhoto;
-    if (form.weight_g) updates.weight_g = parseFloat(form.weight_g);
-    if (selectedSizeId) {
-      const selectedTemplate = itemSizeTemplates.find(t => t.id === selectedSizeId);
-      if (selectedTemplate) {
-        updates.item_size_template_id = selectedTemplate.id;
-        updates.item_size_title = selectedTemplate.title;
-        updates.item_size_extra_fee = selectedTemplate.extra_fee;
-        updates.item_size_fee_currency = selectedTemplate.fee_currency;
+    // const updates = {
+    //   order_status: "in_warehouse",
+    //   storage_time: new Date().toISOString().split("T")[0],
+    //   admin_note: form.admin_note,
+    //   notice_key: 'order_in_warehouse'
+    // };
+    const selectedTemplate = itemSizeTemplates.find(t => t.id === selectedSizeId);
+
+    const updates = [{
+      id: order.id,
+      data: {
+        admin_note: form.admin_note,
+        storage_image: arrivalPhoto ? arrivalPhoto : '',
+        weight_g: form.weight_g ? parseFloat(form.weight_g) : 0,
+        item_size_template_id: selectedTemplate ? selectedTemplate.id : null,
+        item_size_title: selectedTemplate ? selectedTemplate.title : null,
+        item_size_extra_fee: selectedTemplate ? selectedTemplate.extra_fee : null,
+        item_size_fee_currency: selectedTemplate ? selectedTemplate.fee_currency : null,
       }
-    }
+    }];
+
+    // if (arrivalPhoto) updates.storage_image = arrivalPhoto;
+    // if (form.weight_g) updates.weight_g = parseFloat(form.weight_g);
+    // if (selectedSizeId) {
+    //   const selectedTemplate = itemSizeTemplates.find(t => t.id === selectedSizeId);
+    //   if (selectedTemplate) {
+    //     updates.item_size_template_id = selectedTemplate.id;
+    //     updates.item_size_title = selectedTemplate.title;
+    //     updates.item_size_extra_fee = selectedTemplate.extra_fee;
+    //     updates.item_size_fee_currency = selectedTemplate.fee_currency;
+    //   }
+    // }
 
     // console.log(updates)
     // setSaving(false);
     // return ;
-    const result = await updateOrder(order.id, updates);
+    // const result = await updateOrder(order.id, updates);
+    const result = await updateTenantOrder('order/info/handleMarkInWarehouse', updates);
     if (!result) {
       setSaving(false);
       return;
@@ -602,12 +618,25 @@ export default function AdminOrderEditModal({ order, initialItemSizeTemplates, o
                   <div className="text-xs text-purple-600 font-medium mb-1.5">增值服务</div>
                   <div className="space-y-1">
                     {(order.selected_addons || []).length > 0
-                      ? (order.selected_addons || []).map((a, i) => (
-                          <div key={i} className="flex items-center justify-between text-xs">
-                            <span className="text-gray-700">{a.service_name || a.id}</span>
-                            <span className="font-medium text-purple-700">+{a.fee_currency || "JPY"} {a.fee_currency === "JPY" ? Math.round(parseFloat(a.fee || 0)) : a.fee}</span>
-                          </div>
-                        ))
+                      ? (order.selected_addons || []).map((a, i) => {
+                          const customFee = (order.custom_addon_fee || []).find(c => c.id === a.id);
+                          const hasCustom = customFee && customFee.fee !== undefined;
+                          return (
+                            <div key={i} className="flex flex-col">
+                              <div className="flex items-center justify-between text-xs">
+                                <span className="text-gray-700">{a.service_name || a.id}</span>
+                                <span className={`font-medium ${hasCustom ? "line-through text-gray-400" : "text-purple-700"}`}>
+                                  +{a.fee_currency || "JPY"} {a.fee_currency === "JPY" ? Math.round(parseFloat(a.fee || 0)) : a.fee}
+                                </span>
+                              </div>
+                              {hasCustom && (
+                                <div className="text-xs text-purple-500 text-right">
+                                  用户自定义 +{a.fee_currency || "JPY"} {a.fee_currency === "JPY" ? Math.round(parseFloat(customFee.fee)) : customFee.fee}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })
                       : (order.selected_addon_ids || []).map((id, i) => (
                           <div key={i} className="flex items-center justify-between text-xs">
                             <span className="text-gray-700 font-mono">{id}</span>
@@ -709,7 +738,7 @@ export default function AdminOrderEditModal({ order, initialItemSizeTemplates, o
                         if (typeof fileOrUrl === "string") {
                           setPurchaseScreenshot(fileOrUrl);
                         } else {
-                          const url = await uploadFile(fileOrUrl, setPurchaseScreenshot, setUploadingScreenshot);
+                          const url = await uploadFile(fileOrUrl, setPurchaseScreenshot, setUploadingScreenshot, 'orderPurchased');
                           if (url) uploadedUrlsRef.current.add(url);
                         }
                       }}
@@ -784,7 +813,7 @@ export default function AdminOrderEditModal({ order, initialItemSizeTemplates, o
                         if (typeof fileOrUrl === "string") {
                           setArrivalPhoto(fileOrUrl);
                         } else {
-                          const url = await uploadFile(fileOrUrl, setArrivalPhoto, setUploadingArrival);
+                          const url = await uploadFile(fileOrUrl, setArrivalPhoto, setUploadingArrival, 'orderArrival');
                           if (url) uploadedUrlsRef.current.add(url);
                         }
                       }}
@@ -1023,7 +1052,7 @@ export default function AdminOrderEditModal({ order, initialItemSizeTemplates, o
                               <label key={template.id} className={`flex items-start gap-3 p-2 rounded-lg border cursor-pointer transition-colors bg-white ${
                                 warehouseSizeId === template.id ? "border-cyan-400 bg-cyan-50" : "border-gray-200 hover:bg-gray-50"
                               }`}>
-                                <input type="radio" checked={warehouseSizeId === template.id}
+                                <input type="radio" checked={parseInt(warehouseSizeId) === template.id}
                                   onChange={() => setWarehouseSizeId(template.id)} className="mt-0.5 accent-cyan-600" />
                                 <div className="flex-1 min-w-0">
                                   <div className="flex items-center gap-2">
@@ -1054,32 +1083,43 @@ export default function AdminOrderEditModal({ order, initialItemSizeTemplates, o
                           const oldSizeTitle = order.item_size_title || "无";
                           const newSizeTitle = newSizeTemplate?.title || "无";
                           if (newSizeTitle !== oldSizeTitle) changes.push(`物品尺寸：${oldSizeTitle} → ${newSizeTitle}`);
-                          const updates = {
-                            weight_g: newWeight,
-                            item_size_template_id: newSizeTemplate?.id || "",
-                            item_size_title: newSizeTemplate?.title || "",
-                            item_size_extra_fee: newSizeTemplate?.extra_fee || 0,
-                            item_size_fee_currency: newSizeTemplate?.fee_currency || "JPY",
-                          };
-                          if (changes.length > 0) {
-                            const sysMsg = {
-                              id: Date.now().toString(),
-                              from: "系统通知",
-                              from_email: "__system__",
-                              role: "admin",
-                              content: `管理员已更新您的入库货品信息：${changes.join("；")}`,
-                              timestamp: new Date().toISOString(),
-                            };
-                            const currentMessages = order.messages || [];
-                            const currentUnread = order.unread_roles || [];
-                            updates.messages = [...currentMessages, sysMsg];
-                            updates.unread_roles = [...new Set([...currentUnread, "user"])];
-                          }
-                          const result = await updateOrder(order.id, updates);
+
+                          const updates = [{
+                            id: order.id,
+                            data: {
+                              weight_g: newWeight,
+                              item_size_template_id: newSizeTemplate?.id || "",
+                              item_size_title: newSizeTemplate?.title || "",
+                              item_size_extra_fee: newSizeTemplate?.extra_fee || 0,
+                              item_size_fee_currency: newSizeTemplate?.fee_currency || "JPY",
+                            }
+                            
+                          }];
+
+                          /**
+                           * 这个先不搞
+                           */
+                          // if (changes.length > 0) {
+                          //   const sysMsg = {
+                          //     id: Date.now().toString(),
+                          //     from: "系统通知",
+                          //     from_email: "__system__",
+                          //     role: "admin",
+                          //     content: `管理员已更新您的入库货品信息：${changes.join("；")}`,
+                          //     timestamp: new Date().toISOString(),
+                          //   };
+                          //   const currentMessages = order.messages || [];
+                          //   const currentUnread = order.unread_roles || [];
+                          //   updates.messages = [...currentMessages, sysMsg];
+                          //   updates.unread_roles = [...new Set([...currentUnread, "user"])];
+                          // }
+
+                          const result = await updateTenantOrder('order/info/handleMarkInWarehouse', updates);
                           if (!result) {
                             setSavingWarehouseEdit(false);
                             return;
                           }
+                          toast.success('修改成功，但没有通知用户。')
                           setSavingWarehouseEdit(false);
                           setWarehouseEditMode(false);
                           onSaved();
@@ -1238,6 +1278,7 @@ export default function AdminOrderEditModal({ order, initialItemSizeTemplates, o
                 const poolCode = String(pool?.pool_code || order.consolidation_pool_id || "");
                 const isConsolidation = pool?.consolidation_type && pool.consolidation_type !== "";
                 const isOfficialPool = pool?.is_admin_created === true;
+                debugger
                 return (
                   <div className="space-y-3 border border-cyan-100 rounded-xl p-3 bg-cyan-50">
                     <div className="text-sm font-medium text-cyan-800">已通知出货 — 通过发货池管理发货</div>

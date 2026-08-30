@@ -25,6 +25,17 @@ export async function createOrder(data) {
   return res.data?.order;
 }
 
+export async function updateTenantOrder(url, payload) {
+
+  try {
+    const res = await base44.functions.invoke(url, payload);
+
+    return res;
+  } catch(e) {
+    throw new Error(e);
+  }
+}
+
 export async function updateOrder(order_id, data) {
   try {
     const res = await base44.functions.invoke('admin/orders/updateTenantOrder', { order_id, ...data });

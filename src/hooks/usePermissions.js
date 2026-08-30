@@ -18,7 +18,7 @@ export function usePermissions() {
     user?.role === 'admin' ||
     user?.role === 'tenant_admin' || 
     user?.role === 'ROLE_ADMIN' || 
-    user?.role === 'TENANT_ADMIN';
+    user?.role === 'ROLE_TENANT_ADMIN';
   /**
    * Check if the user has a specific permission.
    * @param {string} permissionId  e.g. "order:update"

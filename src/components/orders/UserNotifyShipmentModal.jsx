@@ -21,6 +21,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
+import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 // Shared with CreateShippingPoolModal — edit shippingFormConstants.js to sync both
 import { SHIPPING_METHODS, CONSOLIDATION_TIMEOUT_ACTIONS as TIMEOUT_ACTIONS } from "@/components/shippingpool/shippingFormConstants";
 import ConfirmDialog from "@/components/common/ConfirmDialog";
@@ -137,6 +138,7 @@ function TransitMethodSection({ consType, selectedTransitId, transitLocations, t
 }
 
 function TransitAddonSection({ consType, selectedTransitId, transitLocations, shippingAddons, selectedAddonIds, setSelectedAddonIds, addonCustomFees, setAddonCustomFees, addonFeeErrors, setAddonFeeErrors }) {
+  const [open, setOpen] = useState(false);
   // When consType is "transit", filter out addons disabled by the selected transit location
   const disabledAddonIds = consType === "transit"
     ? (transitLocations.find(l => l.id === selectedTransitId)?.disabled_addon_ids || [])
@@ -145,75 +147,94 @@ function TransitAddonSection({ consType, selectedTransitId, transitLocations, sh
   // Show addons for all shipping types (not just transit)
   if (visibleAddons.length === 0) return null;
 
+  const selectedCount = visibleAddons.filter(a => selectedAddonIds.includes(a.id)).length;
+
   return (
     <div>
       <label className="text-xs text-gray-500 font-medium uppercase tracking-wide flex items-center gap-1.5">
         <Star className="w-3.5 h-3.5" />增值服务（可选）
       </label>
-      <div className="mt-1.5 space-y-1.5">
-        {visibleAddons.map(a => {
-          const isSelected = selectedAddonIds.includes(a.id);
-          const isCustomizable = a.is_user_customizable;
-          return (
-            <div key={a.id} className={`rounded-lg border p-2.5 transition-colors ${isSelected ? "border-yellow-400 bg-yellow-50" : "border-gray-200 hover:bg-gray-50"}`}>
-              <label className="flex items-center justify-between gap-3 cursor-pointer">
-                <div className="flex items-center gap-2 flex-1">
-                  <Checkbox
-                    checked={isSelected}
-                    onCheckedChange={v => setSelectedAddonIds(prev => v ? [...prev, a.id] : prev.filter(id => id !== a.id))}
-                  />
-                  <div className="flex flex-col gap-0.5">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-sm font-medium text-gray-800">{a.name}</span>
-                      {isCustomizable && (
-                        <Badge className="text-[10px] bg-green-100 text-green-700 border-green-200">用户可自定义</Badge>
+      <div className="mt-1.5">
+        <Popover open={open} onOpenChange={setOpen}>
+          <PopoverTrigger asChild>
+            <button
+              type="button"
+              className={`w-full flex items-center justify-between gap-2 px-3 py-2 rounded-lg border text-sm transition-colors ${selectedCount > 0 ? "border-yellow-400 bg-yellow-50 hover:bg-yellow-100" : "border-gray-200 bg-white hover:border-blue-300 hover:bg-gray-50"}`}
+            >
+              <div className="flex items-center gap-2">
+                <Star className="w-3.5 h-3.5 text-yellow-500" />
+                <span className="font-medium text-gray-700">增值服务</span>
+                {selectedCount > 0 && (
+                  <Badge className="text-[10px] bg-yellow-200 text-yellow-800 border-yellow-300">已选{selectedCount}项</Badge>
+                )}
+              </div>
+              <svg className={`w-4 h-4 text-gray-400 transition-transform ${open ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+            </button>
+          </PopoverTrigger>
+          <PopoverContent className="w-80 p-2" align="start">
+            <div className="space-y-0.5">
+              {visibleAddons.map(a => {
+                const isSelected = selectedAddonIds.includes(a.id);
+                const isCustomizable = a.is_user_customizable;
+                return (
+                  <div key={a.id}>
+                    <label className={`flex items-center justify-between gap-2 px-2 py-1.5 rounded-md cursor-pointer transition-colors ${isSelected ? "bg-yellow-50" : "hover:bg-gray-50"}`}>
+                      <div className="flex items-center gap-2 flex-1 min-w-0">
+                        <Checkbox
+                          checked={isSelected}
+                          onCheckedChange={v => setSelectedAddonIds(prev => v ? [...prev, a.id] : prev.filter(id => id !== a.id))}
+                        />
+                        <div className="flex flex-col min-w-0">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="text-sm font-medium text-gray-800 truncate">{a.service_name}</span>
+                            {isCustomizable && (
+                              <Badge className="text-[9px] bg-green-100 text-green-700 border-green-200">可自定义</Badge>
+                            )}
+                          </div>
+                          {isCustomizable && (
+                            <span className="text-[10px] text-gray-400">区间：{a.fee_currency || "JPY"} {a.fee_min} - {a.fee_max}</span>
+                          )}
+                        </div>
+                      </div>
+                      {!isCustomizable && (
+                        <span className="text-xs font-medium text-yellow-700 flex-shrink-0">+{a.fee_currency || "JPY"} {Number(a.fee || 0).toLocaleString()}</span>
                       )}
-                      {a.description && <span className="text-xs text-gray-400">{a.description}</span>}
-                    </div>
-                    {isCustomizable && (
-                      <span className="text-[10px] text-gray-500">区间：{a.fee_currency || "JPY"} {a.min_fee} - {a.max_fee} · 默认：{Number(a.fee || 0).toLocaleString()}</span>
+                    </label>
+                    {isCustomizable && isSelected && (
+                      <div className="ml-7 mr-2 mb-1.5 flex items-center gap-2">
+                        <Input
+                          type="number"
+                          className="h-7 w-28 text-xs"
+                          placeholder={`${a.fee_min}-${a.fee_max}`}
+                          value={addonCustomFees[a.id] ?? a.fee}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            const value = val === '' ? '' : parseFloat(val) || 0;
+                            setAddonCustomFees(prev => ({ ...prev, [a.id]: value }));
+                            if (value === '' || value < a.fee_min || value > a.fee_max) {
+                              setAddonFeeErrors(prev => ({ ...prev, [a.id]: value === '' ? '请输入金额' : `请输入${a.fee_min}-${a.fee_max}之间的金额` }));
+                            } else {
+                              setAddonFeeErrors(prev => {
+                                const newErrors = { ...prev };
+                                delete newErrors[a.id];
+                                return newErrors;
+                              });
+                            }
+                          }}
+                          onClick={(e) => e.stopPropagation()}
+                        />
+                        <span className="text-xs text-yellow-700">{a.fee_currency || "JPY"}</span>
+                        {addonFeeErrors[a.id] && (
+                          <span className="text-[10px] text-red-600">{addonFeeErrors[a.id]}</span>
+                        )}
+                      </div>
                     )}
                   </div>
-                </div>
-                {!isCustomizable && (
-                  <span className="text-xs font-medium text-yellow-700 flex-shrink-0">+{a.fee_currency || "JPY"} {Number(a.fee || 0).toLocaleString()}</span>
-                )}
-              </label>
-              {isCustomizable && isSelected && (
-                <div className="mt-2 ml-6 flex flex-col gap-1">
-                  <div className="flex items-center gap-2">
-                    <span className="text-[10px] text-green-600 font-medium">用户可自定义</span>
-                    <Input
-                      type="number"
-                      className="h-7 w-28 text-xs"
-                      placeholder={`${a.min_fee}-${a.max_fee}`}
-                      value={addonCustomFees[a.id] ?? a.fee}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        const value = val === '' ? '' : parseFloat(val) || 0;
-                        setAddonCustomFees(prev => ({ ...prev, [a.id]: value }));
-                        if (value === '' || value < a.min_fee || value > a.max_fee) {
-                          setAddonFeeErrors(prev => ({ ...prev, [a.id]: value === '' ? '请输入金额' : `请输入${a.min_fee}-${a.max_fee}之间的金额` }));
-                        } else {
-                          setAddonFeeErrors(prev => {
-                            const newErrors = { ...prev };
-                            delete newErrors[a.id];
-                            return newErrors;
-                          });
-                        }
-                      }}
-                      onClick={(e) => e.stopPropagation()}
-                    />
-                    <span className="text-xs text-yellow-700">{a.fee_currency || "JPY"}</span>
-                  </div>
-                  {addonFeeErrors[a.id] && (
-                    <span className="text-[10px] text-red-600">{addonFeeErrors[a.id]}</span>
-                  )}
-                </div>
-              )}
+                );
+              })}
             </div>
-          );
-        })}
+          </PopoverContent>
+        </Popover>
       </div>
     </div>
   );
@@ -274,7 +295,7 @@ export default function UserNotifyShipmentModal({ order, orders, initialData, on
   const [customsData, setCustomsData] = useState(null);
 
   // Addons & transit shipping method
-  const [shippingAddons, setShippingAddons] = useState(initialData?.addons || []);
+  const [shippingAddons, setShippingAddons] = useState(initialData?.shipping_addons || []);
   const [selectedAddonIds, setSelectedAddonIds] = useState([]);
   const [addonCustomFees, setAddonCustomFees] = useState({});
   const [addonFeeErrors, setAddonFeeErrors] = useState({});
@@ -344,6 +365,18 @@ export default function UserNotifyShipmentModal({ order, orders, initialData, on
           }
 
           setCustomsData(pool.customs_declaration);
+
+          if (pool.selected_addon_ids?.length) {
+            const addonIds = pool.selected_addon_ids.map(id => typeof id === 'string' ? parseInt(id, 10) : id);
+            setSelectedAddonIds(addonIds);
+          }
+          if (pool.selected_addons?.length) {
+            const customFees = {};
+            pool.selected_addons.forEach(a => {
+              if (a.fee != null) customFees[a.id] = a.fee;
+            });
+            setAddonCustomFees(customFees);
+          }
         }).catch(() => {
           setLoadingPool(false);
         });
@@ -511,22 +544,22 @@ export default function UserNotifyShipmentModal({ order, orders, initialData, on
 
     // Save new address to UserPreference if requested
     const isInNewAddressMode = Object.values(addressInputMode).some(v => v) || savedAddresses.length === 0;
-    if (saveNewAddress && isAddressFormValid(newAddress) && isInNewAddressMode) {
-      const newEntry = {
-        id: `addr_${Date.now()}`,
-        label: newAddress.label || "新地址",
-        full_text: serializeAddressToText(newAddress),
-        ...newAddress,
-      };
-      const updatedAddresses = [...savedAddresses, newEntry];
-      if (userPrefId) {
-        await userPrefApi.update(userPrefId, { saved_addresses: updatedAddresses });
-      } else {
-        const created = await userPrefApi.create({ user_email: u.email, saved_addresses: updatedAddresses });
-        if (created?.id) setUserPrefId(created.id);
-      }
-      setSavedAddresses(updatedAddresses);
-    }
+    // if (saveNewAddress && isAddressFormValid(newAddress) && isInNewAddressMode) {
+    //   const newEntry = {
+    //     id: `addr_${Date.now()}`,
+    //     label: newAddress.label || "新地址",
+    //     full_text: serializeAddressToText(newAddress),
+    //     ...newAddress,
+    //   };
+    //   const updatedAddresses = [...savedAddresses, newEntry];
+    //   if (userPrefId) {
+    //     await userPrefApi.update(userPrefId, { saved_addresses: updatedAddresses });
+    //   } else {
+    //     const created = await userPrefApi.create({ user_email: u.email, saved_addresses: updatedAddresses });
+    //     if (created?.id) setUserPrefId(created.id);
+    //   }
+    //   setSavedAddresses(updatedAddresses);
+    // }
 
     // Build resolved address object
     const skipAddress = isPickupStorageSelected;
@@ -548,7 +581,7 @@ export default function UserNotifyShipmentModal({ order, orders, initialData, on
       const customFee = addonCustomFees[a.id];
       return {
         id: a.id,
-        name: a.name,
+        service_name: a.service_name,
         fee: (a.is_user_customizable && customFee !== undefined) ? customFee : a.fee,
         fee_currency: a.fee_currency,
       };
@@ -583,15 +616,26 @@ export default function UserNotifyShipmentModal({ order, orders, initialData, on
       join_existing_pool: effectiveJoinExisting,
       is_private: isPrivate,
       shared_with_emails: sharedWithEmails,
-      customs_declaration: hasCustoms ? customsData : null,
+      customs_declaration: hasCustoms ? customsData : null
     };
-    
+
+    let payload = {
+      order_ids: orderIds,
+      notice_key: 'shipping_request_sent',
+      payload: shipmentPayload,
+      new_address: saveNewAddress,
+      pref_id: userPrefId
+    }
+    console.log(payload)
+
     // Call unified engine
     try {
       await base44.functions.invoke('shipping/createShippingPool', {
         order_ids: orderIds,
         notice_key: 'shipping_request_sent',
         payload: shipmentPayload,
+        new_address: saveNewAddress,
+        pref_id: userPrefId
       });
       onSuccess?.();
     } catch (err) {
@@ -604,7 +648,7 @@ export default function UserNotifyShipmentModal({ order, orders, initialData, on
 
   return (
     <>
-    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="bg-white rounded-xl shadow-xl w-full max-w-xl max-h-[90vh] overflow-y-auto relative" onMouseDown={e => e.stopPropagation()}>
         {loadingPool && (
           <div className="absolute inset-0 bg-white/80 z-20 flex items-center justify-center rounded-xl">

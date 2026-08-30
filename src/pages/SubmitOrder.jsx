@@ -416,6 +416,12 @@ export default function SubmitOrder() {
             notice_key: 'order_created',
             selected_addon_ids: selectedAddons,
             selected_addons: selectedAddonObjects.map((a) => ({ id: a.id, service_name: a.service_name, fee: parseFloat(a.fee) || 0, fee_currency: a.fee_currency || "JPY" })),
+            custom_addon_fee: selectedAddons
+              .filter(id => {
+                const addon = addonOptions.find(a => a.id === id);
+                return addon?.is_user_customizable && addonCustomFees[id] !== undefined && !addonFeeErrors[id];
+              })
+              .map(id => ({ id, fee: addonCustomFees[id] })),
             show_prompt: !dontShowAgain
       };
       // 判断是否需要弹窗确认
@@ -558,7 +564,13 @@ export default function SubmitOrder() {
           const isCustomizable = addon.is_user_customizable;
           const fee = isCustomizable && customFee !== undefined ? customFee : parseFloat(addon.fee) || 0;
           return { id: addon.id, name: addon.name, fee, fee_currency: addon.fee_currency || "JPY" };
-        }).filter(Boolean)
+        }).filter(Boolean),
+        custom_addon_fee: selectedAddons
+          .filter(id => {
+            const addon = addonOptions.find(a => a.id === id);
+            return addon?.is_user_customizable && addonCustomFees[id] !== undefined && !addonFeeErrors[id];
+          })
+          .map(id => ({ id, fee: addonCustomFees[id] })),
       };
 
       await base44.functions.invoke('createTenantOrder', payload);

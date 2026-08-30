@@ -28,13 +28,13 @@ import { toast } from "sonner";
 export default function UserPreferences() {
   const { user } = useCurrentUser();
   const { setUser } = useAuth();
-  const { can } = usePermissions();
+  const { can, isAdmin } = usePermissions();
   const { pref, loading: prefLoading } = useUserPref();
   const canChangeAvatar = can("profile:change_avatar");
   const canChangeAutoArchive = can("profile:change_auto_archive_settings");
   const canChangeDisplayName = can("profile:change_display_name");
   const canChangeDisplayNameAnytime = can("profile:change_display_name_anytime");
-  const canEditPreference = can("block_profile:*");
+  const canEditPreference = !isAdmin && can("block_profile:*");
   
   const [displayName, setDisplayName] = useState("");
   const [avatarUrl, setAvatarUrl] = useState("");

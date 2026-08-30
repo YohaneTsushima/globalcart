@@ -4,7 +4,7 @@ import PaginationBar from "@/components/common/PaginationBar";
 import { base44 } from "@/api/base44Client";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 
-import { Package, RefreshCw, Search, CreditCard, Truck, CheckCircle, ChevronUp, ChevronDown, ChevronsUpDown, Send, Archive, ArchiveRestore, RotateCcw, Zap, MapPin } from "lucide-react";
+import { Package, RefreshCw, Search, CreditCard, Truck, CheckCircle, ChevronUp, ChevronDown, ChevronsUpDown, Send, Archive, ArchiveRestore, RotateCcw, Zap, MapPin, X } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { usePermissions } from "@/hooks/usePermissions";
 import { Textarea } from "@/components/ui/textarea";
@@ -23,7 +23,7 @@ import PaymentModal from "@/components/orders/PaymentModal";
 import UserNotifyShipmentModal from "@/components/orders/UserNotifyShipmentModal";
 import ShippingEditModal from "@/components/shippingpool/ShippingEditModal";
 import ShippingPoolDetailModal from "@/components/shippingpool/ShippingPoolDetailModal";
-import { shippingPoolApi } from "@/lib/tenantApi";
+import { shippingPoolApi, updateTenantOrder } from "@/lib/tenantApi";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import ConfirmDialog from "@/components/common/ConfirmDialog";
 import { Ticket } from "lucide-react";
@@ -272,7 +272,7 @@ export default function MyOrders() {
   const [deliverTargetOrder, setDeliverTargetOrder] = useState(null);
 
   const fetchingRef = useRef(false);
-  const fetchOrders = async (u) => {
+  const fetchOrders = async (u, overridePage) => {
     if (!u || fetchingRef.current) return;
     fetchingRef.current = true;
     setLoading(true);
@@ -293,7 +293,7 @@ export default function MyOrders() {
     }
 
     const r = await base44.functions.invoke('order/info/getMyOrdersPageData', {
-      page: currentPage,
+      page: overridePage ?? currentPage,
       pageSize,
       status: statusFilter,
       search,
@@ -338,17 +338,21 @@ export default function MyOrders() {
     fetchOrders(user);
   }, [user, authLoading]);
 
-  // 筛选/排序变化 → 直接拉取（后端会收到新参数）
+  // 筛选/排序变化 → 重置页码并拉取
   useEffect(() => {
     if (!isInitialized.current) return;
-    fetchOrders(user);
+    resetPage();
+    fetchOrders(user, 1);
   }, [statusFilter, showArchived, sortKey, sortDir]);
 
   // 搜索防抖 → 400ms 后拉取
   useEffect(() => {
     if (!isInitialized.current) return;
     clearTimeout(searchTimerRef.current);
-    searchTimerRef.current = setTimeout(() => fetchOrders(user), 400);
+    searchTimerRef.current = setTimeout(() => {
+      resetPage();
+      fetchOrders(user, 1);
+    }, 400);
     return () => clearTimeout(searchTimerRef.current);
   }, [search]);
 
@@ -385,6 +389,10 @@ export default function MyOrders() {
     else { setSortKey(key); setSortDir("asc"); }
   };
 
+  /**
+   * 申请发货
+   * @param {*} order 
+   */
   const handleConfirmDelivered = async (order) => {
 
     let payload = [{
@@ -394,7 +402,8 @@ export default function MyOrders() {
       }
     }];
 
-    await base44.functions.invoke('order/info/handleDelivered', payload);
+    // await base44.functions.invoke('order/info/handleDelivered', payload);
+    await updateTenantOrder('order/info/handleDelivered', payload);
     // await base44.functions.invoke('order/info/handleDelivered', [{ order_id: order.id, order_status: "delivered", notice_key: 'order_delivered' }]);
     // Also mark the associated shipping pool as delivered
     // const orderId = String(order.id);
@@ -531,6 +540,14 @@ export default function MyOrders() {
             {STATUS_FILTERS.map(s => <SelectItem key={s.v} value={s.v}>{s.l}</SelectItem>)}
           </SelectContent>
         </Select>
+        {(search || statusFilter !== "all") && (
+          <button
+            onClick={() => { setSearch(""); setStatusFilter("all"); resetPage(); }}
+            className="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600 h-8 px-1 shrink-0"
+          >
+            <X className="w-3 h-3" />清除
+          </button>
+        )}
       </div>
 
       {/* Bulk action bars */}
