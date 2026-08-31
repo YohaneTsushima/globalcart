@@ -84,7 +84,7 @@ export function calcFeeBreakdownPerUser({
     const seenAddonKeys = new Set();
     const userAddons = [];
     for (const o of userOrders) {
-      for (const a of (o.selected_addons || [])) {
+      for (const a of (pool.selected_addons || [])) {
         const key = a.id || a.service_name;
         if (key && !seenAddonKeys.has(key)) {
           seenAddonKeys.add(key);
@@ -137,7 +137,7 @@ export function calcFeeBreakdownPerUser({
     if (isConsolidation && !transitHandlingFeeSplit) {
       // Personal: transit handling fee charged per user
       if (transitHandlingFee > 0) {
-        items.push({ label: `中转地手续费（${transitLocation?.name || "中转地"}）`, amount_jpy: transitHandlingFee });
+        items.push({ label: `中转地手续费（${transitLocation?.service_name || "中转地"}）`, amount_jpy: transitHandlingFee });
       }
     }
 
@@ -147,7 +147,7 @@ export function calcFeeBreakdownPerUser({
     }
 
     if (userAddonFeeJpy > 0) {
-      items.push({ label: `发货增值服务（${userAddons.map(a => a.name).join("、")}）`, amount_jpy: userAddonFeeJpy });
+      items.push({ label: `发货增值服务（${userAddons.map(a => a.service_name).join("、")}）`, amount_jpy: userAddonFeeJpy });
     }
 
     if (transitShippingFee > 0) {

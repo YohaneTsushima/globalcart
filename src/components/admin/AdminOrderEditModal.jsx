@@ -1278,7 +1278,7 @@ export default function AdminOrderEditModal({ order, initialItemSizeTemplates, o
                 const poolCode = String(pool?.pool_code || order.consolidation_pool_id || "");
                 const isConsolidation = pool?.consolidation_type && pool.consolidation_type !== "";
                 const isOfficialPool = pool?.is_admin_created === true;
-                debugger
+                
                 return (
                   <div className="space-y-3 border border-cyan-100 rounded-xl p-3 bg-cyan-50">
                     <div className="text-sm font-medium text-cyan-800">已通知出货 — 通过发货池管理发货</div>

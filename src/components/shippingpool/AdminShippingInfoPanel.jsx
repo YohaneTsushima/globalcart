@@ -9,7 +9,7 @@
  */
 import { useState, useMemo, useEffect, useRef } from "react";
 import { base44 } from "@/api/base44Client";
-import { shippingPoolApi } from "@/lib/tenantApi";
+import { shippingPoolApi, tenantEntity } from "@/lib/tenantApi";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -214,6 +214,15 @@ export default function AdminShippingInfoPanel({
       if (packingFeesPerUser.length === 0) {
         setPackingFeesPerUser(initPackingFeesPerUser());
       }
+      // Auto-fill finalWeightG with orders total weight when no saved value exists
+      if (!pool.final_weight_g && !pool.total_weight_g) {
+        const ordersTotalWeight = orders.reduce((sum, o) => sum + (parseFloat(o.weight_g) || 0), 0);
+        if (ordersTotalWeight > 0) {
+          setFinalWeightG(String(ordersTotalWeight));
+          const calc = calcFeeFromWeight(ordersTotalWeight);
+          if (calc) { setShippingFeeJpy(String(calc.fee)); setFeeAutoCalced(true); setShippingCalcResult(calc); }
+        }
+      }
     }
   }, [orders.length]);
   // Initialize shippingCalcResult on mount so the IIFE doesn't need to call calcFeeFromWeight
@@ -254,6 +263,7 @@ export default function AdminShippingInfoPanel({
 
   // Auto-calculate shipping fee from weight using the matched shipping method's rates
   const calcFeeFromWeight = (weightG) => {
+
     if (!matchedShippingMethod || !pool.destination_country) return null;
     const country = pool.destination_country;
     // Resolve zone code: if rates are stored by zone (e.g. "zone1"), map the country code first
@@ -376,16 +386,25 @@ export default function AdminShippingInfoPanel({
     };
   };
 
-  const handleSetAwaitingPayment = async () => {
-    if (!shippingFeeJpy) return;
+  const handleSetAwaitingPayment = () => handleSave(shippingPoolApi.handleSetAwaitingPayment, "已通知用户支付运费");
+  const handleSaveInfoOnly = () => handleSave(shippingPoolApi.handleSaveInfoOnly, "保存成功");
+
+  const handleSave = async (apiFn, successMsg) => {
     setSaving(true);
-    // 已发货的池子补付时不改变发货状态
-    const keepStatus = ["ready_to_ship", "shipped", "delivered"].includes(pool.status);
-    let updateStatus = (keepStatus ? '' : "awaiting_payment");
-    const payload = { ...buildUpdatePayload(), status: updateStatus, payment_status: "unpaid", order_status: "notified_shipment_fee_pending",
-      notice_key: 'shipping_fee_required'
-     };
-    await updatePool(payload, { setLoading: setSaving });
+    const payload = buildUpdatePayload();
+    try {
+      await apiFn(pool.id, payload);
+      setPool(p => ({ ...p, ...payload }));
+      onPoolUpdated?.({ ...pool, ...payload });
+      toast.success(`[${pool.title}] ${successMsg}`);
+    } catch (e) {
+      debugger
+      console.error("操作失败:", e);
+      const message = e?.response?.data?.message;
+      toast.error("操作失败：" + (message || "未知错误"));
+    } finally {
+      setSaving?.(false);
+    }
   };
 
   const updatePool = async (payload, { setLoading, successMsg } = {}) => {
@@ -401,12 +420,6 @@ export default function AdminShippingInfoPanel({
     } finally {
       setLoading?.(false);
     }
-  };
-
-  const handleSaveInfoOnly = async () => {
-    
-    setSaving(true);
-    await updatePool(buildUpdatePayload(), { setLoading: setSaving, successMsg: "保存成功" });
   };
 
   const handleConfirmPayment = async () => {
@@ -737,7 +750,19 @@ export default function AdminShippingInfoPanel({
           {/* Box template */}
           <div>
             <Label className="text-xs text-gray-500">外箱选择</Label>
-            <Select value={boxTemplateId} onValueChange={setBoxTemplateId}>
+            <Select value={boxTemplateId} onValueChange={(val) => {
+              setBoxTemplateId(val);
+              const ordersTotalWeight = orders.reduce((sum, o) => sum + (parseFloat(o.weight_g) || 0), 0);
+              const box = val === "none" ? null : boxTemplates.find(b => b.id === val);
+              const boxW = parseFloat(box?.weight_g) || 0;
+              const newWeight = ordersTotalWeight + boxW;
+              setFinalWeightG(String(newWeight));
+              if (newWeight > 0) {
+                const calc = calcFeeFromWeight(newWeight);
+                if (calc) { setShippingFeeJpy(String(calc.fee)); setFeeAutoCalced(true); setShippingCalcResult(calc); }
+                else { setShippingCalcResult(null); }
+              } else { setFeeAutoCalced(false); setShippingCalcResult(null); }
+            }}>
               <SelectTrigger className="mt-1 h-auto min-h-8 text-sm py-1.5">
                 {boxTemplateId === "none" ? (
                   <span className="text-gray-400">未使用外箱</span>

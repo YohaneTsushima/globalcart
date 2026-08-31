@@ -134,7 +134,7 @@ export const tenantManage = {
   list:         (entity, data = {})   => manage(entity, 'list', { data }).then(r => r || r?.data || r?.data || r.data?.results || r || []),
   diagnose:     (entity, filter = {}) => manage(entity, 'diagnose', { filter }).then(r => r || r?.data || r?.data || r.data?.results || r || []),
   getRate:      (entity, filter = {}) => manage(entity, 'platformRate', { filter }).then(r => r || r?.data || r?.data || r.data?.results || r || []),
-  updateRate:   (entity, id, data) => manage(entity, 'updateRate', { id, data }).then(r => r || r?.data || r?.data || r.data?.results || r || []),
+  updateRate:   (entity, id, data)    => manage(entity, 'updateRate', { id, data }).then(r => r || r?.data || r?.data || r.data?.results || r || []),
   global:       (entity, filter = {}) => manage(entity, 'global', { filter }).then(r => r || r?.data || r?.data || r.data?.results || r || []),
   create:       (entity, data)        => manage(entity, 'create', { data }).then(r => r || r?.data || r.data?.result || r),
   assign:       (entity, data)        => manage(entity, 'assign', { data }).then(r => r || r?.data || r.data?.result || r),
@@ -147,24 +147,28 @@ export const tenantManage = {
 }
 
 export const tenantEntity = {
-  list:   (entity, filter = {}) => mutate(entity, 'list', { filter }).then(r => r?.results || r?.data || r.data?.results || r || []),
-  create: (entity, data)        => mutate(entity, 'create', { data }).then(r => r.result || r.data?.result || r),
-  update: (entity, id, data)    => mutate(entity, 'update', { id, data }).then(r => r.result || r.data?.result || r),
-  delete: (entity, id)          => mutate(entity, 'delete', { id }),
-  sync: (entity, data) => mutate(entity, 'sync', {data}).then(r => r?.result || r?.data?.result || r),
-  one: (entity, id) => mutate(entity, 'one', { id }),
-  layoutConfig: (entity) => mutate(entity, 'layoutConfig'),
-  homeConfig: (entity) => mutate(entity, 'homeConfig')
+  list:         (entity, filter = {}) => mutate(entity, 'list', { filter }).then(r => r?.results || r?.data || r.data?.results || r || []),
+  create:       (entity, data)        => mutate(entity, 'create', { data }).then(r => r.result || r.data?.result || r),
+  update:       (entity, id, data)    => mutate(entity, 'update', { id, data }).then(r => r.result || r.data?.result || r),
+  delete:       (entity, id)          => mutate(entity, 'delete', { id }),
+  sync:         (entity, data)        => mutate(entity, 'sync', {data}).then(r => r?.result || r?.data?.result || r),
+  one:          (entity, id)          => mutate(entity, 'one', { id }),
+  layoutConfig: (entity)              => mutate(entity, 'layoutConfig'),
+  homeConfig:   (entity)              => mutate(entity, 'homeConfig'),
+  register:     (entity, data)        => mutate(entity, 'register', { data }),
+  login:        (entity, data)        => mutate(entity, 'login', { data }),
 };
 
 // ─── ShippingPool shortcuts ───────────────────────────────────────────────────
 
 export const shippingPoolApi = {
-  list:   (filter) => tenantEntity.list('ShippingPool', filter),
-  create: (data)   => tenantEntity.create('ShippingPool', data),
-  update: (id, d)  => tenantEntity.update('ShippingPool', id, d),
-  delete: (id)     => tenantEntity.delete('ShippingPool', id),
-  one: (id) => tenantEntity.one('ShippingPool', id)
+  list:                     (filter)    => tenantEntity.list('ShippingPool', filter),
+  create:                   (data)      => tenantEntity.create('ShippingPool', data),
+  update:                   (id, d)     => tenantEntity.update('ShippingPool', id, d),
+  handleSaveInfoOnly:       (id, data)  => mutate('ShippingPool', 'handleSaveInfoOnly', { id, data }).then(r => r || r?.data || r?.data || r.data?.results || r || []),
+  handleSetAwaitingPayment: (id, data)  => mutate('ShippingPool', 'handleSetAwaitingPayment', { id, data }).then(r => r || r?.data || r?.data || r.data?.results || r || []),
+  delete:                   (id)        => tenantEntity.delete('ShippingPool', id),
+  one:                      (id)        => tenantEntity.one('ShippingPool', id)
 };
 
 // ─── UserPreference shortcuts ─────────────────────────────────────────────────
@@ -174,6 +178,11 @@ export const userPrefApi = {
   create: (data)   => tenantEntity.create('UserPreference', data),
   update: (id, d)  => tenantEntity.update('UserPreference', id, d),
   delete: (id)     => tenantEntity.delete('UserPreference', id),
+};
+
+export const userProfApi = {
+  register:   (data)   => tenantEntity.register('UserProfile', data),
+  login:      (data)   => tenantEntity.login('UserProfile', data),
 };
 
 // ─── Page-level aggregated APIs ───────────────────────────────────────────────

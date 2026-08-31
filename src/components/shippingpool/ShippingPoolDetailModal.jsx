@@ -449,7 +449,7 @@ export default function ShippingPoolDetailModal({ pool: initialPool, isAdmin, cu
 
   // User: generate Alipay payment link for shipping fee
   const handleGenerateAlipay = async () => {
-    const method = paymentMethodRef.current;
+    const method = selectedMethodMeta?.value;
     const payCurrency = selectedMethodMeta?.payment_currency || "JPY";
 
     // Compute user's fee in JPY (reuse the same logic from currency conversion display)
@@ -526,7 +526,7 @@ export default function ShippingPoolDetailModal({ pool: initialPool, isAdmin, cu
   // User: upload payment proof (non-alipay)
   const handleUploadProof = async (file) => {
     setUploadingProof(true);
-    const method = paymentMethodRef.current;
+    const method = selectedMethodMeta?.value;
     const { file_url } = await base44.integrations.Core.UploadFile({ file });
 
     const isConsolidationPool = pool.consolidation_type && pool.consolidation_type !== "";
@@ -828,7 +828,7 @@ export default function ShippingPoolDetailModal({ pool: initialPool, isAdmin, cu
     pool.payment_status !== "paid" && feeNotified;
 
   return (
-    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto" onMouseDown={e => e.stopPropagation()}>
         {/* Header */}
         <div className="flex items-start justify-between px-6 py-4 border-b sticky top-0 bg-white z-10">
@@ -1000,11 +1000,6 @@ export default function ShippingPoolDetailModal({ pool: initialPool, isAdmin, cu
                               {canSeeDetail ? o.order_number : "—"} · {o.weight_g || 0}g
                               {isAdmin && o.id ? ` · ${tenantUserMap[o.user_email]?.display_name || tenantUserMap[o.user_email]?.full_name || o.user_name || ""}` : ""}
                             </p>
-                              
-
-                          
-                              
-
                           
                             </div>
                             <div className="flex items-center gap-1">
@@ -1591,9 +1586,9 @@ export default function ShippingPoolDetailModal({ pool: initialPool, isAdmin, cu
                 const displayName = userData.display_name || userData.full_name || u.name;
                 return (
                   <ParticipantChip
-                    key={u.email || u.name}
+                    key={u.uer_email || u.name}
                     user={{ ...u, name: displayName }}
-                    avatarUrl={userData.avatar_url || ''}
+                    avatarUrl={userData.avatar || ''}
                     contactInfo={contactVisible ? userData.contact_info || '' : ''} />);
 
 
@@ -1886,8 +1881,10 @@ export default function ShippingPoolDetailModal({ pool: initialPool, isAdmin, cu
                       const boxFee = Math.round(parseFloat(pool.box_price_jpy) || 0);
                       const shippingFee = Math.round(parseFloat(pool.shipping_fee_jpy) || 0);
                       const packingFee = Math.round(parseFloat(pool.packing_fee_jpy) || 0);
-                      const grandTotal = boxFee + shippingFee + packingFee;
-                      const hasFeeItems = boxFee > 0 || shippingFee > 0 || packingFee > 0;
+                      const itemSizeFee = orders.reduce((sum, o) => sum + (parseFloat(o.item_size_extra_fee) || 0), 0);
+                      const addonFee = (pool.selected_addons || []).reduce((sum, a) => sum + (parseFloat(a.fee) || 0), 0);
+                      const grandTotal = boxFee + shippingFee + packingFee + itemSizeFee + addonFee;
+                      const hasFeeItems = boxFee > 0 || shippingFee > 0 || packingFee > 0 || itemSizeFee > 0 || addonFee > 0;
                       return (
                         <div className="bg-yellow-50 border border-yellow-100 rounded-lg px-3 py-2.5 space-y-1">
                           {hasFeeItems ? (
@@ -1910,6 +1907,18 @@ export default function ShippingPoolDetailModal({ pool: initialPool, isAdmin, cu
                                   <span className="font-medium text-yellow-800">¥{packingFee.toLocaleString()}</span>
                                 </div>
                               )}
+                              {itemSizeFee > 0 && (
+                                <div className="flex justify-between items-center text-sm">
+                                  <span className="text-yellow-700">物品尺寸费用</span>
+                                  <span className="font-medium text-yellow-800">¥{itemSizeFee.toLocaleString()}</span>
+                                </div>
+                              )}
+                              {addonFee > 0 && (
+                                <div className="flex justify-between items-center text-sm">
+                                  <span className="text-yellow-700">发货增值服务费用</span>
+                                  <span className="font-medium text-yellow-800">¥{addonFee.toLocaleString()}</span>
+                                </div>
+                              )}
                               <div className="flex justify-between items-center text-sm pt-1 border-t border-yellow-200 mt-1">
                                 <span className="font-semibold text-yellow-800">应付合计</span>
                                 <span className="font-bold text-orange-600">¥{grandTotal.toLocaleString()} <span className="text-xs font-normal">JPY</span></span>
@@ -1928,7 +1937,7 @@ export default function ShippingPoolDetailModal({ pool: initialPool, isAdmin, cu
                       <Label className="text-xs text-gray-500 font-medium mb-2 block">选择支付方式</Label>
                       <PaymentMethodSelector
                         value={paymentMethod}
-                        onChange={m => { setPaymentMethod(m.value); paymentMethodRef.current = m.value; setSelectedMethodMeta(m); setAlipayUrl(null); }}
+                        onChange={m => { setPaymentMethod(m.id); paymentMethodRef.current = m.id; setSelectedMethodMeta(m); setAlipayUrl(null); }}
                         activeColor="border-orange-500 bg-orange-50 text-orange-700"
                       />
                       {/* Credit (deferred billing) option — shown if user has credit enabled with sufficient remaining limit */}
@@ -1948,7 +1957,7 @@ export default function ShippingPoolDetailModal({ pool: initialPool, isAdmin, cu
                           <div className="mt-2">
                             <button
                               type="button"
-                              onClick={() => { setPaymentMethod("credit"); setSelectedMethodMeta({ value: "credit", label: "记账后付款", payment_currency: "JPY" }); setAlipayUrl(null); }}
+                              onClick={() => { setPaymentMethod("credit"); paymentMethodRef.current = "credit"; setSelectedMethodMeta({ id: "credit", value: "credit", label: "记账后付款", payment_currency: "JPY" }); setAlipayUrl(null); }}
                               className={`w-full p-3 rounded-lg border-2 text-sm font-medium transition-all flex items-center gap-2 ${paymentMethod === "credit" ? "border-purple-500 bg-purple-50 text-purple-700" : canUseCredit ? "border-gray-200 text-gray-500 hover:border-gray-300" : "border-gray-100 text-gray-300 cursor-not-allowed opacity-60"}`}
                               disabled={!canUseCredit}
                             >
@@ -2015,7 +2024,7 @@ export default function ShippingPoolDetailModal({ pool: initialPool, isAdmin, cu
                       </Button>
                     }
 
-                    {paymentMethod === "alipay" &&
+                    {selectedMethodMeta?.value === "alipay" &&
                 <div className="space-y-2">
                         {alipayUrl &&
                   <div className="p-3 bg-green-50 border border-green-200 rounded-lg text-sm text-green-700 flex items-center gap-2">
@@ -2039,7 +2048,7 @@ export default function ShippingPoolDetailModal({ pool: initialPool, isAdmin, cu
                       </div>
                 }
 
-                    {paymentMethod && paymentMethod !== "alipay" && paymentMethod !== "credit" &&
+                    {paymentMethod && selectedMethodMeta?.value !== "alipay" && selectedMethodMeta?.value !== "credit" &&
                     <PaymentProofUploader
                     selectedMethodMeta={selectedMethodMeta}
                     uploadingProof={uploadingProof}

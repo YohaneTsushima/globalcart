@@ -23,7 +23,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 // Shared with CreateShippingPoolModal — edit shippingFormConstants.js to sync both
-import { SHIPPING_METHODS, CONSOLIDATION_TIMEOUT_ACTIONS as TIMEOUT_ACTIONS } from "@/components/shippingpool/shippingFormConstants";
+import { CONSOLIDATION_TIMEOUT_ACTIONS as TIMEOUT_ACTIONS } from "@/components/shippingpool/shippingFormConstants";
 import ConfirmDialog from "@/components/common/ConfirmDialog";
 
 function clampYear(dateStr) {
@@ -334,6 +334,10 @@ export default function UserNotifyShipmentModal({ order, orders, initialData, on
           p.creator_email === u.email
         );
         setDirectPools(directShipPools);
+      }).catch(() => {});
+
+      tenantEntity.list('ShippingMethod', { is_active: true }).then(methods => {
+        setShippingMethods(methods || []);
       }).catch(() => {});
 
       // 根据 consolidation_pool_id 查询 pool 并预填表单
@@ -695,9 +699,9 @@ export default function UserNotifyShipmentModal({ order, orders, initialData, on
                  <SelectValue placeholder={isJoiningPool ? "使用拼邮池配置" : "请选择发货方式"} />
                </SelectTrigger>
                <SelectContent>
-                 {SHIPPING_METHODS.map(m => (
-                   <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>
-                 ))}
+                 {shippingMethods.map(m => (
+                    <SelectItem key={m.code} value={m.code}>{m.name}</SelectItem>
+                  ))}
                </SelectContent>
              </Select>
              {isJoiningPool && <p className="text-xs text-gray-400 mt-1">发货方式将使用所选拼邮需求的配置</p>}
@@ -926,7 +930,7 @@ export default function UserNotifyShipmentModal({ order, orders, initialData, on
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="any">任何运输方式</SelectItem>
-                    {SHIPPING_METHODS.map(m => <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>)}
+                          {shippingMethods.map(m => <SelectItem key={m.code} value={m.code}>{m.name}</SelectItem>)}
                   </SelectContent>
                 </Select>
                 {consMethod && consMethod !== "any" && (
@@ -937,8 +941,8 @@ export default function UserNotifyShipmentModal({ order, orders, initialData, on
                         <SelectValue placeholder="可留空" />
                       </SelectTrigger>
                       <SelectContent>
-                        {SHIPPING_METHODS.filter(m => m.value !== consMethod).map(m => (
-                          <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>
+                        {shippingMethods.filter(m => m.code !== consMethod).map(m => (
+                          <SelectItem key={m.code} value={m.code}>{m.name}</SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
@@ -968,7 +972,7 @@ export default function UserNotifyShipmentModal({ order, orders, initialData, on
                           <SelectValue placeholder="请选择" />
                         </SelectTrigger>
                         <SelectContent>
-                          {SHIPPING_METHODS.map(m => <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>)}
+                    {shippingMethods.map(m => <SelectItem key={m.code} value={m.code}>{m.name}</SelectItem>)}
                         </SelectContent>
                       </Select>
                     </div>

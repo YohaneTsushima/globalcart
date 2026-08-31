@@ -10,6 +10,10 @@ import {
   Bell, LogOut, Menu, X, Shield, Globe,
   Home, Users, BarChart3, Store, Send, Zap, UserPlus, ChevronDown, ChevronRight, Layers, FileText
 } from "lucide-react";
+import {
+  DropdownMenu, DropdownMenuTrigger, DropdownMenuContent,
+  DropdownMenuItem, DropdownMenuSeparator
+} from "@/components/ui/dropdown-menu";
 import NotificationBell from "@/components/common/NotificationBell.jsx";
 import NavbarRateWidget from "@/components/common/NavbarRateWidget.jsx";
 import AnnouncementPositionRenderer from "@/components/home/AnnouncementPositionRenderer";
@@ -29,6 +33,7 @@ export default function Layout({ children, currentPageName }) {
   const isSuspended = authError?.type === 'account_suspended';
   const tenant = tenantBranding?.tenant || null;
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [announcements, setAnnouncements] = useState([]);
   const [navbarSettings, setNavbarSettings] = useState(null);
   const [navbarRateCurrencies, setNavbarRateCurrencies] = useState([]);
@@ -303,13 +308,44 @@ export default function Layout({ children, currentPageName }) {
               </Badge>
             )}
             {user ? (
-              <div className="flex items-center gap-2">
-                <span className="text-sm text-gray-600 hidden sm:inline">{user.displayName || user.display_name || user.userEmail}</span>
-                <Button variant="ghost" size="sm" className="text-gray-500 h-7 px-2"
-                  onClick={() => base44.auth.logout()}>
-                  <LogOut className="w-3.5 h-3.5" />
-                </Button>
-              </div>
+              <DropdownMenu open={userMenuOpen} onOpenChange={setUserMenuOpen}>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    className="flex items-center gap-2 cursor-pointer outline-none"
+                    onMouseEnter={() => setUserMenuOpen(true)}
+                    onMouseLeave={() => setUserMenuOpen(false)}
+                  >
+                    {user.avatar || user.avatar_url ? (
+                      <img src={user.avatar || user.avatar_url} alt="" className="w-7 h-7 rounded-full object-cover border border-gray-200" />
+                    ) : (
+                      <div className="w-7 h-7 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0">
+                        <span className="text-xs font-medium text-red-600">
+                          {(user.displayName || user.display_name || user.userEmail || "?").slice(0, 1)}
+                        </span>
+                      </div>
+                    )}
+                    <span className="text-sm text-gray-700 hidden sm:inline">{user.displayName || user.display_name || user.userEmail}</span>
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent
+                  align="end"
+                  className="min-w-[140px]"
+                  onMouseEnter={() => setUserMenuOpen(true)}
+                  onMouseLeave={() => setUserMenuOpen(false)}
+                >
+                  <DropdownMenuItem asChild>
+                    <Link to={createPageUrl("UserPreferences")} className="flex items-center gap-2 cursor-pointer">
+                      <User className="w-4 h-4" />
+                      {t("个人设置", locale)}
+                    </Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={() => base44.auth.logout()} className="flex items-center gap-2 cursor-pointer">
+                    <LogOut className="w-4 h-4" />
+                    {t("退出登录", locale)}
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             ) : (
               <Badge className="bg-gray-100 text-gray-500 border-gray-200 text-xs">
                 {t("游客", locale)}

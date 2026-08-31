@@ -1,7 +1,8 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState } from "react";
 import { base44 } from "@/api/base44Client";
 import { useTenantBranding } from "@/hooks/useTenantBranding";
-import { Package, Truck, Shield } from "lucide-react";
+import { Package, Truck, Shield, Eye, EyeOff } from "lucide-react";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -13,50 +14,45 @@ import { createPageUrl } from "@/utils";
 import ConfirmDialog from "@/components/common/ConfirmDialog";
 import googleIcon from "@/assets/icons/google.svg";
 import alipayIcon from "@/assets/icons/alipay.svg";
-import wechatIcon from "@/assets/icons/wechat.svg";
-import qqIcon from "@/assets/icons/qq.svg";
+import { tenantEntity } from "@/lib/tenantApi";
 
 export default function Login() {
 	const { t } = useTranslation();
 	const { locale } = useLocale();
   const navigate = useNavigate()
   const [searchParams] = useSearchParams();
-  const { login, loginWithOAuth, isAuthenticated, isLoadingAuth } = useAuth();
+  const { loginWithOAuth, isAuthenticated, isLoadingAuth } = useAuth();
   const { tenant } = useTenantBranding();
-  const [phoneEmail, setPhone] = useState("");
-  const [code, setCode] = useState("");
-  const [phoneError, setPhoneError] = useState(false);
-  const [codeError, setCodeError] = useState(false);
+
+  // 登录 Tab
+  const [contactInfo, setContactInfo] = useState("");
+  const [contactInfoError, setContactInfoError] = useState(false);
+  const [loginPassword, setLoginPassword] = useState("");
+  const [loginPasswordError, setLoginPasswordError] = useState(false);
+  const [showLoginPassword, setShowLoginPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+
+  // 注册 Tab
+  const [regEmail, setRegEmail] = useState("");
+  const [regDisplayName, setRegDisplayName] = useState("");
+  const [regContactInfo, setRegContactInfo] = useState("");
+  const [regPassword, setRegPassword] = useState("");
+  const [regConfirmPassword, setRegConfirmPassword] = useState("");
+  const [showRegPassword, setShowRegPassword] = useState(false);
+  const [showRegConfirm, setShowRegConfirm] = useState(false);
+  const [regErrors, setRegErrors] = useState({});
+  const [regSubmitting, setRegSubmitting] = useState(false);
+
+  // Tab / 协议
+  const [activeTab, setActiveTab] = useState("login");
   const [agreed, setAgreed] = useState(false);
   const [showAgreedDialog, setShowAgreedDialog] = useState(false);
   const [pendingLoginType, setPendingLoginType] = useState(null);
-  const popupRef = useRef(null);
-  const messageHandlerRef = useRef(null);
-
-   // 从 localStorage 恢复倒计时
-  const getInitialCountdown = () => {
-    const until = parseInt(localStorage.getItem("login_code_until") || "0", 10);
-    const remaining = Math.ceil((until - Date.now()) / 1000);
-    return remaining > 0 ? remaining : 0;
-  };
-
-    const [countdown, setCountdown] = useState(getInitialCountdown);
-
-    useEffect(() => {
-    if (countdown <= 0) return;
-    const timer = setInterval(() => {
-      setCountdown(prev => {
-        if (prev <= 1) { clearInterval(timer); return 0; }
-        return prev - 1;
-      });
-    }, 1000);
-    return () => clearInterval(timer);
-  }, [countdown > 0]);
 
   useEffect(() => {
-    // OAuth2 回调：后端已设置 cookie，URL 只带 userId 和 next
     const result = searchParams.get('success');
+    const classic = searchParams.get('classic');
+
     if (result && result === 'true') {
       setSubmitting(true);
       loginWithOAuth().then(result => {
@@ -73,12 +69,30 @@ export default function Login() {
       return;
     }
 
-    // OAuth2 回调失败：URL 带 error + message（支付宝等 redirect 模式出错）
+    if (classic && classic === 'true') {
+      setSubmitting(true);
+      // 传统登录回调，后端已设置 cookie，直接跳转
+      // const next = searchParams.get('next');
+      // navigate(next ? decodeURIComponent(next) : `/${locale}/home`, { replace: true });
+      loginWithOAuth().then(result => {
+        setSubmitting(false);
+        if (result.ok) {
+          console.log(searchParams)
+          const next = searchParams.get('next');
+          navigate(next ? decodeURIComponent(next) : `/${locale}/home`, { replace: true });
+        } else if (result.error === 'account_suspended') {
+          toast.error(t('您的账户已被停用，请联系管理员', locale));
+        } else {
+          toast.error(t(result.error || '登录失败', locale));
+        }
+      });
+      return;
+    }
+
     const oauthError = searchParams.get('error');
     const oauthMessage = searchParams.get('message');
     if (oauthError) {
       toast.error(t(oauthMessage || '支付宝登录失败，请重试', locale));
-      // 清理 URL 中的 error 参数，避免刷新页面重复提示
       const next = searchParams.get('next');
       const cleanParams = new URLSearchParams();
       if (next) cleanParams.set('next', next);
@@ -87,12 +101,28 @@ export default function Login() {
       return;
     }
 
-    // 如果已登录且初始化完成，直接跳转（尊重 next 参数）
     if(!isLoadingAuth && isAuthenticated) {
         const next = searchParams.get('next');
         navigate(next ? decodeURIComponent(next) : `/${locale}/home`, { replace: true });
     }
   }, [navigate, searchParams, locale, isAuthenticated, isLoadingAuth]);
+
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key !== 'Enter') return;
+      if (showAgreedDialog) return;
+      if (submitting || regSubmitting) return;
+
+      e.preventDefault();
+      if (activeTab === 'login') {
+        handlePasswordLogin();
+      } else {
+        handleRegister();
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [activeTab, agreed, submitting, regSubmitting, showAgreedDialog]);
 
   const getRedirect = () => {
     const next = searchParams.get('next');
@@ -102,53 +132,132 @@ export default function Login() {
     return `?${params.toString()}`;
   };
 
-  const performLogin = async () => {
-    setPhoneError(false);
-    setCodeError(false);
-    const isPhone = /^\d{11}$/.test(phoneEmail.trim());
-    const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(phoneEmail.trim());
+  const performPasswordLogin = async () => {
+    setContactInfoError(false);
+    setLoginPasswordError(false);
+    const isPhone = /^\d{11}$/.test(contactInfo.trim());
+    const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contactInfo.trim());
     if (!isPhone && !isEmail) {
-      setPhoneError(true);
+      setContactInfoError(true);
+      toast.error(t('请输入正确的手机号或邮箱格式', locale));
       return;
     }
-    if (!code.trim()) {
-      setCodeError(true);
+    if (!loginPassword.trim()) {
+      setLoginPasswordError(true);
+      toast.error(t('请输入密码', locale));
       return;
     }
     if (submitting) return;
     setSubmitting(true);
+    
     try {
-      const result = await login(phoneEmail.trim(), code.trim());
-      if (result.ok) {
-        const next = searchParams.get('next');
-        navigate(next ? decodeURIComponent(next) : `/${locale}/home`, { replace: true });
-      } else if (result.error === 'account_suspended') {
-        toast.error(t('您的账户已被停用，请联系管理员', locale));
-      } else {
-        toast.error(t(result.error || '登录失败，请检查验证码', locale));
+      
+      let requestUrl = '/globalcart/user/stats/login';
+      let next = searchParams.get('next');
+      if(next) {
+        requestUrl += '?next=' + next;
       }
-    } finally {
+
+      const res = await fetch(requestUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          data: { contact_info: contactInfo.trim(), password: loginPassword }
+        }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        // 登录成功，后端已设置 cookie，跳转到 classic 页面
+        window.location.href = data.redirect;
+      } else {
+        toast.error(t(data.message || '登录失败，请重试', locale));
+        setSubmitting(false);
+      }
+    } catch (err) {
+      toast.error(t('登录失败，请重试', locale));
       setSubmitting(false);
     }
   };
 
-  const handleLogin = async () => {
+  const handlePasswordLogin = async () => {
     if (!agreed) {
-      setPendingLoginType('login');
+      setPendingLoginType('password_login');
       setShowAgreedDialog(true);
       return;
     }
-    await performLogin();
+    await performPasswordLogin();
+  };
+
+  const performRegister = async () => {
+    const errors = {};
+    const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(regEmail.trim());
+    if (!regEmail.trim() || !isEmail) {
+      errors.email = true;
+    }
+    if (!regDisplayName.trim()) {
+      errors.displayName = true;
+    }
+    if (!regContactInfo.trim()) {
+      errors.contactInfo = true;
+    }
+    if (!regPassword.trim() || regPassword.length < 6) {
+      errors.password = true;
+    }
+    if (regPassword !== regConfirmPassword) {
+      errors.passwordMismatch = true;
+      toast.error(t('两次输入的密码不一致', locale));
+    }
+    if (Object.keys(errors).length > 0) {
+      setRegErrors(errors);
+      return;
+    }
+    if (regSubmitting) return;
+    setRegSubmitting(true);
+    try {
+      await tenantEntity.register('UserProfile', {
+        user_email: regEmail.trim(),
+        display_name: regDisplayName.trim(),
+        contact_info: regContactInfo.trim(),
+        password: regPassword,
+      });
+      toast.success(t('注册成功，请登录', locale));
+      setActiveTab("login");
+      setContactInfo(regEmail.trim());
+      setRegEmail("");
+      setRegDisplayName("");
+      setRegContactInfo("");
+      setRegPassword("");
+      setRegConfirmPassword("");
+      setRegErrors({});
+    } catch (err) {
+      console.error('register failed:', err);
+      toast.error(t(err?.response?.data?.message || err?.message || '注册失败，请稍后重试', locale));
+    } finally {
+      setRegSubmitting(false);
+    }
+  };
+
+  const handleRegister = async () => {
+    if (!agreed) {
+      setPendingLoginType('register');
+      setShowAgreedDialog(true);
+      return;
+    }
+    await performRegister();
   };
 
   const handleConfirmAgreement = async () => {
     setAgreed(true);
     setShowAgreedDialog(false);
-    
+
     const redirect = getRedirect();
     switch (pendingLoginType) {
-      case 'login':
-        await performLogin();
+      case 'password_login':
+        await performPasswordLogin();
+        break;
+      case 'register':
+        await performRegister();
         break;
       case 'google':
         window.location.href = `/oauth2/authorization/google${redirect}`;
@@ -156,53 +265,8 @@ export default function Login() {
       case 'alipay':
         base44.auth.alipayLogin(redirect);
         break;
-      case 'wechat':
-        window.location.href = `/oauth2/authorization/wechat${redirect}`;
-        break;
-      case 'qq':
-        window.location.href = `/oauth2/authorization/qq${redirect}`;
-        break;
     }
     setPendingLoginType(null);
-  };
-
-  const handleSendCode = async () => {
-    
-    if (countdown > 0) return;
-    const isPhone = /^\d{11}$/.test(phoneEmail.trim());
-    const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(phoneEmail.trim());
-    if (!isPhone && !isEmail) {
-      setPhoneError(true);
-      return;
-    }
-
-    localStorage.setItem("login_code_until", String(Date.now() + 30000));
-    
-
-    let message = '验证码已发送到邮箱，请注意查收';
-
-    if(isPhone) {
-      let message = '验证码已发送到手机短信，请注意查收';
-      toast.success(t('手机短信功能还没实现，请使用邮箱接收', locale));
-      return;
-    }
-
-    setCountdown(30);
-
-    if(isEmail) {
-      try {
-        
-        await base44.functions.invoke('email/sendVerify', {'username': phoneEmail});
-        toast.success(t(message, locale));
-      } catch (err) {
-        setCountdown(0);
-        console.error('send verify failed:', err);
-        toast.error(t('验证码发送失败，请稍后重试', locale));
-        return;
-      }
-    }
-    
-    
   };
 
   const features = [
@@ -213,14 +277,6 @@ export default function Login() {
 
   return (
      <div className="min-h-[80vh] flex flex-col items-center justify-center py-12 px-4 relative">
-
-      {/* 登录中遮盖层 — 只盖 Login 组件，不碰全局 state */}
-      {submitting && (
-        <div className="absolute inset-0 z-50 bg-white/70 backdrop-blur-sm flex flex-col items-center justify-center gap-3">
-          <div className="w-8 h-8 border-4 border-red-200 border-t-red-600 rounded-full animate-spin"></div>
-          <span className="text-sm text-gray-600 font-medium">{t("登录中，请稍候...", locale)}</span>
-        </div>
-      )}
 
       {/* Logo & Brand */}
       <div className="text-center mb-8">
@@ -257,33 +313,124 @@ export default function Login() {
         ))}
       </div>
 
-      {/* Phone & Code Inputs */}
-      <div className="w-full max-w-xs space-y-3">
-        {/* 手机号 */}
-        <div className="flex gap-2">
-          <Input
-            placeholder={phoneError ? t("请输入11位手机号或邮箱地址", locale) : t("邮箱/手机号", locale)}
-            value={phoneEmail}
-            onChange={e => { setPhone(e.target.value); setPhoneError(false); }}
-            className={`flex-1 ${phoneError ? "border-red-500 placeholder:text-red-400 focus-visible:ring-red-300" : ""}`}
-          />
-          <Button
-            variant="outline"
-            className="shrink-0 text-red-600 border-red-200 hover:bg-red-50 text-xs w-20"
-            onClick={handleSendCode}
-            disabled={countdown > 0}
-          >
-            {countdown > 0 ? `${countdown}s` : t("发送验证码", locale)}
-          </Button>
-        </div>
-        {/* 验证码 */}
-        <Input
-          placeholder={codeError ? t("请输入验证码", locale) : t("验证码", locale)}
-          value={code}
-          onChange={e => { setCode(e.target.value); setCodeError(false); }}
-          className={codeError ? "border-red-500 placeholder:text-red-400 focus-visible:ring-red-300" : ""}
-        />
-        {/* 登录协议 */}
+      {/* Tabs: 登录 / 新用户注册 */}
+      <div className="w-full max-w-xs space-y-3 relative">
+        {/* 表单遮盖层 — 登录或注册中 */}
+        {(submitting || regSubmitting) && (
+          <div className="absolute inset-0 z-50 bg-white/70 backdrop-blur-sm rounded-lg flex flex-col items-center justify-center gap-3">
+            <div className="w-8 h-8 border-4 border-red-200 border-t-red-600 rounded-full animate-spin"></div>
+            <span className="text-sm text-gray-600 font-medium">
+              {submitting ? t("登录中，请稍候...", locale) : t("注册中，请稍候...", locale)}
+            </span>
+          </div>
+        )}
+        <Tabs value={activeTab} onValueChange={setActiveTab}>
+          <TabsList className="grid w-full grid-cols-2 mb-4">
+            <TabsTrigger value="login">{t("登录", locale)}</TabsTrigger>
+            <TabsTrigger value="register">{t("新用户注册", locale)}</TabsTrigger>
+          </TabsList>
+
+          {/* Tab 1: 登录 */}
+          <TabsContent value="login" className="space-y-3">
+            <Input
+              placeholder={contactInfoError ? t("请输入手机号或邮箱", locale) : t("手机号或邮箱", locale)}
+              value={contactInfo}
+              onChange={e => { setContactInfo(e.target.value); setContactInfoError(false); }}
+              className={contactInfoError ? "border-red-500 placeholder:text-red-400 focus-visible:ring-red-300" : ""}
+            />
+            <div className="relative">
+              <Input
+                type={showLoginPassword ? "text" : "password"}
+                placeholder={loginPasswordError ? t("请输入密码", locale) : t("密码", locale)}
+                value={loginPassword}
+                onChange={e => { setLoginPassword(e.target.value); setLoginPasswordError(false); }}
+                className={loginPasswordError ? "border-red-500 placeholder:text-red-400 focus-visible:ring-red-300 pr-10" : "pr-10"}
+              />
+              <button
+                type="button"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                onClick={() => setShowLoginPassword(!showLoginPassword)}
+              >
+                {showLoginPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+            <div className="flex justify-end">
+              <a href={createPageUrl("ForgotPassword")} className="text-xs text-red-600 hover:underline">
+                {t("忘记密码", locale)}
+              </a>
+            </div>
+            <Button
+              className="w-full bg-red-600 hover:bg-red-700 text-white h-10"
+              onClick={handlePasswordLogin}
+              disabled={submitting}
+            >
+              {submitting ? t("登录中...", locale) : t("登录")}
+            </Button>
+          </TabsContent>
+
+          {/* Tab 2: 新用户注册 */}
+          <TabsContent value="register" className="space-y-3">
+            <Input
+              placeholder={regErrors.email ? t("请输入有效邮箱", locale) : t("邮箱", locale)}
+              value={regEmail}
+              onChange={e => { setRegEmail(e.target.value); setRegErrors(prev => ({ ...prev, email: false })); }}
+              className={regErrors.email ? "border-red-500 placeholder:text-red-400 focus-visible:ring-red-300" : ""}
+            />
+            <Input
+              placeholder={regErrors.displayName ? t("请输入昵称", locale) : t("昵称", locale)}
+              value={regDisplayName}
+              onChange={e => { setRegDisplayName(e.target.value); setRegErrors(prev => ({ ...prev, displayName: false })); }}
+              className={regErrors.displayName ? "border-red-500 placeholder:text-red-400 focus-visible:ring-red-300" : ""}
+            />
+            <Input
+              placeholder={regErrors.contactInfo ? t("请输入手机号", locale) : t("手机号", locale)}
+              value={regContactInfo}
+              onChange={e => { setRegContactInfo(e.target.value); setRegErrors(prev => ({ ...prev, contactInfo: false })); }}
+              className={regErrors.contactInfo ? "border-red-500 placeholder:text-red-400 focus-visible:ring-red-300" : ""}
+            />
+            <div className="relative">
+              <Input
+                type={showRegPassword ? "text" : "password"}
+                placeholder={regErrors.password ? t("密码至少6位", locale) : t("密码", locale)}
+                value={regPassword}
+                onChange={e => { setRegPassword(e.target.value); setRegErrors(prev => ({ ...prev, password: false, passwordMismatch: false })); }}
+                className={regErrors.password ? "border-red-500 placeholder:text-red-400 focus-visible:ring-red-300 pr-10" : "pr-10"}
+              />
+              <button
+                type="button"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                onClick={() => setShowRegPassword(!showRegPassword)}
+              >
+                {showRegPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+            <div className="relative">
+              <Input
+                type={showRegConfirm ? "text" : "password"}
+                placeholder={regErrors.passwordMismatch ? t("两次密码不一致", locale) : t("确认密码", locale)}
+                value={regConfirmPassword}
+                onChange={e => { setRegConfirmPassword(e.target.value); setRegErrors(prev => ({ ...prev, passwordMismatch: false })); }}
+                className={regErrors.passwordMismatch ? "border-red-500 placeholder:text-red-400 focus-visible:ring-red-300 pr-10" : "pr-10"}
+              />
+              <button
+                type="button"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                onClick={() => setShowRegConfirm(!showRegConfirm)}
+              >
+                {showRegConfirm ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+            <Button
+              className="w-full bg-red-600 hover:bg-red-700 text-white h-10"
+              onClick={handleRegister}
+              disabled={regSubmitting}
+            >
+              {regSubmitting ? t("注册中...", locale) : t("注册")}
+            </Button>
+          </TabsContent>
+        </Tabs>
+
+        {/* 登录协议 - 共享 */}
         <div className="flex items-start gap-2 py-1">
           <Checkbox
             id="agree-terms"
@@ -292,21 +439,12 @@ export default function Login() {
             className="mt-0.5"
           />
           <label htmlFor="agree-terms" className="text-xs text-gray-500 leading-relaxed cursor-pointer">
-            {t("登录即表示同意", locale)}
+            {t("我已阅读并同意", locale)}
             <a href={createPageUrl("TermsOfService")} target="_blank" className="text-red-600 hover:underline">{t("《用户协议》", locale)}</a>
             {t("和", locale)}
             <a href={createPageUrl("PrivacyPolicy")} target="_blank" className="text-red-600 hover:underline">{t("《隐私政策》", locale)}</a>
           </label>
         </div>
-
-        {/* Login Button */}
-        <Button
-          className="w-full bg-red-600 hover:bg-red-700 text-white h-10"
-          onClick={handleLogin}
-          disabled={submitting}
-        >
-          {submitting ? t("登录中...", locale) : t("登录 / 注册")}
-        </Button>
 
         {/* 分隔线 */}
         <div className="flex items-center gap-3 py-1">
@@ -356,52 +494,11 @@ export default function Login() {
           >
             <img src={alipayIcon} alt="支付宝" className="w-6 h-6" />
           </button>
-
-          {/* 微信 */}
-          <button
-            type="button"
-            onClick={() => {
-              if (submitting) return;
-              if (!agreed) {
-                setPendingLoginType('wechat');
-                setShowAgreedDialog(true);
-                return;
-              }
-              const redirect = getRedirect();
-              window.location.href = `/oauth2/authorization/wechat${redirect}`;
-            }}
-            disabled={true}
-            className="w-12 h-12 rounded-xl flex items-center justify-center transition-all bg-white border border-gray-200 hover:bg-gray-50 hover:shadow-md"
-            title="微信"
-          >
-            <img src={wechatIcon} alt="微信" className="w-6 h-6" />
-          </button>
-
-          {/* QQ */}
-          <button
-            type="button"
-            onClick={() => {
-              if (submitting) return;
-              if (!agreed) {
-                setPendingLoginType('qq');
-                setShowAgreedDialog(true);
-                return;
-              }
-              const redirect = getRedirect();
-              window.location.href = `/oauth2/authorization/qq${redirect}`;
-            }}
-            disabled={true}
-            className="w-12 h-12 rounded-xl flex items-center justify-center transition-all bg-white border border-gray-200 hover:bg-gray-50 hover:shadow-md"
-            title="QQ"
-          >
-            <img src={qqIcon} alt="QQ" className="w-6 h-6" />
-          </button>
         </div>
 
         {tenant?.contact_info && (
           <p className="text-center text-xs text-gray-400">{tenant.contact_info}</p>
         )}
-        
       </div>
 
       <ConfirmDialog
