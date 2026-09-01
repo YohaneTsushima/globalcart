@@ -477,7 +477,12 @@ export default function UserNotifyShipmentModal({ order, orders, initialData, on
     
     // Check disabled item size templates
     const disabledSizes = selectedMethod.disabled_item_size_template_ids || [];
-    const hasDisabledSize = targetOrders.some(o => o.item_size_template_id && disabledSizes.includes(o.item_size_template_id));
+    const hasDisabledSize = targetOrders.some(o => {
+      if (!o.item_size_template_id) return false;
+      const sizeId = parseInt(o.item_size_template_id, 10);
+      const normalizedId = isNaN(sizeId) ? o.item_size_template_id : sizeId;
+      return disabledSizes.includes(normalizedId) || disabledSizes.includes(String(normalizedId));
+    });
     if (hasDisabledSize) {
       return `所选运输方式不支持当前订单所使用的物品尺寸模板`;
     }
@@ -599,12 +604,14 @@ export default function UserNotifyShipmentModal({ order, orders, initialData, on
 
     // Resolve transit location name + country for new pool creation
     const transitLoc = transitLocations.find(l => l.id === selectedTransitId);
+    const selectedShippingMethod = shippingMethods.find(m => m.code === method);
 
     // Build the standard shipment payload
     const shipmentPayload = {
       id: consolidationPoolId,
       consType: isJoiningPool ? (selectedPool?.consolidation_type || consType) : consType,
       shipping_method: isJoiningPool ? (selectedPool?.shipping_method || method) : method,
+      shipping_method_id: selectedShippingMethod?.id,
       scheduled_ship_date: deadline || '',
       user_note: note || '',
       pool_title: poolTitle || '',
@@ -630,7 +637,6 @@ export default function UserNotifyShipmentModal({ order, orders, initialData, on
       new_address: saveNewAddress,
       pref_id: userPrefId
     }
-    console.log(payload)
 
     // Call unified engine
     try {

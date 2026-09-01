@@ -886,6 +886,7 @@ export default function AdminOrders() {
           currentUser={user}
           pendingEditRequests={pendingEditRequests.filter(r => r.pool_id === selectedPool.id)}
           boxTemplates={boxTemplates}
+          allPools={shippingPools}
           shippingMethods={shippingMethods}
           transitLocations={transitLocations}
           transitShippingMethods={transitShippingMethods}

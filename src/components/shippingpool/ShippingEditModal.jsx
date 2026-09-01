@@ -16,6 +16,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import ConfirmDialog from "@/components/common/ConfirmDialog";
 import { format } from "date-fns";
+import { toast } from "sonner";
 
 export default function ShippingEditModal({ order, currentPool, currentUser, onClose, onSuccess }) {
   const [editType, setEditType] = useState("cancel_shipment");
@@ -62,6 +63,7 @@ export default function ShippingEditModal({ order, currentPool, currentUser, onC
           p.id !== currentPool?.id &&
           (p.status === "pending" || p.status === "processing")
         );
+        
         setAvailablePools(eligible);
       })
       .catch(() => {});
@@ -87,7 +89,7 @@ export default function ShippingEditModal({ order, currentPool, currentUser, onC
       edit_request: editRequest
     };
 
-    const res = await base44.functions.invoke('mutateTenantEntity/ShippingPool/update', {
+    const res = await base44.functions.invoke('mutateTenantEntity/ShippingEditRequest/update', {
       entity: 'ShippingPool',
       action: 'update',
       id: currentPool.id,
@@ -100,6 +102,20 @@ export default function ShippingEditModal({ order, currentPool, currentUser, onC
     return { result: res.data?.result || res.data };
   }
 
+  const handleEditRequest = async (url, param) => {
+    const res = await base44.functions.invoke(url, {
+      entity: 'ShippingPool',
+      action: 'update',
+      id: currentPool.id,
+      data: param
+    });
+
+    if (res.data?.code === 500 || res.data?.edit_request?.error) {
+      return { error: res.data?.edit_request?.error || res.data?.error || '操作失败' };
+    }
+    return { result: res.data?.result || res.data };
+  }
+
   const handleSubmit = async () => {
     if (editType === "move_pool" && !targetPoolId) return;
     setSubmitting(true);
@@ -108,8 +124,79 @@ export default function ShippingEditModal({ order, currentPool, currentUser, onC
     let editRequest = {};
     let status = 'in_warehouse';
     const res = {};
+    let url = '';
+    let targetPool = null;
+
+    //判断操作类型设置参数
+    if(editType === 'cancel_shipment') {
+      url = 'mutateTenantEntity/ShippingEditRequest/cancelShipment';
+      updatedIds = (currentPool.order_ids || []).filter(id => id !== order.id);
+    } else if(editType === 'move_pool') {
+      url = 'mutateTenantEntity/ShippingEditRequest/movePool';
+      targetPool = availablePools.find(p => p.id === targetPoolId);
+      updatedIds = [...new Set([...(targetPool.order_ids || []), order.id])];
+    }
+
+    //
+    // const targetOrderId = req.order_id;
+    
+    // const updatedIds = (pool.order_ids || []).filter((id) => id !== targetOrderId);
+
+    // const rewarehouseFee = req.is_rewarehouse_request
+    //   ? (parseFloat(rewarehouseFeeInputs[req.id] ?? req.rewarehouse_fee_jpy ?? 0) || 0)
+    //   : 0;
+
+    const orderInfo = {
+      id: order.id,
+      order_number: order.order_number,
+      consolidation_pool_id: currentPool.id
+    }
+    
+    const edit_request = {
+      order_id: order.id,
+      pool_id: currentPool.id, 
+      user_email: currentUser.email,
+      target_pool_id: targetPoolId,
+      user_note: userNote, 
+    }
+
+    const source_shipping_pool = {
+      id: currentPool.id,
+      order_ids: updatedIds,
+      pool_code: currentPool.pool_code
+    }
+
+    const target_shipping_pool = {
+      id: targetPool ? targetPool?.id : null,
+      order_ids: updatedIds,
+      pool_code: targetPool ? targetPool?.pool_code : null
+    }
+
+    const handleUpdateParams = {
+      edit_request: edit_request,
+      source_shipping_pool: source_shipping_pool,
+      target_shipping_pool: target_shipping_pool,
+      order_info: orderInfo,
+      display_name: currentUser.display_name
+    };
+    //
+
+    console.log(handleUpdateParams)
+
+    const handleRes = await handleEditRequest(url, handleUpdateParams);
+    const errors = handleRes?.error?.errors;
+    if(errors) {
+      for(const error of errors) {
+        setApiError(error?.errorMessage);
+      }
+    }
+
+    setDone(true);
+
+    return;
 
     if (isInstant) {
+      //限定时间内
       // Apply immediately
       if (editType === "cancel_shipment") {
         updatedIds = (currentPool.order_ids || []).filter(id => id !== order.id);
@@ -120,6 +207,7 @@ export default function ShippingEditModal({ order, currentPool, currentUser, onC
         //   }),
         //   updateOrder(order.id, { order_status: "in_warehouse", consolidation_pool_id: "" }),
         // ]);
+        
       } else if (editType === "move_pool") {
         const targetPool = availablePools.find(p => p.id === targetPoolId);
         updatedIds = [...new Set([...(targetPool.order_ids || []), order.id])];
@@ -154,7 +242,15 @@ export default function ShippingEditModal({ order, currentPool, currentUser, onC
       //   user_note: userNote, status: "auto_applied", is_instant: true,
       // });
 
-      await updateShippingPool(status, w, updatedIds, editRequest);
+      try {
+        await updateShippingPool(status, w, updatedIds, editRequest);
+      } catch (err) {
+        let message = err?.response?.data?.message;
+        console.error('[ShippingEditModal] Handle Edit Request failed:', message);
+        toast.error(message || "提交失败，请稍后重试");
+        return;
+      }
+      
       
       
     } else {
@@ -184,7 +280,7 @@ export default function ShippingEditModal({ order, currentPool, currentUser, onC
 
   if (done) {
     return (
-    <div className="fixed inset-0 bg-black/40 z-[50] flex items-center justify-center p-4">
+    <div className="fixed inset-0 bg-black/40 z-[50] flex items-center justify-center p-4" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
         <div className="bg-white rounded-xl shadow-xl w-full max-w-sm p-8 text-center space-y-3" onMouseDown={e => e.stopPropagation()}>
           {apiError ? (
             <>
@@ -208,7 +304,7 @@ export default function ShippingEditModal({ order, currentPool, currentUser, onC
 
   return (
     <>
-    <div className="fixed inset-0 bg-black/40 z-[50] flex items-center justify-center p-4">
+    <div className="fixed inset-0 bg-black/40 z-[50] flex items-center justify-center p-4" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="bg-white rounded-xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto" onMouseDown={e => e.stopPropagation()}>
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b">

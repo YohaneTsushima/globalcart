@@ -195,6 +195,7 @@ export default function AdminShippingInfoPanel({
   const [trackingNumber, setTrackingNumber] = useState(pool.tracking_number || "");
   const [boxTemplateId, setBoxTemplateId] = useState(pool.box_template_id || "none");
   const [finalWeightG, setFinalWeightG] = useState(pool.final_weight_g?.toString() || pool.total_weight_g?.toString() || "");
+  const [totalWeightG, setTotalWeightG] = useState("");
   const [shippingFeeJpy, setShippingFeeJpy] = useState(pool.shipping_fee_jpy?.toString() || "");
   const [feeAutoCalced, setFeeAutoCalced] = useState(false);
   const [shippingCalcResult, setShippingCalcResult] = useState(null);
@@ -367,7 +368,8 @@ export default function AdminShippingInfoPanel({
       box_template_id: btId,
       box_template_name: btId ? (selectedBox?.name || "") : "",
       box_price_jpy: btId ? boxPrice : 0,
-      final_weight_g: parseFloat(finalWeightG) || 0,
+      final_weight_g: parseFloat(finalWeightG) || 0, //加上盒子的重量
+      total_weight_g: parseFloat(totalWeightG) || 0, //单纯货物的重量
       shipping_fee_jpy: parseFloat(shippingFeeJpy) || 0,
       fee_currency: "JPY",
       packing_fee_jpy: totalPackingFee,
@@ -392,6 +394,9 @@ export default function AdminShippingInfoPanel({
   const handleSave = async (apiFn, successMsg) => {
     setSaving(true);
     const payload = buildUpdatePayload();
+
+    console.log(payload)
+
     try {
       await apiFn(pool.id, payload);
       setPool(p => ({ ...p, ...payload }));
@@ -757,6 +762,7 @@ export default function AdminShippingInfoPanel({
               const boxW = parseFloat(box?.weight_g) || 0;
               const newWeight = ordersTotalWeight + boxW;
               setFinalWeightG(String(newWeight));
+              setTotalWeightG(ordersTotalWeight)
               if (newWeight > 0) {
                 const calc = calcFeeFromWeight(newWeight);
                 if (calc) { setShippingFeeJpy(String(calc.fee)); setFeeAutoCalced(true); setShippingCalcResult(calc); }

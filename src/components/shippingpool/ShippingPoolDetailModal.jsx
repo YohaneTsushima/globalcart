@@ -3,12 +3,12 @@
  * Shows full detail of a shipping pool entry.
  * Admin can edit tracking number, actual fee.
  */
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { X, Package, Edit2, Save, MoreVertical, ArrowRight, RotateCcw, Loader2, Search, Trash2, AlertCircle, CheckCircle, XCircle, CreditCard, ExternalLink, Upload, Truck, MapPin, PlusCircle, MoveRight, Star, ChevronDown, ChevronUp, Layers, Tag } from "lucide-react";
 import { base44 } from "@/api/base44Client";
 import { openAlipayPopup } from "@/lib/alipayUtils";
 import { usePermissions } from "@/hooks/usePermissions";
-import { updateOrder, tenantEntity, shippingPoolApi, userPrefApi, fetchTenantConfig } from "@/lib/tenantApi";
+import { updateOrder, tenantEntity, shippingPoolApi, userPrefApi, fetchTenantConfig, editRequestApi } from "@/lib/tenantApi";
 // exchangeRates now provided by getShippingPoolDetail response
 import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
@@ -35,7 +35,7 @@ import ConfirmDialog from "@/components/common/ConfirmDialog";
 import { STATUS_CONFIG, METHOD_LABELS } from "./shippingFormConstants";
 import AddressForm, { EMPTY_ADDRESS_FORM, serializeAddressToText, isAddressFormValid } from "@/components/common/AddressForm";
 
-export default function ShippingPoolDetailModal({ pool: initialPool, isAdmin, currentUser, pendingEditRequests: initialPendingEdits = [], boxTemplates = [], shippingMethods = [], defaultPackingFeeSingle = 0, defaultPackingFeeConsolidation = 0, allowReadyToShipWithoutPayment = false, allowShipWithoutPaymentSingle = false, allowShipWithoutPaymentUserPool = false, allowShipWithoutPaymentOfficialPool = false, fullpayOnceToleranceJpy = 500, transitHandlingFeeSplit = false, transitLocations = [], transitShippingMethods = [], availableAddons = [], allowUserRewarehouse = false, onClose, onUpdated }) {
+export default function ShippingPoolDetailModal({ pool: initialPool, isAdmin, currentUser, pendingEditRequests: initialPendingEdits = [], allPools = [], boxTemplates = [], shippingMethods = [], defaultPackingFeeSingle = 0, defaultPackingFeeConsolidation = 0, allowReadyToShipWithoutPayment = false, allowShipWithoutPaymentSingle = false, allowShipWithoutPaymentUserPool = false, allowShipWithoutPaymentOfficialPool = false, fullpayOnceToleranceJpy = 500, transitHandlingFeeSplit = false, transitLocations = [], transitShippingMethods = [], availableAddons = [], allowUserRewarehouse = false, onClose, onUpdated }) {
   const { can } = usePermissions();
   const canDeleteShipment = isAdmin && can("shipping:delete_shipment_request");
   const canEditPackage = isAdmin && can("shipping:edit_package");
@@ -80,7 +80,11 @@ export default function ShippingPoolDetailModal({ pool: initialPool, isAdmin, cu
   const [userCredit, setUserCredit] = useState(null); // {credit_enabled, credit_balance_jpy, credit_limit_jpy}
 
   const [tenantUserMap, setTenantUserMap] = useState({});
-  const [allPoolsMap] = useState({}); // id -> pool_code for target pool display (fallback for pending edits)
+  const allPoolsMap = useMemo(() => {
+    const map = {};
+    (allPools || []).forEach(p => { map[p.id] = p; });
+    return map;
+  }, [allPools]);
 
   // User-side move/add state
   const [userActionOrder, setUserActionOrder] = useState(null); // order being acted on
@@ -677,9 +681,200 @@ export default function ShippingPoolDetailModal({ pool: initialPool, isAdmin, cu
     setSavingOrder(false);
   };
 
+  const handleApproveCancelShipment = async (req) => {
+
+    setProcessingEditId(req.id);
+    const targetOrderId = req.order_id;
+    
+    const updatedIds = (pool.order_ids || []).filter((id) => id !== targetOrderId);
+
+    const rewarehouseFee = req.is_rewarehouse_request
+      ? (parseFloat(rewarehouseFeeInputs[req.id] ?? req.rewarehouse_fee_jpy ?? 0) || 0)
+      : 0;
+
+    const orderInfo = {
+      id: targetOrderId,
+      consolidation_pool_id: req.pool_id
+    }
+    
+    const edit_request = {
+      id: req.id
+    }
+
+    const source_shipping_pool = {
+      id: pool.id,
+      order_ids: updatedIds,
+    }
+
+    const handleUpdateParams = {
+      edit_request: edit_request,
+      source_shipping_pool: source_shipping_pool,
+      target_shipping_pool: null,
+      order_info: orderInfo,
+      display_name: currentUser.display_name
+    };
+
+    await processApproveEditRequest('approveCancelShipment', req, handleUpdateParams);
+  }
+
+  const handleRejectCancelShipment = async (req) => {
+
+    setProcessingEditId(req.id);
+
+    const order_info = {
+      id: req.order_id,
+      consolidation_pool_id: req.pool_id
+    }
+
+    const edit_request = {
+      id: req.id
+    }
+
+    const handleUpdateParams = {
+      edit_request: edit_request,
+      order_info: order_info,
+      display_name: currentUser.displayName
+    };
+
+    await processRejectEditRequest('rejectCancelShipment', req, handleUpdateParams);
+  }
+
+  const handleApproveMovePool = async (req) => {
+
+    setProcessingEditId(req.id);
+    
+    const targetOrderId = req.order_id;
+    const updatedIds = (pool.order_ids || []).filter((id) => id !== targetOrderId);
+    const w = orders.find((o) => o.id === targetOrderId)?.weight_g || 0;
+    const orderNumber = orders.find((o) => o.id === targetOrderId)?.order_number || 0;
+    const targetPool = allPools.find((p) => p.id === req.target_pool_id);
+
+    const source_shipping_pool = {
+      id: pool.id,
+      pool_code: pool.pool_code,
+      order_ids: updatedIds,
+    }
+
+    const target_shipping_pool = {
+      id: req.target_pool_id,
+      pool_code: targetPool.pool_code,
+      order_ids: [...new Set([...(targetPool.order_ids || []), targetOrderId])],
+    }
+
+     const order_info = {
+      id: targetOrderId,
+      order_number: orderNumber,
+      consolidation_pool_id: req.target_pool_id
+    }
+
+    const edit_request = {
+      id: req.id
+    }
+
+    const handleUpdateParams = {
+      edit_request: edit_request,
+      source_shipping_pool: source_shipping_pool,
+      target_shipping_pool: target_shipping_pool,
+      order_info: order_info,
+      display_name: currentUser.display_name
+    };
+
+    await processApproveEditRequest('approveMovePool', req, handleUpdateParams);
+  }
+
+  const handleRejectMovePool = async (req) => {
+
+    setProcessingEditId(req.id);
+    
+    const targetOrderId = req.order_id;
+    const orderNumber = orders.find((o) => o.id === targetOrderId)?.order_number || 0;
+
+    const source_shipping_pool = {
+      id: pool.id,
+      pool_code: pool.pool_code
+    }
+
+    const order_info = {
+      id: targetOrderId,
+      order_number: orderNumber,
+      consolidation_pool_id: req.target_pool_id
+    }
+
+    const edit_request = {
+      id: req.id
+    }
+
+    const handleUpdateParams = {
+      edit_request: edit_request,
+      source_shipping_pool: source_shipping_pool,
+      order_info: order_info,
+      display_name: currentUser.display_name
+    };
+
+    await processApproveEditRequest('rejectMovePool', req, handleUpdateParams);
+  }
+
+  const processApproveEditRequest = async(url, req, editRequestParams) => {
+
+    try {
+      await editRequestApi.approve(req.id, url, editRequestParams);
+    } catch (err) {
+      let message = err?.response?.data?.message;
+      console.error('[ShippingPoolDetailModal] Approve Edit Request failed:', message);
+      toast.error(message || "提交失败，请稍后重试");
+    }
+
+    setPendingEdits((prev) => prev.filter((r) => r.id !== req.id));
+    setProcessingEditId(null);
+    onUpdated?.();
+  }
+
+  const processRejectEditRequest = async(url, req, editRequestParams) => {
+
+    await editRequestApi.reject(req.id, url, editRequestParams);
+
+    setPendingEdits((prev) => prev.filter((r) => r.id !== req.id));
+    setProcessingEditId(null);
+    onUpdated?.();
+
+  }
+
+
   // Approve or reject a pending ShippingEditRequest
   const handleEditRequest = async (req, action) => {
     setProcessingEditId(req.id);
+    
+    if(action === 'approve') {
+      if (req.edit_type === 'cancel_shipment') {
+        handleApproveCancelShipment(req);
+      }
+
+      if (req.edit_type === 'move_pool' && req.target_pool_id) {
+        handleApproveMovePool(req);
+      }
+
+      if (req.edit_type === 'add_to_pool') {
+
+      }
+    } else {
+      if (req.edit_type === 'cancel_shipment') {
+        handleRejectCancelShipment(req);
+      }
+
+      if (req.edit_type === 'move_pool' && req.target_pool_id) {
+        handleRejectMovePool(req);
+      }
+
+      if (req.edit_type === 'add_to_pool') {
+
+      }
+    }
+
+    setProcessingEditId(null);
+    onUpdated?.();
+
+    return;
+
     let edit_request = {};
     let source_shipping_pool = {};
     let target_shipping_pool = {};
@@ -1501,8 +1696,9 @@ export default function ShippingPoolDetailModal({ pool: initialPool, isAdmin, cu
                           订单：{orders.find((o) => o.id === req.order_id)?.product_name || req.order_id}
                         </p>
                         {req.edit_type === 'move_pool' && req.target_pool_id &&
-                    <p className="text-xs text-gray-400 mt-0.5">
-                            目标：<span className="font-mono text-gray-600">{allPoolsMap[req.target_pool_id]?.pool_code || req.target_pool_id.slice(-6).toUpperCase()}</span>
+                          <p className="text-xs text-gray-400 mt-0.5">
+                            {/* 目标：<span className="font-mono text-gray-600">{allPoolsMap[req.target_pool_id]?.pool_code || req.target_pool_id.slice(-6).toUpperCase()}</span> */}
+                            目标：<span className="font-mono text-gray-600">{allPoolsMap[req.target_pool_id]?.pool_code || req.target_pool_id}</span>
                           </p>
                     }
                         {req.user_note &&

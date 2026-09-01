@@ -765,7 +765,7 @@ export default function MyOrders() {
                   {order.order_status === "notified_shipment" && (() => {
                     const orderId = String(order.id);
                     const pool = shippingPools.find(p => (p.order_ids || []).some(id => String(id) === orderId));
-                    const hasPendingEdit = pendingEditRequests.some(r => String(r.order_id) === orderId);
+                    const hasPendingEdit = pendingEditRequests.some(r => String(r.order_id) === orderId && r.status === 'pending');
                     const poolAwaitingPayment = pool && (pool.status === "awaiting_payment" || pool.status === "awaiting_payment_confirmation");
                     return (
                       <div className="flex flex-col gap-1 items-start">

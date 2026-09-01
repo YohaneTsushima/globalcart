@@ -182,6 +182,7 @@ const ADMIN_NAV_I18N_KEYS = {
     items: {
       shipping_methods: "国际运输方式",
       local_shipping_methods: "本地运输方式",
+      shipping_settings: '发货设定',
       transit_methods: "中转运输",
       item_sizes: "物品尺寸",
       box_templates: "外箱模板",

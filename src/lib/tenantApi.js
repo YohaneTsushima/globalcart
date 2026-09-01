@@ -76,8 +76,9 @@ export async function cancelOrder(order_id, data) {
 
 export async function fetchShippingPools() {
   // const res = await base44.functions.invoke('getTenantShippingPools', {});
-  const res = {};
-  return res.data?.pools || [];
+  const res = await tenantEntity.list('ShippingPool');
+  
+  return res || res?.data || res?.data?.pools || [];
 }
 
 // ─── Config Data (templates, rules, methods, locations, addons) ───────────────
@@ -169,6 +170,13 @@ export const shippingPoolApi = {
   handleSetAwaitingPayment: (id, data)  => mutate('ShippingPool', 'handleSetAwaitingPayment', { id, data }).then(r => r || r?.data || r?.data || r.data?.results || r || []),
   delete:                   (id)        => tenantEntity.delete('ShippingPool', id),
   one:                      (id)        => tenantEntity.one('ShippingPool', id)
+};
+
+// ─── ShippingPool Edit Request shortcuts ───────────────────────────────────────────────────
+
+export const editRequestApi = {
+  approve: (id, url, data) => mutate('ShippingEditRequest', url, { id, data }).then(r => r || r?.data || r?.data || r.data?.results || r || []),
+  reject:  (id, url, data) => mutate('ShippingEditRequest', url, { id, data }).then(r => r || r?.data || r?.data || r.data?.results || r || []),
 };
 
 // ─── UserPreference shortcuts ─────────────────────────────────────────────────
