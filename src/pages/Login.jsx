@@ -142,6 +142,7 @@ export default function Login() {
       toast.error(t('请输入正确的手机号或邮箱格式', locale));
       return;
     }
+    
     if (!loginPassword.trim()) {
       setLoginPasswordError(true);
       toast.error(t('请输入密码', locale));

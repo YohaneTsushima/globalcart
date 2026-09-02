@@ -221,6 +221,7 @@ export default function Payment() {
     //用于更新Payment Method
     const newMethod = {
       // payable_amount: amountToCharge,
+      id: selectedObj?.id,
       method_name: methodKey,
       payment_currency: selectedObj?.payment_currency,
       payment_currency_type: selectedObj?.payment_currency,

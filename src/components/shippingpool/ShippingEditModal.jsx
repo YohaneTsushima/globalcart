@@ -81,6 +81,10 @@ export default function ShippingEditModal({ order, currentPool, currentUser, onC
 
   const updateShippingPool = async (status, w, orderIds, editRequest) => {
 
+    toast.error('功能不可用');
+
+    return;
+
     let param = {
       order_ids: orderIds,
       total_weight_g: Math.max(0, (currentPool.total_weight_g || 0) - w),

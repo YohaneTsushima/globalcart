@@ -33,8 +33,8 @@ export default function UserGroupHeader({
   return (
     <div className="flex items-start gap-2 px-1 mb-1">
       <div className="flex items-center gap-1.5 flex-shrink-0 mt-0.5">
-        {userData.avatar_url ? (
-          <img src={userData.avatar_url} alt={displayName} className="w-4 h-4 rounded-full object-cover flex-shrink-0" />
+        {userData.avatar ? (
+          <img src={userData.avatar } alt={displayName} className="w-4 h-4 rounded-full object-cover flex-shrink-0" />
         ) : (
           <div className="w-4 h-4 rounded-full bg-gray-300 flex items-center justify-center text-gray-600 text-xs font-medium flex-shrink-0">
             {displayName[0]?.toUpperCase()}

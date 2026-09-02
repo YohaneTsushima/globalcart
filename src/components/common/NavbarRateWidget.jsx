@@ -27,7 +27,7 @@ function fmt(val, code, unit = 100) {
   const noDecimal = ["KRW", "IDR", "VND"];
   const amount = val * unit;
   if (noDecimal.includes(code)) return Math.round(amount).toLocaleString();
-  if (amount >= 1) return amount.toFixed(2);
+  if (amount >= 1) return amount.toFixed(3);
   const str = amount.toFixed(20);
   const dotIdx = str.indexOf('.');
   let firstSigIdx = -1;

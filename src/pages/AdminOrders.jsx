@@ -740,10 +740,11 @@ export default function AdminOrders() {
                           const pool = getOrderPool(order);
                           if (!pool) return null;
                           if (order.order_status === "shipping_fee_pending") return null; // already shown above
-                          if (!["notified_shipment", "ready_to_ship", "notified_shipment_fee_paid"].includes(order.order_status)) return null;
+                          if (!["notified_shipment", "ready_to_ship", "notified_shipment_fee_paid", "notified_shipment_fee_pending"].includes(order.order_status)) return null;
                           const isConsolidation = pool.consolidation_type && pool.consolidation_type !== "";
                           const isOfficialPool = pool.is_admin_created === true;
                           return (
+                            <>
                             <Button size="sm" variant="outline"
                               className={`h-6 text-xs px-2 ${isOfficialPool ? "text-blue-600 border-blue-200 hover:bg-blue-50" : isConsolidation ? "text-purple-600 border-purple-200 hover:bg-purple-50" : "text-teal-600 border-teal-200 hover:bg-teal-50"}`}
                               onClick={() => handleOpenPool(pool)}>
@@ -753,6 +754,14 @@ export default function AdminOrders() {
                                 ? <><Layers className="w-3 h-3 mr-1" />查看拼邮</>
                                 : <><Send className="w-3 h-3 mr-1" />查看发货申请</>}
                             </Button>
+                            {isOfficialPool && (
+                              <Button size="sm" variant="outline"
+                                className="h-6 text-xs px-2 text-teal-600 border-teal-200 hover:bg-teal-50"
+                                onClick={() => setSelectedPool(pool)}>
+                                <Send className="w-3 h-3 mr-1" />查看发货申请
+                              </Button>
+                            )}
+                            </>
                           );
                         })()}
                         {order.order_status === "cancelled" && (

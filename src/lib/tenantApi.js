@@ -37,6 +37,10 @@ export async function updateTenantOrder(url, payload) {
 }
 
 export async function updateOrder(order_id, data) {
+
+  toast.error('功能暂不可用。');
+  return {};
+
   try {
     const res = await base44.functions.invoke('admin/orders/updateTenantOrder', { order_id, ...data });
     if (res.data?.error) {
@@ -169,7 +173,9 @@ export const shippingPoolApi = {
   handleSaveInfoOnly:       (id, data)  => mutate('ShippingPool', 'handleSaveInfoOnly', { id, data }).then(r => r || r?.data || r?.data || r.data?.results || r || []),
   handleSetAwaitingPayment: (id, data)  => mutate('ShippingPool', 'handleSetAwaitingPayment', { id, data }).then(r => r || r?.data || r?.data || r.data?.results || r || []),
   delete:                   (id)        => tenantEntity.delete('ShippingPool', id),
-  one:                      (id)        => tenantEntity.one('ShippingPool', id)
+  one:                      (id)        => tenantEntity.one('ShippingPool', id),
+  other:                    (id)        => mutate('ShippingPool', 'other', { id }).then(r => r?.data || r || []),
+  moveOrder:                (id, data)  => mutate('ShippingPool', 'moveOrder', { id, data }).then(r => r?.data || r || []),
 };
 
 // ─── ShippingPool Edit Request shortcuts ───────────────────────────────────────────────────

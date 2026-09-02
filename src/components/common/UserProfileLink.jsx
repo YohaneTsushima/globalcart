@@ -11,7 +11,7 @@ export default function UserProfileLink({ email, name, className = "" }) {
   const { data } = useQuery({
     queryKey: ['public-handle', email],
     queryFn: async () => {
-      const res = await base44.functions.invoke('getPublicHandle', { email });
+      const res = await base44.functions.invoke('user/stats/getPublicHandle', { filter: {email: email }});
       return res.data;
     },
     enabled: !!email,

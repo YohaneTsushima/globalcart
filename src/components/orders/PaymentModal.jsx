@@ -133,6 +133,11 @@ export default function PaymentModal({ order, mode = "prepay", onClose, onSucces
   useEffect(() => {
     const handleMessage = (e) => {
       if (e.data?.type === "alipay_payment_done") {
+        if (alipayPollTimerRef.current) {
+          clearInterval(alipayPollTimerRef.current);
+          alipayPollTimerRef.current = null;
+        }
+        setAlipayPaying(false);
         toast.success('支付成功');
         onSuccessRef.current?.();
       }
@@ -141,7 +146,10 @@ export default function PaymentModal({ order, mode = "prepay", onClose, onSucces
       }
     };
     window.addEventListener("message", handleMessage);
-    return () => window.removeEventListener("message", handleMessage);
+    return () => {
+      window.removeEventListener("message", handleMessage);
+      if (alipayPollTimerRef.current) clearInterval(alipayPollTimerRef.current);
+    };
   }, []);
 
   // Currency conversion helpers
@@ -182,6 +190,9 @@ export default function PaymentModal({ order, mode = "prepay", onClose, onSucces
   const [paying, setPaying] = useState('');
   const [showAlipayConfirm, setShowAlipayConfirm] = useState(false);
   const [alipayFormData, setAlipayFormData] = useState(null);
+  const [alipayPaying, setAlipayPaying] = useState(false);
+  const alipayPopupRef = useRef(null);
+  const alipayPollTimerRef = useRef(null);
   const onSuccessRef = useRef(onSuccess);
 
   useEffect(() => {
@@ -215,6 +226,7 @@ export default function PaymentModal({ order, mode = "prepay", onClose, onSucces
     //用于更新Payment Method
     const newMethod = {
       // payable_amount: amountToCharge,
+      id: selectedObj.id,
       method_name: selectedMethodMeta?.label || selectedMethodMeta?.method_name || "",
       payment_currency: selectedObj?.payment_currency,
       payment_currency_type: selectedObj?.payment_currency,
@@ -248,9 +260,21 @@ export default function PaymentModal({ order, mode = "prepay", onClose, onSucces
   };
 
   const submitToAlipay = () => {
-    openAlipayPopup(alipayFormData);
+    const popup = openAlipayPopup(alipayFormData);
     setShowAlipayConfirm(false);
     setAlipayFormData(null);
+
+    if (popup) {
+      setAlipayPaying(true);
+      alipayPopupRef.current = popup;
+      alipayPollTimerRef.current = setInterval(() => {
+        if (popup.closed) {
+          clearInterval(alipayPollTimerRef.current);
+          alipayPollTimerRef.current = null;
+          setAlipayPaying(false);
+        }
+      }, 500);
+    }
   };
 
   // Build actual-currency fields when paying in a non-JPY currency.
@@ -330,12 +354,20 @@ export default function PaymentModal({ order, mode = "prepay", onClose, onSucces
 
   return (
     <>
-    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={e => { if (e.target === e.currentTarget && !uploading) onClose(); }}>
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={e => { if (e.target === e.currentTarget && !uploading && !alipayPaying) onClose(); }}>
       <div className="bg-white rounded-xl shadow-xl w-full max-w-lg relative" onMouseDown={e => e.stopPropagation()}>
         {uploading && (
           <div className="absolute inset-0 bg-white/80 backdrop-blur-sm rounded-xl z-10 flex flex-col items-center justify-center gap-3">
             <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
             <p className="text-sm text-gray-600">上传中...</p>
+          </div>
+        )}
+        {alipayPaying && (
+          <div className="absolute inset-0 bg-white/80 backdrop-blur-sm rounded-xl z-20 flex flex-col items-center justify-center gap-3"
+               onClick={e => e.stopPropagation()}>
+            <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
+            <p className="text-sm text-gray-600 font-medium">支付中，请在弹出的支付宝窗口完成付款...</p>
+            <p className="text-xs text-gray-400">请不要刷新和关闭本页面...</p>
           </div>
         )}
         {/* Header */}

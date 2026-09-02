@@ -341,7 +341,7 @@ export default function UserNotifyShipmentModal({ order, orders, initialData, on
       }).catch(() => {});
 
       // 根据 consolidation_pool_id 查询 pool 并预填表单
-      let poolId = order.consolidation_pool_id;
+      let poolId = order? order?.consolidation_pool_id : null;
       setConsolidationPoolId(poolId);
       if(poolId) {
         setLoadingPool(true);
@@ -459,7 +459,7 @@ export default function UserNotifyShipmentModal({ order, orders, initialData, on
   };
 
   // Calculate total weight for all orders
-  const totalWeight = targetOrders.reduce((s, o) => s + (o.weight_g || 0), 0);
+  const totalWeight = targetOrders.reduce((s, o) => s + (parseInt(o.weight_g) || 0), 0);
 
   // Check if shipping method is within constraints
   const getMethodError = () => {

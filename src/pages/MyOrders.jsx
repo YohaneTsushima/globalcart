@@ -433,7 +433,6 @@ export default function MyOrders() {
     const dtoList = deliveredSelected.map(o => ({ order_id: o.id, is_archived: true, archived_at: new Date().toISOString() }));
 
     const payload = [];
-    console.log(selectedIds)
 
     return;
 

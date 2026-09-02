@@ -73,6 +73,9 @@ export default function ShippingPoolDetailModal({ pool: initialPool, isAdmin, cu
   const [alipayUrl, setAlipayUrl] = useState(null);
   const [showAlipayConfirm, setShowAlipayConfirm] = useState(false);
   const [alipayFormData, setAlipayFormData] = useState(null);
+  const [alipayPaying, setAlipayPaying] = useState(false);
+  const alipayPopupRef = useRef(null);
+  const alipayPollTimerRef = useRef(null);
   const [uploadingProof, setUploadingProof] = useState(false);
   const [confirmingDelivery, setConfirmingDelivery] = useState(false);
   const [showConfirmDeliveryDialog, setShowConfirmDeliveryDialog] = useState(false);
@@ -194,6 +197,7 @@ export default function ShippingPoolDetailModal({ pool: initialPool, isAdmin, cu
   };
 
   const openUserPrefsEditor = async () => {
+
     const myOrders = orders.filter(o => o.user_email === currentUser?.email);
     const firstOrder = myOrders[0];
     setUserPrefsData({
@@ -253,8 +257,13 @@ export default function ShippingPoolDetailModal({ pool: initialPool, isAdmin, cu
         if (d.orders) setOrders(d.orders);
 
         // Backend returns single "user" object or "users" map
-        if (d.users) {
-          setTenantUserMap(d.users);
+        if (d.users && d.users.length > 0) {
+          const emailUserMap = {};
+          d.users.forEach(u => {
+            emailUserMap[u.user_email] = u;
+          });
+
+          setTenantUserMap(emailUserMap);
         } else if (d.user) {
           // Convert single user object to map keyed by email
           const email = d.user.userEmail || d.user.email || d.user.user_email;
@@ -306,6 +315,11 @@ export default function ShippingPoolDetailModal({ pool: initialPool, isAdmin, cu
   useEffect(() => {
     const handleMessage = (e) => {
       if (e.data?.type === "alipay_payment_done") {
+        if (alipayPollTimerRef.current) {
+          clearInterval(alipayPollTimerRef.current);
+          alipayPollTimerRef.current = null;
+        }
+        setAlipayPaying(false);
         toast.success('支付成功');
         onSuccessRef.current?.();
       }
@@ -314,7 +328,10 @@ export default function ShippingPoolDetailModal({ pool: initialPool, isAdmin, cu
       }
     };
     window.addEventListener("message", handleMessage);
-    return () => window.removeEventListener("message", handleMessage);
+    return () => {
+      window.removeEventListener("message", handleMessage);
+      if (alipayPollTimerRef.current) clearInterval(alipayPollTimerRef.current);
+    };
   }, []);
 
   // Fetch other pools for moving orders
@@ -323,14 +340,20 @@ export default function ShippingPoolDetailModal({ pool: initialPool, isAdmin, cu
     setActionMode(null);
     setTargetPoolId("");
     setPoolSearchQuery("");
-    base44.functions.invoke('getTenantShippingPools', {}).
+
+    shippingPoolApi.other(pool.id).
     then((r) => {
-      const pools = (r.data?.pools || []).filter((p) =>
-      p.id !== pool.id && (p.status === "pending" || p.status === "processing")
-      );
-      setOtherPools(pools);
+      setOtherPools(r);
     }).
     catch(() => setOtherPools([]));
+    // base44.functions.invoke('getTenantShippingPools', {}).
+    // then((r) => {
+    //   const pools = (r.data?.pools || []).filter((p) =>
+    //   p.id !== pool.id && (p.status === "pending" || p.status === "processing")
+    //   );
+    //   setOtherPools(pools);
+    // }).
+    // catch(() => setOtherPools([]));
   };
 
   // User: open move/cancel panel
@@ -522,16 +545,29 @@ export default function ShippingPoolDetailModal({ pool: initialPool, isAdmin, cu
   };
 
   const submitToAlipay = () => {
-    openAlipayPopup(alipayFormData);
+    const popup = openAlipayPopup(alipayFormData);
     setShowAlipayConfirm(false);
     setAlipayFormData(null);
+
+    if (popup) {
+      setAlipayPaying(true);
+      alipayPopupRef.current = popup;
+      alipayPollTimerRef.current = setInterval(() => {
+        if (popup.closed) {
+          clearInterval(alipayPollTimerRef.current);
+          alipayPollTimerRef.current = null;
+          setAlipayPaying(false);
+        }
+      }, 500);
+    }
   };
 
   // User: upload payment proof (non-alipay)
   const handleUploadProof = async (file) => {
     setUploadingProof(true);
     const method = selectedMethodMeta?.value;
-    const { file_url } = await base44.integrations.Core.UploadFile({ file });
+    // const { file_url } = await base44.integrations.Core.UploadFile({ file });
+    const file_url = '';
 
     const isConsolidationPool = pool.consolidation_type && pool.consolidation_type !== "";
     const participantEmails = [...new Set((pool.fee_breakdown_per_user || []).map(b => b.user_email))];
@@ -559,20 +595,20 @@ export default function ShippingPoolDetailModal({ pool: initialPool, isAdmin, cu
       );
       const newPaymentStatus = allSubmitted ? "awaiting_confirmation" : "partial";
       const newStatus = (allSubmitted && !keepStatus) ? "awaiting_payment_confirmation" : pool.status;
-      await shippingPoolApi.update(pool.id, {
-        per_user_payments: updatedPayments,
-        payment_status: newPaymentStatus,
-        status: newStatus,
-      });
+      // await shippingPoolApi.update(pool.id, {
+      //   per_user_payments: updatedPayments,
+      //   payment_status: newPaymentStatus,
+      //   status: newStatus,
+      // });
       setPool(p => ({ ...p, per_user_payments: updatedPayments, payment_status: newPaymentStatus, status: newStatus }));
     } else {
       // Single-user pool: use old global fields
-      await shippingPoolApi.update(pool.id, {
-        payment_status: "awaiting_confirmation",
-        payment_method: method,
-        payment_proof_url: file_url,
-        ...(keepStatus ? {} : { status: "awaiting_payment_confirmation" }),
-      });
+      // await shippingPoolApi.update(pool.id, {
+      //   payment_status: "awaiting_confirmation",
+      //   payment_method: method,
+      //   payment_proof_url: file_url,
+      //   ...(keepStatus ? {} : { status: "awaiting_payment_confirmation" }),
+      // });
       setPool(p => ({ ...p, payment_status: "awaiting_confirmation", payment_method: method, payment_proof_url: file_url, ...(keepStatus ? {} : { status: "awaiting_payment_confirmation" }) }));
     }
     setUploadingProof(false);
@@ -631,32 +667,53 @@ export default function ShippingPoolDetailModal({ pool: initialPool, isAdmin, cu
   const handleMoveOrder = async (overrideTargetPoolId) => {
     const effectiveTargetPoolId = overrideTargetPoolId || targetPoolId;
     if (!adminEditingOrder || !effectiveTargetPoolId) return;
+
     setSavingOrder(true);
-    const targetPool = otherPools.find((p) => p.id === effectiveTargetPoolId);
-    if (!targetPool) {setSavingOrder(false);return;}
 
-    const poolOrderIds = pool.order_ids || [];
-    const removedIdx = poolOrderIds.indexOf(adminEditingOrder.id);
-    const updatedOrderIds = poolOrderIds.filter((id) => id !== adminEditingOrder.id);
-    const updatedNames = (pool.order_names || []).filter((_, i) => i !== removedIdx);
-    const updatedWeight = Math.max(0, (pool.total_weight_g || 0) - (adminEditingOrder.weight_g || 0));
-    const targetUpdatedNames = [...(targetPool.order_names || []), adminEditingOrder.product_name].filter(Boolean);
+    try {
+      const targetPool = otherPools.find((p) => p.id === effectiveTargetPoolId);
+      if (!targetPool) { setSavingOrder(false); return; }
 
-    await Promise.all([
-    shippingPoolApi.update(pool.id, { order_ids: updatedOrderIds, order_names: updatedNames, total_weight_g: updatedWeight }),
-    shippingPoolApi.update(effectiveTargetPoolId, {
-      order_ids: [...(targetPool.order_ids || []), adminEditingOrder.id],
-      order_names: targetUpdatedNames,
-      total_weight_g: (targetPool.total_weight_g || 0) + (adminEditingOrder.weight_g || 0)
-    }),
-    updateOrder(adminEditingOrder.id, { consolidation_pool_id: effectiveTargetPoolId, order_status: 'notified_shipment' })]
-    );
+      const poolOrderIds = pool.order_ids || [];
+      const removedIdx = poolOrderIds.indexOf(adminEditingOrder.id);
+      const updatedOrderIds = poolOrderIds.filter((id) => id !== adminEditingOrder.id);
+      const updatedWeight = Math.max(0, (pool.total_weight_g || 0) - (adminEditingOrder.weight_g || 0));
 
-    setPool((p) => ({ ...p, order_ids: updatedOrderIds, total_weight_g: updatedWeight }));
-    setOrders((prev) => prev.filter((o) => o.id !== adminEditingOrder.id));
-    setAdminEditingOrder(null);
-    setActionMode(null);
-    setSavingOrder(false);
+      const orderInfo = {
+        id: adminEditingOrder.id,
+        order_number: adminEditingOrder.order_number,
+      }
+
+      const source_shipping_pool = {
+        id: pool.id,
+        order_ids: poolOrderIds,
+        pool_code: pool.pool_code
+      }
+
+      const target_shipping_pool = {
+        id: targetPool.id,
+        pool_code: targetPool.pool_code
+      }
+
+      const movePoolParams = {
+        order_info: orderInfo,
+        source_shipping_pool: source_shipping_pool,
+        target_shipping_pool: target_shipping_pool
+      }
+
+      await shippingPoolApi.moveOrder(adminEditingOrder.id, movePoolParams);
+
+      setPool((p) => ({ ...p, order_ids: updatedOrderIds, total_weight_g: updatedWeight }));
+      setOrders((prev) => prev.filter((o) => o.id !== adminEditingOrder.id));
+      setAdminEditingOrder(null);
+      setActionMode(null);
+      onUpdated?.();
+    } catch (e) {
+      const message = e.response?.data?.message || e.message || '移动失败';
+      toast.error(message);
+    } finally {
+      setSavingOrder(false);
+    }
   };
 
   // Return order to warehouse
@@ -1023,8 +1080,25 @@ export default function ShippingPoolDetailModal({ pool: initialPool, isAdmin, cu
     pool.payment_status !== "paid" && feeNotified;
 
   return (
-    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto" onMouseDown={e => e.stopPropagation()}>
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={e => { if (e.target === e.currentTarget && !alipayPaying) onClose(); }}>
+      {/* Loading overlay for Alipay payment — placed outside scrollable container to cover entire viewport */}
+      {alipayPaying && (
+        <div className="absolute inset-0 bg-white/80 backdrop-blur-sm z-[60] flex flex-col items-center justify-center gap-3"
+             onClick={e => e.stopPropagation()}>
+          <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
+          <p className="text-sm text-gray-600 font-medium">支付中，请在弹出的支付宝窗口完成付款...</p>
+          <p className="text-xs text-gray-400">请不要刷新和关闭本页面...</p>
+        </div>
+      )}
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto relative" onMouseDown={e => e.stopPropagation()}>
+        {/* Loading overlay for move operation */}
+        {savingOrder && actionMode === 'move' && (
+          <div className="absolute inset-0 bg-white/80 z-50 flex flex-col items-center justify-center rounded-xl"
+               onClick={e => e.stopPropagation()}>
+            <Loader2 className="w-8 h-8 text-blue-600 animate-spin mb-3" />
+            <p className="text-sm text-gray-600 font-medium">正在移动订单...</p>
+          </div>
+        )}
         {/* Header */}
         <div className="flex items-start justify-between px-6 py-4 border-b sticky top-0 bg-white z-10">
           <div>
@@ -1192,7 +1266,7 @@ export default function ShippingPoolDetailModal({ pool: initialPool, isAdmin, cu
                               {canSeeDetail ? o.product_name : "他人包裹"}
                             </p>
                             <p className="text-xs text-gray-400">
-                              {canSeeDetail ? o.order_number : "—"} · {o.weight_g || 0}g
+                              {canSeeDetail ? o.order_number : "—"} · {parseInt(o.weight_g) || 0}g
                               {isAdmin && o.id ? ` · ${tenantUserMap[o.user_email]?.display_name || tenantUserMap[o.user_email]?.full_name || o.user_name || ""}` : ""}
                             </p>
                           
@@ -1209,7 +1283,7 @@ export default function ShippingPoolDetailModal({ pool: initialPool, isAdmin, cu
                                     <Edit2 className="w-3.5 h-3.5" />
                                   </button>
                                   <button
-                              onClick={() => {setShowOrderActions(showOrderActions === o.id ? null : o.id);if (showOrderActions !== o.id) loadOtherPools(o);}}
+                              onClick={() => {setShowOrderActions(showOrderActions === o.id ? null : o.id);}}
                               className="flex-shrink-0 p-1 rounded hover:bg-gray-200 text-gray-400 hover:text-gray-600 transition-colors"
                               title="更多操作">
                                     <MoreVertical className="w-3.5 h-3.5" />
@@ -1395,7 +1469,7 @@ export default function ShippingPoolDetailModal({ pool: initialPool, isAdmin, cu
                             userData={userData}
                             displayName={displayName}
                             groupOrders={groupOrders}
-                            groupWeight={groupWeight}
+                            groupWeight={parseInt(groupWeight)}
                             uniqueGroupAddons={uniqueGroupAddons}
                             transitMethodId={transitMethodId}
                             transitMethodName={transitMethodName}
@@ -2185,6 +2259,7 @@ export default function ShippingPoolDetailModal({ pool: initialPool, isAdmin, cu
                         const packingFee = Math.round(parseFloat(pool.packing_fee_jpy) || 0);
                         return boxFee + shippingFee + packingFee;
                       })();
+
                       const currency = selectedMethodMeta.payment_currency;
                       const CURRENCY_SYMBOLS = { CNY: "¥", USD: "$", TWD: "NT$", HKD: "HK$", EUR: "€", SGD: "S$" };
                       // const rateKey = `jpy_${currency.toLowerCase()}`;
@@ -2196,12 +2271,12 @@ export default function ShippingPoolDetailModal({ pool: initialPool, isAdmin, cu
                             <>
                               <div className="flex items-center justify-between text-xs text-gray-500">
                                 <span>汇率换算参考</span>
-                                <span>1 JPY ≈ {rate.toFixed(4)} {currency}</span>
+                                <span>1 JPY ≈ {rate.toFixed(5)} {currency}</span>
                               </div>
                               <div className="flex items-center justify-between">
                                 <span className="text-xs font-semibold text-orange-700">实际应付（{currency}）</span>
                                 <span className="text-base font-bold text-orange-600">
-                                  {sym}{(amountJpy * rate).toFixed(["TWD","HKD","CNY"].includes(currency) ? 1 : 2)} {currency}
+                                  {sym}{(amountJpy * rate).toFixed(["TWD","HKD","CNY"].includes(currency) ? 2 : 2)} {currency}
                                 </span>
                               </div>
                               <p className="text-xs text-orange-400">汇率实时参考，以实际到账为准</p>
@@ -2246,9 +2321,9 @@ export default function ShippingPoolDetailModal({ pool: initialPool, isAdmin, cu
 
                     {paymentMethod && selectedMethodMeta?.value !== "alipay" && selectedMethodMeta?.value !== "credit" &&
                     <PaymentProofUploader
-                    selectedMethodMeta={selectedMethodMeta}
-                    uploadingProof={uploadingProof}
-                    onUpload={handleUploadProof}
+                      selectedMethodMeta={selectedMethodMeta}
+                      uploadingProof={uploadingProof}
+                      onUpload={handleUploadProof}
                     />
                     }
                   </>

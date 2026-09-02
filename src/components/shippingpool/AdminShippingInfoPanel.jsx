@@ -139,7 +139,8 @@ export default function AdminShippingInfoPanel({
     setPool(prev => ({ ...prev, ...initialPool }));
     setTrackingNumber(initialPool.tracking_number || "");
     setBoxTemplateId(initialPool.box_template_id || "none");
-    setFinalWeightG(initialPool.final_weight_g?.toString() || initialPool.total_weight_g?.toString() || "");
+    setFinalWeightG(initialPool?.final_weight_g || 0);
+    setTotalWeightG(initialPool?.total_weight_g || 0);
     setShippingFeeJpy(initialPool.shipping_fee_jpy?.toString() || "");
     setAdminNote(initialPool.admin_note || "");
     setAdminPackingNote(initialPool.admin_packing_note || "");
@@ -194,8 +195,8 @@ export default function AdminShippingInfoPanel({
   // Form fields
   const [trackingNumber, setTrackingNumber] = useState(pool.tracking_number || "");
   const [boxTemplateId, setBoxTemplateId] = useState(pool.box_template_id || "none");
-  const [finalWeightG, setFinalWeightG] = useState(pool.final_weight_g?.toString() || pool.total_weight_g?.toString() || "");
-  const [totalWeightG, setTotalWeightG] = useState("");
+  const [finalWeightG, setFinalWeightG] = useState(pool.final_weight_g || 0);
+  const [totalWeightG, setTotalWeightG] = useState(pool.total_weight_g || 0);
   const [shippingFeeJpy, setShippingFeeJpy] = useState(pool.shipping_fee_jpy?.toString() || "");
   const [feeAutoCalced, setFeeAutoCalced] = useState(false);
   const [shippingCalcResult, setShippingCalcResult] = useState(null);
@@ -403,7 +404,7 @@ export default function AdminShippingInfoPanel({
       onPoolUpdated?.({ ...pool, ...payload });
       toast.success(`[${pool.title}] ${successMsg}`);
     } catch (e) {
-      debugger
+      
       console.error("操作失败:", e);
       const message = e?.response?.data?.message;
       toast.error("操作失败：" + (message || "未知错误"));
@@ -762,7 +763,7 @@ export default function AdminShippingInfoPanel({
               const boxW = parseFloat(box?.weight_g) || 0;
               const newWeight = ordersTotalWeight + boxW;
               setFinalWeightG(String(newWeight));
-              setTotalWeightG(ordersTotalWeight)
+              setTotalWeightG(ordersTotalWeight);              
               if (newWeight > 0) {
                 const calc = calcFeeFromWeight(newWeight);
                 if (calc) { setShippingFeeJpy(String(calc.fee)); setFeeAutoCalced(true); setShippingCalcResult(calc); }
