@@ -176,6 +176,7 @@ export const shippingPoolApi = {
   one:                      (id)        => tenantEntity.one('ShippingPool', id),
   other:                    (id)        => mutate('ShippingPool', 'other', { id }).then(r => r?.data || r || []),
   moveOrder:                (id, data)  => mutate('ShippingPool', 'moveOrder', { id, data }).then(r => r?.data || r || []),
+  fees:                     (id)        => mutate('ShippingPool', 'fees', { id }).then(r => r)
 };
 
 // ─── ShippingPool Edit Request shortcuts ───────────────────────────────────────────────────

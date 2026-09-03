@@ -662,7 +662,7 @@ export default function MyOrders() {
                     return (
                       <Button size="sm" className="h-7 text-xs bg-red-600 hover:bg-red-700"
                         onClick={() => setPaymentOrder(order)}>
-                        <CreditCard className="w-3 h-3 mr-1" />{isFullPayOnce ? "一次付货款(和运费?)" : "付款"}
+                        <CreditCard className="w-3 h-3 mr-1" />{isFullPayOnce ? "全额付款" : "付款"}
                       </Button>
                     );
                   })()}
@@ -682,9 +682,11 @@ export default function MyOrders() {
                       )}
                     </div>
                   )}
+                  {/* 中转地-还没做 */}
                   {order.order_status === "transit_shipped" && (() => {
                     const orderId = String(order.id);
-                    const pool = shippingPools.find(p => (p.order_ids || []).some(id => String(id) === orderId));
+                    // const pool = shippingPools.find(p => (p.order_ids || []).some(id => String(id) === orderId));
+                    const pool = order.pool;
                     // Other orders in same pool for this user
                     const poolOrderIds = pool?.order_ids || [];
                     const otherPoolOrders = poolOrderIds.filter(id => String(id) !== orderId);
@@ -722,11 +724,11 @@ export default function MyOrders() {
                           }}>
                           <CheckCircle className="w-3 h-3 mr-1" />确认收货
                         </Button>
-                        {pool && (
+                        {pool.id && (
                           <button
                             className="text-xs font-mono text-purple-700 bg-purple-50 border border-purple-100 px-1.5 py-0.5 rounded hover:bg-purple-100 transition-colors"
                             onClick={(e) => { e.stopPropagation(); setViewPool(pool); }}>
-                            {pool.pool_code || pool.id.slice(-6).toUpperCase()}
+                            { order.pool_code }
                           </button>
                         )}
                         {(() => {
@@ -763,16 +765,17 @@ export default function MyOrders() {
                   )}
                   {order.order_status === "notified_shipment" && (() => {
                     const orderId = String(order.id);
-                    const pool = shippingPools.find(p => (p.order_ids || []).some(id => String(id) === orderId));
+                    // const pool = shippingPools.find(p => (p.order_ids || []).some(id => String(id) === orderId));
+                    const pool = order.pool;
                     const hasPendingEdit = pendingEditRequests.some(r => String(r.order_id) === orderId && r.status === 'pending');
-                    const poolAwaitingPayment = pool && (pool.status === "awaiting_payment" || pool.status === "awaiting_payment_confirmation");
+                    const poolAwaitingPayment = pool?.id && (pool?.status === "awaiting_payment" || pool?.status === "awaiting_payment_confirmation");
                     return (
                       <div className="flex flex-col gap-1 items-start">
-                        {pool && (
+                        {pool.id && (
                           <button
                             className="text-xs font-mono text-purple-700 bg-purple-50 border border-purple-100 px-1.5 py-0.5 rounded hover:bg-purple-100 hover:border-purple-300 transition-colors cursor-pointer"
                             onClick={() => setViewPool(pool)}>
-                            {pool.pool_code || pool.id.slice(-6).toUpperCase()}
+                            { order.pool_code }
                           </button>
                         )}
                         {hasPendingEdit && (
@@ -786,7 +789,7 @@ export default function MyOrders() {
                             <CreditCard className="w-3 h-3 mr-1" />去付运费
                           </Button>
                         )}
-                        {canEditShipmentRequest && pool && pool.status !== "shipped" && pool.status !== "delivered" && !hasPendingEdit && !poolAwaitingPayment && (
+                        {canEditShipmentRequest && pool?.pool_status !== "shipped" && pool?.pool_status !== "delivered" && !hasPendingEdit && !poolAwaitingPayment && (
                           <Button size="sm" variant="outline" className="h-6 text-xs px-2"
                             onClick={() => { setEditShipOrder(order); setEditShipPool(pool); }}>
                             编辑出货
@@ -798,16 +801,17 @@ export default function MyOrders() {
                   {(order.order_status === "shipping_fee_pending" || order.order_status === "notified_shipment_fee_pending") && (() => {
                     // Try order_ids first, fall back to consolidation_pool_id on the order itself
                     const orderId = String(order.id);
-                    const pool = shippingPools.find(p => (p.order_ids || []).some(id => String(id) === orderId))
-                      || (order.consolidation_pool_id ? shippingPools.find(p => String(p.id) === String(order.consolidation_pool_id)) : null);
-                    if (!pool) return null;
+                    // const pool = shippingPools.find(p => (p.order_ids || []).some(id => String(id) === orderId))
+                    //   || (order.consolidation_pool_id ? shippingPools.find(p => String(p.id) === String(order.consolidation_pool_id)) : null);
+                    const pool = order.pool;
+                    if (!pool.id) return null;
                     const hasPendingRewarehouse = pendingEditRequests.some(r => String(r.order_id) === orderId && r.is_rewarehouse_request);
                     return (
                       <div className="flex flex-col gap-1 items-start">
                         <button
                           className="text-xs font-mono text-purple-700 bg-purple-50 border border-purple-100 px-1.5 py-0.5 rounded hover:bg-purple-100 hover:border-purple-300 transition-colors cursor-pointer"
                           onClick={() => setViewPool(pool)}>
-                          {pool.pool_code || pool.id.slice(-6).toUpperCase()}
+                          {order.pool_code || pool.id.slice(-6).toUpperCase()}
                         </button>
                         <Button size="sm" className="h-7 text-xs bg-orange-600 hover:bg-orange-700"
                           onClick={() => setViewPool(pool)}>
@@ -829,20 +833,21 @@ export default function MyOrders() {
                   })()}
                   {order.order_status === "shipped" && (() => {
                     const orderId = String(order.id);
-                    const pool = shippingPools.find(p => (p.order_ids || []).some(id => String(id) === orderId));
+                    // const pool = shippingPools.find(p => (p.order_ids || []).some(id => String(id) === orderId));
+                    const pool = order.pool;
                     return (
                       <div className="flex flex-col gap-1 items-start">
-                        {pool && (
+                        {pool?.id && (
                           <Button size="sm" variant="outline" className="h-7 text-xs px-2"
                             onClick={() => setViewPool(pool)}>
                             <Package className="w-3 h-3 mr-1" />发货详情
                           </Button>
                         )}
                         {(() => {
-                          if (!pool) return null;
-                          const feeNotified = (pool.fee_breakdown_per_user || []).length > 0 || (pool.shipping_fee_jpy || 0) > 0;
-                          const myPay = (pool.per_user_payments || []).find(p => p.user_email === user?.email);
-                          const unpaid = pool.payment_status !== "paid" && !(myPay && myPay.payment_status === "paid") && feeNotified;
+                          if (!pool.id) return null;
+                          const feeNotified = (pool?.fee_breakdown_per_user || []).length > 0 || (pool?.shipping_fee_jpy || 0) > 0;
+                          const myPay = (pool?.per_user_payments || []).find(p => p.user_email === user?.email);
+                          const unpaid = pool?.payment_status !== "paid" && !(myPay && myPay.payment_status === "paid") && feeNotified;
                           return unpaid ? (
                             <Button size="sm" className="h-7 text-xs bg-orange-600 hover:bg-orange-700"
                               onClick={() => setViewPool(pool)}>
@@ -882,9 +887,8 @@ export default function MyOrders() {
 
       {selectedOrder && user && (
         <OrderDetailPanel
-          order={selectedOrder}
+          orderId={selectedOrder.id}
           currentUser={user}
-          userProfileMap={pageData.userProfileMap || {}}
           allowSplitAfterWarehouse={allowSplitAfterWarehouse}
           onClose={() => setSelectedOrder(null)}
           onRefresh={() => {

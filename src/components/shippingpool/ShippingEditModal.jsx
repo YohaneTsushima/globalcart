@@ -30,16 +30,41 @@ export default function ShippingEditModal({ order, currentPool, currentUser, onC
   const [remainingMs, setRemainingMs] = useState(0);
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   const [apiError, setApiError] = useState("");
+  const [poolData, setPoolData] = useState(null);
+  const [poolLoading, setPoolLoading] = useState(true);
 
   useEffect(() => {
-    // Countdown: check if within 5 minutes of the pool's last update
-    let timer;
-    if (currentPool?.updated_date) {
-      
-      // currentPool.updated_date = '2026-08-08T17:55:58.285';
+    let cancelled = false;
 
+    Promise.allSettled([
+      shippingPoolApi.one(currentPool.id),
+      fetchShippingPools()
+    ]).then(([poolResult, poolsResult]) => {
+      if (!cancelled) {
+        if (poolResult.status === 'fulfilled') {
+          setPoolData(poolResult.value);
+        }
+        if (poolsResult.status === 'fulfilled') {
+          const eligible = (poolsResult.value || []).filter(p =>
+            p.id !== currentPool?.id &&
+            (p.status === "pending" || p.status === "processing")
+          );
+          setAvailablePools(eligible);
+        }
+        setPoolLoading(false);
+      }
+    }).catch(() => {
+      if (!cancelled) setPoolLoading(false);
+    });
+
+    return () => { cancelled = true; };
+  }, [currentPool?.id]);
+
+  useEffect(() => {
+    let timer;
+    if (poolData?.updated_date) {
       const FIVE_MIN = 5 * 60 * 1000;
-      const updatedTime = new Date(currentPool.updated_date).getTime();
+      const updatedTime = new Date(poolData.updated_date).getTime();
 
       const tick = () => {
         const age = Date.now() - updatedTime;
@@ -56,20 +81,8 @@ export default function ShippingEditModal({ order, currentPool, currentUser, onC
       tick();
       timer = setInterval(tick, 1000);
     }
-
-    fetchShippingPools()
-      .then(pools => {
-        const eligible = pools.filter(p =>
-          p.id !== currentPool?.id &&
-          (p.status === "pending" || p.status === "processing")
-        );
-        
-        setAvailablePools(eligible);
-      })
-      .catch(() => {});
-
     return () => { if (timer) clearInterval(timer); };
-  }, [currentPool?.updated_date]);
+  }, [poolData?.updated_date]);
 
   const filteredPools = availablePools.filter(p => {
     if (!poolSearch) return true;
@@ -87,7 +100,7 @@ export default function ShippingEditModal({ order, currentPool, currentUser, onC
 
     let param = {
       order_ids: orderIds,
-      total_weight_g: Math.max(0, (currentPool.total_weight_g || 0) - w),
+      total_weight_g: Math.max(0, (poolData.total_weight_g || 0) - w),
       order_status: status,
       handle_request: true,
       edit_request: editRequest
@@ -134,7 +147,7 @@ export default function ShippingEditModal({ order, currentPool, currentUser, onC
     //判断操作类型设置参数
     if(editType === 'cancel_shipment') {
       url = 'mutateTenantEntity/ShippingEditRequest/cancelShipment';
-      updatedIds = (currentPool.order_ids || []).filter(id => id !== order.id);
+      updatedIds = (poolData.order_ids || []).filter(id => id !== order.id);
     } else if(editType === 'move_pool') {
       url = 'mutateTenantEntity/ShippingEditRequest/movePool';
       targetPool = availablePools.find(p => p.id === targetPoolId);
@@ -167,7 +180,7 @@ export default function ShippingEditModal({ order, currentPool, currentUser, onC
     const source_shipping_pool = {
       id: currentPool.id,
       order_ids: updatedIds,
-      pool_code: currentPool.pool_code
+      pool_code: poolData.pool_code
     }
 
     const target_shipping_pool = {
@@ -203,7 +216,7 @@ export default function ShippingEditModal({ order, currentPool, currentUser, onC
       //限定时间内
       // Apply immediately
       if (editType === "cancel_shipment") {
-        updatedIds = (currentPool.order_ids || []).filter(id => id !== order.id);
+        updatedIds = (poolData.order_ids || []).filter(id => id !== order.id);
         // await Promise.all([
         //   shippingPoolApi.update(currentPool.id, {
         //     order_ids: updatedIds,
@@ -282,6 +295,16 @@ export default function ShippingEditModal({ order, currentPool, currentUser, onC
     // }, 1500);
   };
 
+  if (poolLoading) {
+    return (
+      <div className="fixed inset-0 bg-black/40 z-[50] flex items-center justify-center p-4" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+        <div className="bg-white rounded-xl shadow-xl w-full max-w-sm p-8 text-center" onMouseDown={e => e.stopPropagation()}>
+          <p className="text-gray-500">加载中...</p>
+        </div>
+      </div>
+    );
+  }
+
   if (done) {
     return (
     <div className="fixed inset-0 bg-black/40 z-[50] flex items-center justify-center p-4" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
@@ -334,12 +357,12 @@ export default function ShippingEditModal({ order, currentPool, currentUser, onC
           )}
 
           {/* Current pool info */}
-          {currentPool && (
+          {poolData && (
             <div className="bg-gray-50 rounded-lg px-3 py-2.5 text-xs text-gray-600 space-y-0.5">
               <p className="text-gray-400">当前发货申请</p>
-              <p className="font-medium text-gray-800 font-mono">{currentPool.pool_code || currentPool.id.slice(-6).toUpperCase()}</p>
-              {currentPool.transit_location_name && <p>中转地：{currentPool.transit_location_name}</p>}
-              {currentPool.shipping_method && <p>运输方式：{currentPool.shipping_method}</p>}
+              <p className="font-medium text-gray-800 font-mono">{poolData.pool_code || currentPool.id.slice(-6).toUpperCase()}</p>
+              {poolData.transit_location_name && <p>中转地：{poolData.transit_location_name}</p>}
+              {poolData.shipping_method && <p>运输方式：{poolData.shipping_method}</p>}
             </div>
           )}
 

@@ -591,8 +591,12 @@ export default function UserNotifyShipmentModal({ order, orders, initialData, on
       return {
         id: a.id,
         service_name: a.service_name,
-        fee: (a.is_user_customizable && customFee !== undefined) ? customFee : a.fee,
+        fee: a.fee,
+        fee_max: a.fee_max,
+        fee_min: a.fee_min,
         fee_currency: a.fee_currency,
+        is_user_customizable: a.is_user_customizable,
+        custom_fee: (a.is_user_customizable && customFee !== undefined) ? customFee : null
       };
     });
 

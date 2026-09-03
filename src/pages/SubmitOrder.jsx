@@ -356,8 +356,9 @@ export default function SubmitOrder() {
       return {
         id: addon.id,
         service_name: addon.service_name,
-        fee: isCustomizable && customFee !== undefined ? customFee : parseFloat(addon.fee) || 0,
-        feeCurrency: addon.fee_currency || "JPY"
+        fee: addon.fee,
+        fee_currency: addon.fee_currency || "JPY",
+        custom_fee: isCustomizable && customFee !== undefined ? customFee : null,
       };
     }).filter(Boolean);
     
@@ -418,7 +419,7 @@ export default function SubmitOrder() {
             selected_addons: selectedAddonObjects.map((a) => ({ id: a.id, service_name: a.service_name, fee: parseFloat(a.fee) || 0, fee_currency: a.fee_currency || "JPY" })),
             custom_addon_fee: selectedAddons
               .filter(id => {
-                const addon = addonOptions.find(a => a.id === id);
+                const addon = addonOptions.find(a => a.id === id && a.custom_fee);
                 return addon?.is_user_customizable && addonCustomFees[id] !== undefined && !addonFeeErrors[id];
               })
               .map(id => ({ id, fee: addonCustomFees[id] })),

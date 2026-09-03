@@ -3,7 +3,7 @@
  * 专门用于显示实物订单的所有属性信息
  * 参考票务订单详情面板布局设计
  */
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { X, ShoppingBag, Package, CreditCard, FileText, Image as ImageIcon, MessageSquare, Upload, Pencil, Check, Truck, Scissors, ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -13,7 +13,8 @@ import OrderMessageThread from "@/components/orders/OrderMessageThread";
 import OrderCancellationModule from "@/components/orders/OrderCancellationModule";
 import { useAuth } from "@/lib/AuthContext";
 import { usePermissions } from "@/hooks/usePermissions";
-import { updateOrder } from "@/lib/tenantApi";
+import { base44 } from "@/api/base44Client";
+import { updateOrder, shippingPoolApi } from "@/lib/tenantApi";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -64,17 +65,48 @@ const PAYMENT_METHOD_LABELS = {
   other: "其他",
 };
 
-export default function OrderDetailPanel({ order, onClose, onRefresh, userProfileMap = {}, currentUser, allowSplitAfterWarehouse = false }) {
+export default function OrderDetailPanel({ orderId, onClose, onRefresh, currentUser, allowSplitAfterWarehouse = false }) {
   const [activeTab, setActiveTab] = useState("overview");
   const { user: authUser } = useAuth();
   const { can } = usePermissions();
   const actualCurrentUser = currentUser || authUser;
-  const isAdmin = actualCurrentUser?.role === "admin" || actualCurrentUser?.role === "staff" || actualCurrentUser?.role === "platform_admin";
+  const isAdmin = actualCurrentUser?.role === "ROLE_ADMIN" || actualCurrentUser?.role === "ROLE_TENANT_ADMIN"
   const canUpdateStatus = can("order:update") || isAdmin;
   const [statusUpdating, setStatusUpdating] = useState(false);
   const [uploadingImage, setUploadingImage] = useState(false);
   const [editingNote, setEditingNote] = useState(false);
-  const [noteText, setNoteText] = useState(order.admin_note || "");
+  const [noteText, setNoteText] = useState("");
+  const [order, setOrder] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [poolFees, setPoolFees] = useState(null);
+
+  useEffect(() => {
+    if (!orderId) return;
+    let cancelled = false;
+    base44.functions.invoke('order/info/orderDetail', { id: orderId })
+      .then(res => {
+        if (!cancelled) {
+          const data = res?.data;
+          setOrder(data);
+          setNoteText(data?.admin_note || "");
+          setLoading(false);
+        }
+      })
+      .catch(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [orderId]);
+
+  useEffect(() => {
+    if (activeTab !== "fees" || !order?.consolidation_pool_id) return;
+    let cancelled = false;
+    shippingPoolApi.fees(order.consolidation_pool_id)
+      .then(res => {
+        console.log('[OrderDetailPool] poolFees:', res);
+        if (!cancelled) setPoolFees(res);
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [activeTab, order?.consolidation_pool_id]);
 
   const formatCurrency = (amount, currency = "JPY") => {
     if (!amount || amount <= 0) return "-";
@@ -109,6 +141,18 @@ export default function OrderDetailPanel({ order, onClose, onRefresh, userProfil
       setStatusUpdating(false);
     }
   };
+
+  if (loading) {
+    return (
+      <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+        <div className="bg-white rounded-xl shadow-xl w-full max-w-sm p-8 text-center" onMouseDown={e => e.stopPropagation()}>
+          <p className="text-gray-500">加载中...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!order) return null;
 
   const tabs = [
     { key: "overview", label: "概览" },
@@ -197,7 +241,13 @@ export default function OrderDetailPanel({ order, onClose, onRefresh, userProfil
                 <div className="bg-purple-50 border border-purple-100 rounded-lg p-3">
                   <div className="text-xs text-purple-600 mb-1">{order.payment_mode === 'fullpay_once' ? '日元货款总额' : '预付款'}</div>
                   <div className="text-lg font-bold text-purple-700">
-                    {order.prepayment_amount ? formatCurrency(order.prepayment_amount, order.prepayment_currency) : "-"}
+                    {(() => {
+                      if (order.payment_mode === 'fullpay_once') {
+                        return order.full_payment_amount ? formatCurrency(order.full_payment_amount, 'JPY') : "-";
+                      } else {
+                        return order.prepayment_amount ? formatCurrency(order.prepayment_amount, 'JPY') : "-";
+                      }
+                    })()}
                   </div>
                 </div>
                 <div className="bg-orange-50 border border-orange-100 rounded-lg p-3">
@@ -291,7 +341,7 @@ export default function OrderDetailPanel({ order, onClose, onRefresh, userProfil
               </div>
 
               {/* Other images */}
-              {(order.payment_proof_url || order.purchase_screenshot_url || order.arrival_photo_url) && (
+              {(order.payment_proof_url || order.purchase_screenshot_url || order.arrival_photo_url || order.storage_image) && (
                 <div>
                   <div className="text-sm font-semibold text-gray-700 mb-2 flex items-center gap-2">
                     <ImageIcon className="w-4 h-4" />其他图片
@@ -502,7 +552,6 @@ export default function OrderDetailPanel({ order, onClose, onRefresh, userProfil
                 order={order}
                 currentUser={actualCurrentUser}
                 isAdmin={isAdmin}
-                userProfileMap={userProfileMap}
                 hideHistory={false}
                 onMessageSent={onRefresh}
               />
@@ -526,10 +575,10 @@ export default function OrderDetailPanel({ order, onClose, onRefresh, userProfil
           {/* ===== FEES TAB ===== */}
           {activeTab === "fees" && (
             <div className="space-y-4">
-              {/* Detailed fee breakdown */}
+              {/* 商品费用详细构成 */}
               <div className="bg-gradient-to-br from-green-50 to-emerald-50 border border-green-200 rounded-lg p-4 space-y-3">
                 <div className="flex items-center gap-2 text-sm font-semibold text-green-900">
-                  <CreditCard className="w-4 h-4" />费用详细构成
+                  <CreditCard className="w-4 h-4" />商品费用详细构成
                 </div>
                 <div className="space-y-2 text-sm">
                   {/* Base item cost */}
@@ -595,16 +644,6 @@ export default function OrderDetailPanel({ order, onClose, onRefresh, userProfil
                     </div>
                   )}
 
-                  {/* Item size fee */}
-                  {(order.item_size_extra_fee || 0) > 0 && (
-                    <div className="flex justify-between items-center py-1">
-                      <span className="text-green-700">物品尺寸费</span>
-                      <span className="font-medium text-green-900">
-                        {formatCurrency(order.item_size_extra_fee, order.item_size_fee_currency)}
-                      </span>
-                    </div>
-                  )}
-
                   {/* Subtotal */}
                   {order.payment_mode !== 'fullpay_once' && (
                   <div className="border-t border-green-300 pt-2 flex justify-between items-center text-base">
@@ -637,30 +676,97 @@ export default function OrderDetailPanel({ order, onClose, onRefresh, userProfil
                       <span className="font-medium">-{formatCurrency(order.balance_credit, order.prepayment_currency)}</span>
                     </div>
                   )}
+                </div>
+              </div>
 
-                  {/* Final total */}
-                  {(() => {
-                    const addonTotal = (order.selected_addons || []).reduce((sum, a) => {
-                      const customFee = (order.custom_addon_fee || []).find(c => c.id === a.id);
-                      return sum + (customFee ? (parseFloat(customFee.fee) || 0) : (parseFloat(a.fee) || 0));
-                    }, 0);
-                    const pendingAmount = (order.full_payment_amount || 0)
-                      - (order.estimated_jpy || 0)
-                      - addonTotal
-                      - (parseInt(order.item_size_extra_fee) || 0)
-                      - (order.service_fee_amount || 0)
-                      - (order.shipping_fee_amount || 0);
-                    const displayAmount = Math.abs(pendingAmount);
-                    if (displayAmount <= 0) return null;
-                    return (
-                      <div className="border-t-2 border-green-400 pt-3 flex justify-between items-center text-lg bg-green-100/50 rounded px-3 py-2">
-                        <span className="font-bold text-green-900">待付金额</span>
-                        <span className="font-bold text-green-900">
-                          {Math.round(displayAmount).toLocaleString()} JPY
-                        </span>
+              {/* 运费详细构成 - 有 poolFees 才展示 */}
+              {poolFees && (
+                <div className="bg-gradient-to-br from-green-50 to-emerald-50 border border-green-200 rounded-lg p-4 space-y-3">
+                  <div className="flex items-center gap-2 text-sm font-semibold text-green-900">
+                    <CreditCard className="w-4 h-4" />运费详细构成
+                  </div>
+                  <div className="space-y-2 text-sm">
+                    {(poolFees.item_size_extra_fee || 0) > 0 && (
+                      <div className="flex justify-between items-center py-1">
+                        <span className="text-green-700">物品尺寸追加费</span>
+                        <span className="font-medium text-green-900">{formatCurrency(poolFees.item_size_extra_fee)}</span>
                       </div>
-                    );
-                  })()}
+                    )}
+                    {(poolFees.selected_addons || []).length > 0 && (
+                      <>
+                        <div className="flex justify-between items-center py-1">
+                          <span className="text-green-700">发货增值服务</span>
+                          <span className="font-medium text-green-900">{formatCurrency(poolFees.addons_fee)}</span>
+                        </div>
+                        <div className="text-xs text-green-600 pl-3">
+                          {(poolFees.selected_addons || []).map((a, i) => {
+                            const hasCustom = a.custom_fee != null && a.custom_fee !== undefined;
+                            return (
+                              <div key={i}>
+                                <div className="flex justify-between">
+                                  <span>{a.service_name || a.id}</span>
+                                  <span className={hasCustom ? "line-through text-gray-400" : ""}>
+                                    {formatCurrency(parseFloat(a.fee) || 0, a.fee_currency)}
+                                  </span>
+                                </div>
+                                {hasCustom && (
+                                  <div className="flex justify-between text-green-500">
+                                    <span>用户自定义</span>
+                                    <span>{formatCurrency(parseFloat(a.custom_fee) || 0, a.fee_currency)}</span>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </>
+                    )}
+                    {(poolFees.box_price_jpy || 0) > 0 && (
+                      <div className="flex justify-between items-center py-1">
+                        <span className="text-green-700">外箱费用</span>
+                        <span className="font-medium text-green-900">{formatCurrency(poolFees.box_price_jpy)}</span>
+                      </div>
+                    )}
+                    {(poolFees.shipping_fee_jpy || 0) > 0 && (
+                      <div className="flex justify-between items-center py-1">
+                        <span className="text-green-700">国际运费</span>
+                        <span className="font-medium text-green-900">{formatCurrency(poolFees.shipping_fee_jpy)}</span>
+                      </div>
+                    )}
+                    {(poolFees.packing_fee || 0) > 0 && (
+                      <div className="flex justify-between items-center py-1">
+                        <span className="text-green-700">捆包作业服务费</span>
+                        <span className="font-medium text-green-900">{formatCurrency(poolFees.packing_fee)}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* 费用总金额 */}
+              <div className="bg-gradient-to-br from-green-50 to-emerald-50 border border-green-200 rounded-lg p-4">
+                <div className="flex justify-between items-center text-lg">
+                  <span className="font-bold text-green-900">费用总金额</span>
+                  <span className="font-bold text-green-900">
+                    {(
+                      (order.estimated_jpy || 0)
+                      + (order.selected_addons || []).reduce((sum, a) => {
+                          const customFee = (order.custom_addon_fee || []).find(c => c.id === a.id);
+                          return sum + (customFee ? (parseFloat(customFee.fee) || 0) : (parseFloat(a.fee) || 0));
+                        }, 0)
+                      + (order.payment_surcharge_jpy || order.service_fee_amount || 0)
+                      + (poolFees ? (
+                          (poolFees.item_size_extra_fee || 0)
+                          + (poolFees.selected_addons || []).reduce((sum, a) => sum + (parseFloat(a.custom_fee != null ? a.custom_fee : a.fee) || 0), 0)
+                          + (poolFees.box_price_jpy || 0)
+                          + (poolFees.shipping_fee_jpy || 0)
+                          + (poolFees.packing_fee || 0)
+                        ) : (
+                          (order.shipping_fee_amount || 0)
+                          + (order.item_size_extra_fee || 0)
+                        ))
+                    ).toLocaleString()} JPY
+                  </span>
                 </div>
               </div>
             </div>

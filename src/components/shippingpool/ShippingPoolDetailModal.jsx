@@ -1107,7 +1107,7 @@ export default function ShippingPoolDetailModal({ pool: initialPool, isAdmin, cu
               {pool.tracking_number &&
               <span className="text-xs font-mono bg-blue-50 text-blue-700 px-2 py-0.5 rounded">{pool.tracking_number}</span>
               }
-              {(initialPool.unread_roles || []).includes(isAdmin ? "admin" : "user") &&
+              {(pool.unread_roles || []).includes(isAdmin ? "admin" : "user") &&
               <Badge className="text-xs bg-red-100 text-red-600 animate-pulse">有新留言</Badge>
               }
             </div>
