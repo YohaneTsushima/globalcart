@@ -270,6 +270,8 @@ export default function MyOrders() {
   const [pendingEditRequests, setPendingEditRequests] = useState([]);
   const [archiveTargetOrder, setArchiveTargetOrder] = useState(null);
   const [deliverTargetOrder, setDeliverTargetOrder] = useState(null);
+  const [bulkDeliverOrders, setBulkDeliverOrders] = useState(null);
+  const [actionLoading, setActionLoading] = useState(false);
 
   const fetchingRef = useRef(false);
   const fetchOrders = async (u, overridePage) => {
@@ -394,51 +396,71 @@ export default function MyOrders() {
    * @param {*} order 
    */
   const handleConfirmDelivered = async (order) => {
+    setActionLoading(true);
+    try {
+      let payload = [{
+        id: order.id,
+        data: {
+          order_number: order.order_number
+        }
+      }];
 
-    let payload = [{
-      id: order.id,
-      data: {
-        notice_key: ''
-      }
-    }];
+      return;
+      // await base44.functions.invoke('order/info/handleDelivered', payload);
+      await updateTenantOrder('order/info/handleDelivered', payload);
+      fetchOrders(user);
+    } finally {
+      setActionLoading(false);
+    }
+  };
 
-    // await base44.functions.invoke('order/info/handleDelivered', payload);
-    await updateTenantOrder('order/info/handleDelivered', payload);
-    // await base44.functions.invoke('order/info/handleDelivered', [{ order_id: order.id, order_status: "delivered", notice_key: 'order_delivered' }]);
-    // Also mark the associated shipping pool as delivered
-    // const orderId = String(order.id);
-    // const pool = shippingPools.find(p => (p.order_ids || []).some(id => String(id) === orderId));
-    // if (pool && pool.status === "shipped") {
-    //   await shippingPoolApi.update(pool.id, { status: "delivered" });
-    // }
-    fetchOrders(user);
+  const handleBatchConfirmDelivered = async (orders) => {
+    setActionLoading(true);
+    try {
+      debugger
+      const payload = orders.map(o => ({ id: o.id, data: { order_number: o.order_number } }));
+      await updateTenantOrder('order/info/handleDelivered', payload);
+      setBulkDeliverOrders(null);
+      setSelectedIds([]);
+      fetchOrders(user);
+    } finally {
+      setActionLoading(false);
+    }
   };
 
   const handleArchiveOrder = async (order) => {
+    setActionLoading(true);
+    try {
+      let payload = [{
+        id: order.id
+      }];
 
-    let payload = [{
-      id: order.id
-    }];
+      console.log(selectedIds)
+      return 
 
-    console.log(selectedIds)
-    return 
-
-    await base44.functions.invoke('order/info/handleArchive', payload);
-    // await base44.functions.invoke('order/info/handleArchive', [{ order_id: order.id, is_archived: true, archived_at: new Date().toISOString() }]);
-    fetchOrders(user);
+      await base44.functions.invoke('order/info/handleArchive', payload);
+      fetchOrders(user);
+    } finally {
+      setActionLoading(false);
+    }
   };
 
   const handleBulkArchive = async () => {
-    const deliveredSelected = filtered.filter(o => selectedIds.includes(o.id) && o.order_status === "delivered");
-    const dtoList = deliveredSelected.map(o => ({ order_id: o.id, is_archived: true, archived_at: new Date().toISOString() }));
+    setActionLoading(true);
+    try {
+      const deliveredSelected = filtered.filter(o => selectedIds.includes(o.id) && o.order_status === "delivered");
+      const dtoList = deliveredSelected.map(o => ({ order_id: o.id, is_archived: true, archived_at: new Date().toISOString() }));
 
-    const payload = [];
+      const payload = [];
 
-    return;
+      return;
 
-    await base44.functions.invoke('order/info/handleArchive', payload);
-    setSelectedIds([]);
-    fetchOrders(user);
+      await base44.functions.invoke('order/info/handleArchive', payload);
+      setSelectedIds([]);
+      fetchOrders(user);
+    } finally {
+      setActionLoading(false);
+    }
   };
 
   // 后端已分页，orders 就是当前页数据
@@ -459,6 +481,10 @@ export default function MyOrders() {
   // Orders eligible for bulk archive (only if user has archive permission)
   const deliveredOrders = canArchiveOrder ? filtered.filter(o => o.order_status === "delivered" && !o.is_archived) : [];
   const selectedDelivered = canArchiveOrder ? filtered.filter(o => selectedIds.includes(o.id) && o.order_status === "delivered" && !o.is_archived) : [];
+
+  // Orders eligible for bulk confirm delivery
+  const shippedOrders = filtered.filter(o => o.order_status === "shipped");
+  const selectedShipped = filtered.filter(o => selectedIds.includes(o.id) && o.order_status === "shipped");
 
   const toggleSelect = (id) => {
     setSelectedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
@@ -583,21 +609,37 @@ export default function MyOrders() {
             onClick={() => setSelectedIds([])}>取消</Button>
         </div>
       )}
+      {selectedShipped.length > 0 && (
+        <div className="flex items-center gap-3 bg-green-50 border border-green-200 rounded-xl px-4 py-2.5">
+          <span className="text-sm text-green-700 font-medium">已选 {selectedShipped.length} 件已发出订单</span>
+          <Button size="sm" className="h-7 text-xs bg-green-600 hover:bg-green-700 ml-auto"
+            onClick={() => setBulkDeliverOrders(selectedShipped)}>
+            <CheckCircle className="w-3 h-3 mr-1" />批量收货
+          </Button>
+          <Button size="sm" variant="ghost" className="h-7 text-xs"
+            onClick={() => setSelectedIds([])}>取消</Button>
+        </div>
+      )}
 
       {/* Orders table */}
-      <div className="border border-gray-200 rounded-xl overflow-x-auto">
+      <div className="relative border border-gray-200 rounded-xl overflow-x-auto">
+        {actionLoading && (
+          <div className="absolute inset-0 bg-white/60 z-10 flex items-center justify-center rounded-xl">
+            <span className="text-sm text-gray-500">请稍后...</span>
+          </div>
+        )}
         <table className="w-full text-sm">
           <thead>
             <tr className="bg-gray-50 border-b border-gray-200">
               <th className="w-8 px-3 py-2">
-                {(inWarehouseOrders.length > 0 || paymentPendingOrders.length > 0 || deliveredOrders.length > 0) && !showArchived && (
+                {(inWarehouseOrders.length > 0 || paymentPendingOrders.length > 0 || deliveredOrders.length > 0 || shippedOrders.length > 0) && !showArchived && (
                   <Checkbox
                     checked={
-                      [...inWarehouseOrders, ...paymentPendingOrders, ...deliveredOrders].length > 0 &&
-                      [...inWarehouseOrders, ...paymentPendingOrders, ...deliveredOrders].every(o => selectedIds.includes(o.id))
+                      [...inWarehouseOrders, ...paymentPendingOrders, ...deliveredOrders, ...shippedOrders].length > 0 &&
+                      [...inWarehouseOrders, ...paymentPendingOrders, ...deliveredOrders, ...shippedOrders].every(o => selectedIds.includes(o.id))
                     }
                     onCheckedChange={() => {
-                      const all = [...inWarehouseOrders, ...paymentPendingOrders, ...deliveredOrders];
+                      const all = [...inWarehouseOrders, ...paymentPendingOrders, ...deliveredOrders, ...shippedOrders];
                       const allSelected = all.every(o => selectedIds.includes(o.id));
                       if (allSelected) setSelectedIds(prev => prev.filter(id => !all.map(o => o.id).includes(id)));
                       else setSelectedIds(prev => [...new Set([...prev, ...all.map(o => o.id)])]);
@@ -638,7 +680,7 @@ export default function MyOrders() {
               <tr key={order.id} className={`hover:bg-gray-50 cursor-pointer ${selectedIds.includes(order.id) ? "bg-teal-50/50" : ""}`}
                 onClick={() => setSelectedOrder(order)}>
                 <td className="px-3 py-3" onClick={e => e.stopPropagation()}>
-                  {!showArchived && (order.order_status === "in_warehouse" || (order.order_status === "payment_pending" && order.payment_status !== "awaiting_confirmation") || (order.order_status === "delivered" && !order.is_archived)) && (
+                  {!showArchived && (order.order_status === "in_warehouse" || order.order_status === "shipped" || (order.order_status === "payment_pending" && order.payment_status !== "awaiting_confirmation") || (order.order_status === "delivered" && !order.is_archived)) && (
                    <Checkbox
                      checked={selectedIds.includes(order.id)}
                      onCheckedChange={() => toggleSelect(order.id)}
@@ -1023,6 +1065,15 @@ export default function MyOrders() {
         description="是否确认收货？确认后订单状态将变为已签收。"
         confirmText="是"
         onConfirm={() => { handleConfirmDelivered(deliverTargetOrder); setDeliverTargetOrder(null); }}
+      />
+
+      <ConfirmDialog
+        open={!!bulkDeliverOrders}
+        onOpenChange={open => { if (!open) setBulkDeliverOrders(null); }}
+        title="确认收货"
+        description={`是否确认 ${bulkDeliverOrders?.length || 0} 件订单收货？`}
+        confirmText="确认"
+        onConfirm={() => { handleBatchConfirmDelivered(bulkDeliverOrders); setBulkDeliverOrders(null); }}
       />
 
       <ConfirmDialog

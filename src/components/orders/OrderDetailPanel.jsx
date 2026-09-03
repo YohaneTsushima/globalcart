@@ -101,7 +101,6 @@ export default function OrderDetailPanel({ orderId, onClose, onRefresh, currentU
     let cancelled = false;
     shippingPoolApi.fees(order.consolidation_pool_id)
       .then(res => {
-        console.log('[OrderDetailPool] poolFees:', res);
         if (!cancelled) setPoolFees(res);
       })
       .catch(() => {});

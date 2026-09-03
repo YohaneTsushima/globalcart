@@ -396,8 +396,6 @@ export default function AdminShippingInfoPanel({
     setSaving(true);
     const payload = buildUpdatePayload();
 
-    console.log(payload)
-
     try {
       await apiFn(pool.id, payload);
       setPool(p => ({ ...p, ...payload }));
@@ -657,18 +655,37 @@ export default function AdminShippingInfoPanel({
   const handleShip = async () => {
     if (!trackingNumber) return;
     setSaving(true);
-    const payload = {
-      ...buildUpdatePayload(),
-      status: "shipped",
-      shipped_date: new Date().toISOString().split("T")[0],
-      tracking_number: trackingNumber,
-      order_status: "shipped",
-      order_balance_settled: pool.payment_status === "paid",
-      notice_key: 'order_shipped'
-    };
-    console.log(payload)
+    // const payload = {
+    //   ...buildUpdatePayload(),
+    //   status: "shipped",
+    //   shipped_date: new Date().toISOString().split("T")[0],
+    //   tracking_number: trackingNumber,
+    //   order_status: "shipped",
+    //   order_balance_settled: pool.payment_status === "paid",
+    //   notice_key: 'order_shipped'
+    // };
 
-    await updatePool(payload, { setLoading: setSaving });
+    const payload = {
+      id: pool.id,
+      pool_code: pool.pool_code,
+      tracking_number: trackingNumber
+    };
+    try {
+      
+     const res = await shippingPoolApi.shipped(pool.id, payload);
+     console.log(res)
+      setPool(p => ({ ...p, ...res?.data }));
+      onPoolUpdated?.({ ...pool, ...res?.data });
+      toast.success(`[${pool.pool_code}] 已发货.`);
+    } catch (err) {
+      const errorMessage = err?.response?.data?.message;
+      console.error("操作失败:", err);
+      toast.error("操作失败：" + (errorMessage || "未知错误"));
+    } finally {
+      setLoading?.(false);
+    }
+    // await updatePool(payload, { setLoading: setSaving });
+    
   };
 
   const currentStatus = pool.status;

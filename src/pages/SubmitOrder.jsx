@@ -454,8 +454,6 @@ export default function SubmitOrder() {
 
     try {
 
-      console.log(finalForm);
-
       const res = await base44.functions.invoke('order/info/createTenantOrder', finalForm);
 
       const order = res?.data;

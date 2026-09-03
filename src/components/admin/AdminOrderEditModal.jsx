@@ -394,26 +394,6 @@ export default function AdminOrderEditModal({ order, initialItemSizeTemplates, o
     onSaved();
   };
 
-  // shipping_fee_pending/ready_to_ship → shipped
-  const handleMarkShipped = async () => {
-    setSaving(true);
-
-    let pay_load = {
-      order_status: "shipped",
-      outbound_time: new Date().toISOString().split("T")[0],
-      tracking_number: trackingNumber,
-      admin_note: form.admin_note,
-      notice_key: 'order_shipped'
-    }
-    
-    const result = await updateOrder(order.id, pay_load);
-    if (!result) {
-      setSaving(false);
-      return;
-    }
-    onSaved();
-  };
-
   // Generic save (edit tab)
   const handleSave = async () => {
     setSaving(true);
@@ -1307,7 +1287,7 @@ export default function AdminOrderEditModal({ order, initialItemSizeTemplates, o
               })()}
 
               {/* notified_shipment_fee_paid → 已付运费，可以发货 */}
-              {status === "notified_shipment_fee_paid" && (
+              {/* {status === "notified_shipment_fee_paid" && (
                 <div className="space-y-3 border border-lime-100 rounded-xl p-3 bg-lime-50">
                   <div className="text-sm font-medium text-lime-800">
                     已付运费 — 填写运单号后发出
@@ -1322,10 +1302,10 @@ export default function AdminOrderEditModal({ order, initialItemSizeTemplates, o
                     ✓ 确认已发出
                   </Button>
                 </div>
-              )}
+              )} */}
 
               {/* shipping_fee_pending / ready_to_ship → shipped */}
-              {(status === "shipping_fee_pending" || status === "ready_to_ship") && (
+              {/* {(status === "shipping_fee_pending" || status === "ready_to_ship") && (
                 <div className="space-y-3 border border-lime-100 rounded-xl p-3 bg-lime-50">
                   <div className="text-sm font-medium text-lime-800">
                     {status === "shipping_fee_pending" ? "等待用户付运费" : "已付运费 — 填写运单号后发出"}
@@ -1340,7 +1320,7 @@ export default function AdminOrderEditModal({ order, initialItemSizeTemplates, o
                     ✓ 确认已发出
                   </Button>
                 </div>
-              )}
+              )} */}
 
               {/* Any status → send to awaiting_reply */}
               {!["awaiting_reply", "cancelled", "delivered"].includes(status) && (
