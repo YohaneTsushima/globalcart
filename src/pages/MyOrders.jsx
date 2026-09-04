@@ -4,7 +4,7 @@ import PaginationBar from "@/components/common/PaginationBar";
 import { base44 } from "@/api/base44Client";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 
-import { Package, RefreshCw, Search, CreditCard, Truck, CheckCircle, ChevronUp, ChevronDown, ChevronsUpDown, Send, Archive, ArchiveRestore, RotateCcw, Zap, MapPin, X } from "lucide-react";
+import { Package, RefreshCw, Search, CreditCard, Truck, CheckCircle, ChevronUp, ChevronDown, ChevronsUpDown, Send, Archive, ArchiveRestore, RotateCcw, Zap, MapPin, X, Loader2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { usePermissions } from "@/hooks/usePermissions";
 import { Textarea } from "@/components/ui/textarea";
@@ -28,6 +28,8 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import ConfirmDialog from "@/components/common/ConfirmDialog";
 import { Ticket } from "lucide-react";
 import MyTicketOrders from "@/components/tickets/MyTicketOrders";
+import { toast } from "sonner";
+import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogAction } from "@/components/ui/alert-dialog";
 
 const STORAGE_KEY = "my_orders_columns";
 
@@ -216,6 +218,8 @@ export default function MyOrders() {
   const [ticketOrders, setTicketOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [alipayReturnMsg, setAlipayReturnMsg] = useState(null);
+  const [bulkErrors, setBulkErrors] = useState([]);
+  const [showBulkErrors, setShowBulkErrors] = useState(false);
 
   // Handle Alipay sync return: clean up URL params and show a notice
   const [isAlipayReturn, setIsAlipayReturn] = useState(() => {
@@ -401,32 +405,81 @@ export default function MyOrders() {
       let payload = [{
         id: order.id,
         data: {
-          order_number: order.order_number
+          order_number: order.order_number,
+          consolidation_pool_id: order.pool_id
         }
       }];
 
+      console.log(payload)
+
+      if(confirm('???')) {
+        setActionLoading(false)
+        return;
+      }
+
       return;
       // await base44.functions.invoke('order/info/handleDelivered', payload);
-      await updateTenantOrder('order/info/handleDelivered', payload);
+      const res = await updateTenantOrder('order/info/handleDelivered', payload);
+      const innerCode = res?.data?.code;
+
+      if (innerCode === 200) {
+        toast.success(`订单 [${order.order_number}] 收货成功`);
+      } else {
+        const errors = res?.data?.errorInfo?.errors || [];
+        if (errors.length > 0) {
+          setBulkErrors(errors.map(e => e.errorMessage));
+          setShowBulkErrors(true);
+        } else {
+          toast.error(res?.data?.message || "操作失败");
+        }
+      }
       fetchOrders(user);
     } finally {
       setActionLoading(false);
     }
   };
 
-  const handleBatchConfirmDelivered = async (orders) => {
+  // 批量操作包装函数
+  const withBulkLabel = async (label, fn) => {
     setActionLoading(true);
     try {
-      debugger
-      const payload = orders.map(o => ({ id: o.id, data: { order_number: o.order_number } }));
-      await updateTenantOrder('order/info/handleDelivered', payload);
-      setBulkDeliverOrders(null);
-      setSelectedIds([]);
-      fetchOrders(user);
+      await fn();
     } finally {
       setActionLoading(false);
     }
   };
+
+  // 批量操作公共函数
+  const handleBulkAction = (label, url, toastMsg, sourceList) =>
+    withBulkLabel(label, async () => {
+      if (sourceList.length === 0) return;
+      const payload = sourceList.map(o => ({
+        id: o.id,
+        data: {
+          order_number: o.order_number,
+          consolidation_pool_id: o.pool?.pool_id
+        }
+      }));
+      const res = await updateTenantOrder(url, payload);
+      const innerCode = res?.data?.code;
+      if (innerCode === 200) {
+        toast.success(toastMsg);
+      } else {
+        const errors = res?.data?.errorInfo?.errors || [];
+        if (errors.length > 0) {
+          setBulkErrors(errors.map(e => e.errorMessage));
+          setShowBulkErrors(true);
+        } else {
+          toast.error(res?.data?.message || "操作失败");
+        }
+      }
+      setBulkDeliverOrders(null);
+      setSelectedIds([]);
+      fetchOrders(user);
+    });
+
+  const handleBatchConfirmDelivered = (orders) =>
+    handleBulkAction("正在确认收货...", "order/info/handleDelivered", "批量收货成功", orders);
 
   const handleArchiveOrder = async (order) => {
     setActionLoading(true);
@@ -445,22 +498,9 @@ export default function MyOrders() {
     }
   };
 
-  const handleBulkArchive = async () => {
-    setActionLoading(true);
-    try {
-      const deliveredSelected = filtered.filter(o => selectedIds.includes(o.id) && o.order_status === "delivered");
-      const dtoList = deliveredSelected.map(o => ({ order_id: o.id, is_archived: true, archived_at: new Date().toISOString() }));
-
-      const payload = [];
-
-      return;
-
-      await base44.functions.invoke('order/info/handleArchive', payload);
-      setSelectedIds([]);
-      fetchOrders(user);
-    } finally {
-      setActionLoading(false);
-    }
+  const handleBulkArchive = () => {
+    const deliveredSelected = orders.filter(o => selectedIds.includes(o.id) && o.order_status === "delivered" && !o.is_archived);
+    return handleBulkAction("正在存档...", "order/info/handleArchive", "批量存档成功", deliveredSelected);
   };
 
   // 后端已分页，orders 就是当前页数据
@@ -530,102 +570,103 @@ export default function MyOrders() {
       </TabsContent>
 
       <TabsContent value="physical" className="space-y-4">
-      <div className="flex items-center justify-between flex-wrap gap-2">
-        <h1 className="text-xl font-bold text-gray-900">我的订单</h1>
-        <div className="flex items-center gap-2">
-          <ColumnCustomizer columns={columns} onChange={handleColumnsChange} />
-          <Button variant="outline" size="sm" onClick={() => { setShowArchived(v => !v); setSelectedIds([]); }}>
-            {showArchived ? <><ArchiveRestore className="w-3.5 h-3.5 mr-1.5" />返回订单列表</> : <><Archive className="w-3.5 h-3.5 mr-1.5" />查看已存档</>}
-          </Button>
-          <Button variant="outline" size="sm" onClick={() => fetchOrders(user)}>
-            <RefreshCw className="w-3.5 h-3.5 mr-1.5" />刷新
-          </Button>
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <h1 className="text-xl font-bold text-gray-900">我的订单</h1>
+          <div className="flex items-center gap-2">
+            <ColumnCustomizer columns={columns} onChange={handleColumnsChange} />
+            <Button variant="outline" size="sm" onClick={() => { setShowArchived(v => !v); setSelectedIds([]); }}>
+              {showArchived ? <><ArchiveRestore className="w-3.5 h-3.5 mr-1.5" />返回订单列表</> : <><Archive className="w-3.5 h-3.5 mr-1.5" />查看已存档</>}
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => fetchOrders(user)}>
+              <RefreshCw className="w-3.5 h-3.5 mr-1.5" />刷新
+            </Button>
+          </div>
         </div>
-      </div>
 
-      <PaginationBar
-        total={total}
-        pageSize={pageSize}
-        currentPage={currentPage}
-        onPageChange={setCurrentPage}
-        onPageSizeChange={(s) => { setPageSize(s); resetPage(); }}
-        className="mt-1"
-      />
+        <PaginationBar
+          total={total}
+          pageSize={pageSize}
+          currentPage={currentPage}
+          onPageChange={setCurrentPage}
+          onPageSizeChange={(s) => { setPageSize(s); resetPage(); }}
+          className="mt-1"
+        />
 
-      {/* Filters */}
-      <div className="flex flex-wrap gap-2 items-center">
-        <div className="relative flex-1 min-w-[180px]">
-          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
-          <Input placeholder="搜索商品名、订单号..." className="pl-8 h-8 text-sm"
-            value={search} onChange={e => setSearch(e.target.value)} />
+        {/* Filters */}
+        <div className={`flex flex-wrap gap-2 items-center transition-opacity ${actionLoading ? "pointer-events-none opacity-50" : ""}`}>
+          <div className="relative flex-1 min-w-[180px]">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
+            <Input placeholder="搜索商品名、订单号..." className="pl-8 h-8 text-sm"
+              value={search} onChange={e => setSearch(e.target.value)} />
+          </div>
+          <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v); setSelectedIds([]); }}>
+            <SelectTrigger className="w-36 h-8 text-sm"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {STATUS_FILTERS.map(s => <SelectItem key={s.v} value={s.v}>{s.l}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          {(search || statusFilter !== "all") && (
+            <button
+              onClick={() => { setSearch(""); setStatusFilter("all"); resetPage(); }}
+              className="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600 h-8 px-1 shrink-0"
+            >
+              <X className="w-3 h-3" />清除
+            </button>
+          )}
         </div>
-        <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v); setSelectedIds([]); }}>
-          <SelectTrigger className="w-36 h-8 text-sm"><SelectValue /></SelectTrigger>
-          <SelectContent>
-            {STATUS_FILTERS.map(s => <SelectItem key={s.v} value={s.v}>{s.l}</SelectItem>)}
-          </SelectContent>
-        </Select>
-        {(search || statusFilter !== "all") && (
-          <button
-            onClick={() => { setSearch(""); setStatusFilter("all"); resetPage(); }}
-            className="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600 h-8 px-1 shrink-0"
-          >
-            <X className="w-3 h-3" />清除
-          </button>
-        )}
-      </div>
 
       {/* Bulk action bars */}
       {selectedInWarehouse.length > 0 && canNotifyShipment && (
         <div className="flex items-center gap-3 bg-teal-50 border border-teal-200 rounded-xl px-4 py-2.5">
           <span className="text-sm text-teal-700 font-medium">已选 {selectedInWarehouse.length} 件已入库包裹</span>
           <Button size="sm" className="h-7 text-xs bg-teal-600 hover:bg-teal-700 ml-auto"
-            onClick={() => setShipmentOrders(selectedInWarehouse)}>
+            onClick={() => setShipmentOrders(selectedInWarehouse)} disabled={actionLoading}>
             <Truck className="w-3 h-3 mr-1" />批量通知发货
           </Button>
           <Button size="sm" variant="ghost" className="h-7 text-xs"
-            onClick={() => setSelectedIds([])}>取消</Button>
+            onClick={() => setSelectedIds([])} disabled={actionLoading}>取消</Button>
         </div>
       )}
       {selectedPaymentPending.length > 1 && (
         <div className="flex items-center gap-3 bg-red-50 border border-red-200 rounded-xl px-4 py-2.5">
           <span className="text-sm text-red-700 font-medium">已选 {selectedPaymentPending.length} 笔待付款订单</span>
           <Button size="sm" className="h-7 text-xs bg-red-600 hover:bg-red-700 ml-auto"
-            onClick={() => setBulkPaymentOrders(selectedPaymentPending)}>
+            onClick={() => setBulkPaymentOrders(selectedPaymentPending)} disabled={actionLoading}>
             <CreditCard className="w-3 h-3 mr-1" />批量付款
           </Button>
           <Button size="sm" variant="ghost" className="h-7 text-xs"
-            onClick={() => setSelectedIds([])}>取消</Button>
+            onClick={() => setSelectedIds([])} disabled={actionLoading}>取消</Button>
         </div>
       )}
       {selectedDelivered.length > 0 && (
         <div className="flex items-center gap-3 bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5">
           <span className="text-sm text-gray-700 font-medium">已选 {selectedDelivered.length} 件已收货订单</span>
           <Button size="sm" className="h-7 text-xs bg-gray-600 hover:bg-gray-700 ml-auto"
-            onClick={handleBulkArchive}>
+            onClick={handleBulkArchive} disabled={actionLoading}>
             <Archive className="w-3 h-3 mr-1" />批量存档
           </Button>
           <Button size="sm" variant="ghost" className="h-7 text-xs"
-            onClick={() => setSelectedIds([])}>取消</Button>
+            onClick={() => setSelectedIds([])} disabled={actionLoading}>取消</Button>
         </div>
       )}
       {selectedShipped.length > 0 && (
         <div className="flex items-center gap-3 bg-green-50 border border-green-200 rounded-xl px-4 py-2.5">
           <span className="text-sm text-green-700 font-medium">已选 {selectedShipped.length} 件已发出订单</span>
           <Button size="sm" className="h-7 text-xs bg-green-600 hover:bg-green-700 ml-auto"
-            onClick={() => setBulkDeliverOrders(selectedShipped)}>
+            onClick={() => setBulkDeliverOrders(selectedShipped)} disabled={actionLoading}>
             <CheckCircle className="w-3 h-3 mr-1" />批量收货
           </Button>
           <Button size="sm" variant="ghost" className="h-7 text-xs"
-            onClick={() => setSelectedIds([])}>取消</Button>
+            onClick={() => setSelectedIds([])} disabled={actionLoading}>取消</Button>
         </div>
       )}
 
       {/* Orders table */}
       <div className="relative border border-gray-200 rounded-xl overflow-x-auto">
         {actionLoading && (
-          <div className="absolute inset-0 bg-white/60 z-10 flex items-center justify-center rounded-xl">
-            <span className="text-sm text-gray-500">请稍后...</span>
+          <div className="absolute inset-0 bg-white/80 backdrop-blur-sm z-10 flex flex-col items-center justify-center rounded-xl">
+            <Loader2 className="w-6 h-6 text-blue-500 animate-spin mb-2" />
+            <span className="text-sm text-gray-600 font-medium">处理中...</span>
           </div>
         )}
         <table className="w-full text-sm">
@@ -766,7 +807,7 @@ export default function MyOrders() {
                           }}>
                           <CheckCircle className="w-3 h-3 mr-1" />确认收货
                         </Button>
-                        {pool.id && (
+                        {pool?.pool_id && (
                           <button
                             className="text-xs font-mono text-purple-700 bg-purple-50 border border-purple-100 px-1.5 py-0.5 rounded hover:bg-purple-100 transition-colors"
                             onClick={(e) => { e.stopPropagation(); setViewPool(pool); }}>
@@ -808,16 +849,18 @@ export default function MyOrders() {
                   {order.order_status === "notified_shipment" && (() => {
                     const orderId = String(order.id);
                     // const pool = shippingPools.find(p => (p.order_ids || []).some(id => String(id) === orderId));
-                    const pool = order.pool;
-                    const hasPendingEdit = pendingEditRequests.some(r => String(r.order_id) === orderId && r.status === 'pending');
+                    const pool = order?.pool;
+                    // const hasPendingEdit = pendingEditRequests.some(r => String(r.order_id) === orderId && r.status === 'pending');
+                    const editRequest = order.edit_request;
+                    const hasPendingEdit = editRequest.some(r => String(r.order_id) === orderId && r.status === 'pending');
                     const poolAwaitingPayment = pool?.id && (pool?.status === "awaiting_payment" || pool?.status === "awaiting_payment_confirmation");
                     return (
                       <div className="flex flex-col gap-1 items-start">
-                        {pool.id && (
+                        {pool?.pool_id && (
                           <button
                             className="text-xs font-mono text-purple-700 bg-purple-50 border border-purple-100 px-1.5 py-0.5 rounded hover:bg-purple-100 hover:border-purple-300 transition-colors cursor-pointer"
                             onClick={() => setViewPool(pool)}>
-                            { order.pool_code }
+                            { pool?.pool_code }
                           </button>
                         )}
                         {hasPendingEdit && (
@@ -846,14 +889,14 @@ export default function MyOrders() {
                     // const pool = shippingPools.find(p => (p.order_ids || []).some(id => String(id) === orderId))
                     //   || (order.consolidation_pool_id ? shippingPools.find(p => String(p.id) === String(order.consolidation_pool_id)) : null);
                     const pool = order.pool;
-                    if (!pool.id) return null;
+                    if (!pool?.pool_id) return null;
                     const hasPendingRewarehouse = pendingEditRequests.some(r => String(r.order_id) === orderId && r.is_rewarehouse_request);
                     return (
                       <div className="flex flex-col gap-1 items-start">
                         <button
                           className="text-xs font-mono text-purple-700 bg-purple-50 border border-purple-100 px-1.5 py-0.5 rounded hover:bg-purple-100 hover:border-purple-300 transition-colors cursor-pointer"
                           onClick={() => setViewPool(pool)}>
-                          {order.pool_code || pool.id.slice(-6).toUpperCase()}
+                          {order.pool_code || pool?.pool_id.slice(-6).toUpperCase()}
                         </button>
                         <Button size="sm" className="h-7 text-xs bg-orange-600 hover:bg-orange-700"
                           onClick={() => setViewPool(pool)}>
@@ -886,7 +929,7 @@ export default function MyOrders() {
                           </Button>
                         )}
                         {(() => {
-                          if (!pool.id) return null;
+                          if (!pool?.pool_id) return null;
                           const feeNotified = (pool?.fee_breakdown_per_user || []).length > 0 || (pool?.shipping_fee_jpy || 0) > 0;
                           const myPay = (pool?.per_user_payments || []).find(p => p.user_email === user?.email);
                           const unpaid = pool?.payment_status !== "paid" && !(myPay && myPay.payment_status === "paid") && feeNotified;
@@ -942,7 +985,7 @@ export default function MyOrders() {
 
       {paymentOrder && (
         <PaymentModal
-          order={paymentOrder}
+          orderId={paymentOrder?.id}
           mode={paymentOrder?.payment_mode}
           onClose={() => setPaymentOrder(null)}
           onSuccess={() => {
@@ -1086,6 +1129,26 @@ export default function MyOrders() {
       />
       </TabsContent>
       </Tabs>
+
+      <AlertDialog open={showBulkErrors} onOpenChange={setShowBulkErrors}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>部分操作失败</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-1 max-h-60 overflow-y-auto">
+                {bulkErrors.map((msg, i) => (
+                  <div key={i} className="text-sm text-red-600">· {msg}</div>
+                ))}
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogAction onClick={() => { setShowBulkErrors(false); setBulkErrors([]); }}>
+              知道了
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

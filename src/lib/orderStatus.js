@@ -90,7 +90,7 @@ export const ORDER_STATUS_CONFIG = {
     admin: "已发出",
     user: "已发出",
     adminColor: "bg-green-100 text-green-700",
-    userColor: "bg-green-100 text-green-700",
+    userColor: "bg-blue-100 text-blue-700",
   },
   delivered: {
     admin: "已收货",

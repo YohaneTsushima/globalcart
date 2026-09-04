@@ -92,7 +92,7 @@ export default function ShippingPoolDetailModal({ pool: initialPool, isAdmin, cu
   // User-side move/add state
   const [userActionOrder, setUserActionOrder] = useState(null); // order being acted on
   const [userActionMode, setUserActionMode] = useState(null); // 'move' | 'cancel' | 'add'
-  const [userTargetPoolId, setUserTargetPoolId] = useState("");
+  const [userTargetPoolId, setUserTargetPoolId] = useState(null);
   const [userActionNote, setUserActionNote] = useState("");
   const [userActionPools, setUserActionPools] = useState([]); // other pools available to move to
   const [submittingUserAction, setSubmittingUserAction] = useState(false);
@@ -250,7 +250,7 @@ export default function ShippingPoolDetailModal({ pool: initialPool, isAdmin, cu
 
   useEffect(() => {
     // Fetch pool detail (pool + orders + users + rates) in one call
-    base44.functions.invoke('shipping/getShippingPoolDetail', { id: pool.id })
+    base44.functions.invoke('shipping/getShippingPoolDetail', { id: (pool?.id || pool?.pool_id) })
       .then((r) => {
         const d = r?.data || {};
         if (d.pool) setPool((p) => ({ ...p, ...d.pool }));
@@ -360,31 +360,63 @@ export default function ShippingPoolDetailModal({ pool: initialPool, isAdmin, cu
   const openUserAction = (order, mode) => {
     setUserActionOrder(order);
     setUserActionMode(mode);
-    setUserTargetPoolId("");
+    setUserTargetPoolId(null);
     setUserActionNote("");
     if (mode === 'move') {
       // Lazy-load available pools for user-side move
-      base44.functions.invoke('getTenantShippingPools', {})
-        .then((r) => {
-          const lockedStatuses = ['awaiting_payment', 'awaiting_payment_confirmation', 'ready_to_ship', 'shipped', 'delivered', 'cancelled'];
-          const available = (r.data?.pools || []).filter(p =>
-            p.id !== pool.id && !lockedStatuses.includes(p.status)
-          );
-          setUserActionPools(available);
-        })
-        .catch(() => setUserActionPools([]));
+      // base44.functions.invoke('getTenantShippingPools', {})
+      //   .then((r) => {
+      //     const lockedStatuses = ['awaiting_payment', 'awaiting_payment_confirmation', 'ready_to_ship', 'shipped', 'delivered', 'cancelled'];
+      //     const available = (r.data?.pools || []).filter(p =>
+      //       p.id !== pool.id && !lockedStatuses.includes(p.status)
+      //     );
+      //     setUserActionPools(available);
+      //   })
+      //   .catch(() => setUserActionPools([]));
+      shippingPoolApi.other(pool.id).then((r) => {
+        setUserActionPools(r);
+      }).catch(() => setUserActionPools([]));
     }
   };
 
-  const submitUserAction = async (action, orderId, targetPoolId) => {
+  const submitUserAction = async (action, order, targetPoolId) => {
     setSubmittingUserAction(true);
-    await base44.functions.invoke('userMutateShippingPool', {
-      action,
-      pool_id: pool.id,
-      order_id: orderId,
-      target_pool_id: targetPoolId || undefined,
-      user_note: userActionNote,
-    });
+    // await base44.functions.invoke('userMutateShippingPool', {
+    //   action,
+    //   pool_id: pool.id,
+    //   order_id: order.id,
+    //   target_pool_id: targetPoolId || undefined,
+    //   user_note: userActionNote,
+    // });
+
+    const orderInfo = {
+      id: order.id,
+      order_number: order.order_number,
+    }
+
+    const source_shipping_pool = {
+      id: pool.id,
+      pool_code: pool.pool_code
+    }
+
+    const target_shipping_pool = {
+      id: targetPoolId.id,
+      pool_code: targetPoolId.pool_code
+    }
+
+    const movePoolParams = {
+      order_info: orderInfo,
+      source_shipping_pool: source_shipping_pool,
+      target_shipping_pool: target_shipping_pool
+    }
+debugger
+    if(confirm('???')) {
+      setSubmittingUserAction(false);
+      return
+    }
+
+    await shippingPoolApi.moveOrder(order.id, movePoolParams);
+
     setUserActionOrder(null);
     setUserActionMode(null);
     setSubmittingUserAction(false);
@@ -396,14 +428,15 @@ export default function ShippingPoolDetailModal({ pool: initialPool, isAdmin, cu
     setShowAddOrder(true);
     setAddOrderSearch("");
     setLoadingAddable(true);
-    const r = await base44.functions.invoke('getTenantOrders', { all: isAdmin });
-    const all = r.data?.orders || [];
+    const r = await base44.functions.invoke('order/info/findAddableOrders');
+    const all = r?.data || [];
     // Admins see all in_warehouse orders; users only see their own
-    setAddableOrders(
-      isAdmin
-        ? all.filter(o => o.order_status === 'in_warehouse' && !pool.order_ids?.includes(o.id))
-        : all.filter(o => o.order_status === 'in_warehouse' && o.user_email === currentUser?.email && !pool.order_ids?.includes(o.id))
-    );
+    // setAddableOrders(
+    //   isAdmin
+    //     ? all.filter(o => o.order_status === 'in_warehouse' && !pool.order_ids?.includes(o.id))
+    //     : all.filter(o => o.order_status === 'in_warehouse' && o.user_email === currentUser?.email && !pool.order_ids?.includes(o.id))
+    // );
+    setAddableOrders(all);
     setLoadingAddable(false);
   };
 
@@ -1334,8 +1367,8 @@ export default function ShippingPoolDetailModal({ pool: initialPool, isAdmin, cu
                                 <div className="max-h-28 overflow-y-auto space-y-1">
                                   {userActionPools.map(p => (
                                     <button key={p.id}
-                                      onClick={() => setUserTargetPoolId(p.id)}
-                                      className={`w-full text-left px-2 py-1.5 rounded text-xs border transition-colors ${userTargetPoolId === p.id ? 'border-blue-400 bg-blue-50' : 'border-gray-200 hover:border-blue-300 hover:bg-blue-50'}`}>
+                                      onClick={() => setUserTargetPoolId(p)}
+                                      className={`w-full text-left px-2 py-1.5 rounded text-xs border transition-colors ${userTargetPoolId?.id === p.id ? 'border-blue-400 bg-blue-50' : 'border-gray-200 hover:border-blue-300 hover:bg-blue-50'}`}>
                                       <span className="font-mono text-gray-700">{p.pool_code || p.id.slice(-6).toUpperCase()}</span>
                                       {p.title && <span className="text-gray-400 ml-1.5">{p.title}</span>}
                                     </button>
@@ -1349,7 +1382,7 @@ export default function ShippingPoolDetailModal({ pool: initialPool, isAdmin, cu
                                   onClick={() => setUserActionMode('menu')}>返回</Button>
                                 <Button size="sm" className="h-6 text-xs flex-1 bg-blue-600 hover:bg-blue-700"
                                   disabled={!userTargetPoolId || submittingUserAction}
-                                  onClick={() => submitUserAction('move_order', o.id, userTargetPoolId)}>
+                                  onClick={() => submitUserAction('move_order', o, userTargetPoolId)}>
                                   {submittingUserAction ? <Loader2 className="w-3 h-3 animate-spin" /> : '确认移动'}
                                 </Button>
                               </div>
@@ -1364,7 +1397,7 @@ export default function ShippingPoolDetailModal({ pool: initialPool, isAdmin, cu
                                   onClick={() => setUserActionMode('menu')}>返回</Button>
                                 <Button size="sm" className="flex-1 h-6 text-xs bg-orange-600 hover:bg-orange-700"
                                   disabled={submittingUserAction}
-                                  onClick={() => submitUserAction('cancel_order', o.id)}>
+                                  onClick={() => submitUserAction('cancel_order', o)}>
                                   {submittingUserAction ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <RotateCcw className="w-3 h-3 mr-1" />}
                                   确认取消
                                 </Button>

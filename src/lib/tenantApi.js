@@ -31,8 +31,10 @@ export async function updateTenantOrder(url, payload) {
     const res = await base44.functions.invoke(url, payload);
 
     return res;
-  } catch(e) {
-    throw new Error(e);
+  } catch(err) {
+    let message = err?.message || err?.response?.data?.message;
+    toast(`更新失败: ${message}`);
+    throw new Error(err);
   }
 }
 

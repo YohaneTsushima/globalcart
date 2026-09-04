@@ -25,15 +25,32 @@ import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { toast } from "sonner";
 
 /**
- * @param {object}   order
+ * @param {string}   orderId
  * @param {"prepay"|"supplement"|"shipping"} mode
  * @param {function} onClose
  * @param {function} onSuccess
  */
-export default function PaymentModal({ order, mode = "prepay", onClose, onSuccess }) {
+export default function PaymentModal({ orderId, mode = "prepay", onClose, onSuccess }) {
   const navigate = useNavigate();
   const { can } = usePermissions();
   const { user } = useCurrentUser();
+
+  const [order, setOrder] = useState(null);
+  const [orderLoading, setOrderLoading] = useState(true);
+
+  useEffect(() => {
+    if (!orderId) return;
+    let cancelled = false;
+    base44.functions.invoke('order/info/orderDetail', { id: orderId })
+      .then(res => {
+        if (!cancelled) {
+          setOrder(res?.data || null);
+          setOrderLoading(false);
+        }
+      })
+      .catch(() => { if (!cancelled) { setOrder(null); setOrderLoading(false); } });
+    return () => { cancelled = true; };
+  }, [orderId]);
   
   // Check payment permissions based on mode
   const canPayment = mode === "shipping" ? true : can("payment:self_pay") || can("payment:manual_pay");
@@ -42,17 +59,17 @@ export default function PaymentModal({ order, mode = "prepay", onClose, onSucces
   const isShipping = mode === "shipping";
 
   const rawAmount = isSupp
-    ? order.supplement_amount
+    ? order?.supplement_amount
     : isShipping
-    ? order.shipping_fee_amount
+    ? order?.shipping_fee_amount
     : mode === 'prepay'
     ? order?.prepayment_amount_jpy
     : order?.full_payment_amount;
 
-  let cur = isShipping ? (order.shipping_fee_currency || "CNY") : (order.prepayment_currency || order.payment_currency || "JPY");
+  let cur = isShipping ? (order?.shipping_fee_currency || "CNY") : (order?.prepayment_currency || order?.payment_currency || "JPY");
 
   // For shipping: combine shipping fee + item size fee
-  const itemSizeFee = isShipping && order.item_size_extra_fee > 0 ? order.item_size_extra_fee : 0;
+  const itemSizeFee = isShipping && order?.item_size_extra_fee > 0 ? order.item_size_extra_fee : 0;
 
   // JPY and CNY amounts round to nearest integer
   const roundAmount = (val, currency) => {
@@ -69,12 +86,12 @@ export default function PaymentModal({ order, mode = "prepay", onClose, onSucces
   const amountLabel = cur === "JPY"
     ? `${title}金额：${Math.round(defaultAmount).toLocaleString()} yen`
     : cur === "CNY"
-    ? `${title}金额：${Math.round(defaultAmount)} yuan`
+    ? `${title}金额：${Math.round(defaultAmount)} yen`
     : `${title}金额：${cur} ${Math.round(defaultAmount)}`;
 
   const [methodId, setMethodId] = useState("");
   const [selectedMethodMeta, setSelectedMethodMeta] = useState(null); // { value, label, payment_note, image_url, payment_currency }
-  const [paidAmount, setPaidAmount] = useState(String(defaultAmount));
+  const [paidAmount, setPaidAmount] = useState("0");
   const [rates, setRates] = useState(null);
   const [platformRates, setPlatformRates] = useState(null);
   const [tenantRates, setTenantRates] = useState(null);
@@ -83,7 +100,15 @@ export default function PaymentModal({ order, mode = "prepay", onClose, onSucces
   const [snapshotRate, setSnapshotRate] = useState(null); // { payCurrency, rate } when non-JPY method selected
   // Surcharge from backend (computed per selected payment method)
   const [surchargeJpy, setSurchargeJpy] = useState(0);
-  const [finalAmountJpy, setFinalAmountJpy] = useState(defaultAmount);
+  const [finalAmountJpy, setFinalAmountJpy] = useState(0);
+
+  // order 加载完成后初始化金额
+  useEffect(() => {
+    if (order) {
+      setPaidAmount(String(defaultAmount));
+      setFinalAmountJpy(defaultAmount);
+    }
+  }, [order]);
 
   // Fetch exchange rates once on mount
   // useEffect(() => {
@@ -171,7 +196,7 @@ export default function PaymentModal({ order, mode = "prepay", onClose, onSucces
     if (rateValue) {
       const converted = defaultAmount * rateValue;
       const decimals = ["TWD", "HKD", "CNY"].includes(payCurrency) ? 2 : 2;
-      convertedAmount = converted.toFixed(decimals);
+      convertedAmount = parseFloat(converted.toFixed(decimals)).toString();
       convertedDisplay = `${payCurrency} ${parseFloat(convertedAmount).toLocaleString(undefined, { minimumFractionDigits: decimals, maximumFractionDigits: decimals })}`;
     }
   }
@@ -207,8 +232,8 @@ export default function PaymentModal({ order, mode = "prepay", onClose, onSucces
   const handleGenerateAlipay = async () => {
     setGenerating(true);
     const subject = isShipping
-      ? `${user.displayName || user?.display_name}-运费 - ${order.product_name}`
-      : `${user.displayName || user?.display_name}-代购 - ${order.product_name}`;
+      ? `${user.displayName || user?.display_name}-运费 - ${order?.product_name}`
+      : `${user.displayName || user?.display_name}-代购 - ${order?.product_name}`;
 
     // For prepay, use finalAmountJpy (includes surcharge); for shipping/supplement use paidAmount as-is
     const amountJpy = (!isShipping && !isSupp && surchargeJpy > 0) ? finalAmountJpy : parseFloat(paidAmount);
@@ -235,7 +260,7 @@ export default function PaymentModal({ order, mode = "prepay", onClose, onSucces
     }
 
     const payParam = {
-      orderId: order.id,
+      orderId: order?.id,
       // amount: 0.1,
       currency: currencyToSend,
       subject,
@@ -311,14 +336,14 @@ export default function PaymentModal({ order, mode = "prepay", onClose, onSucces
     } else if (isSupp) {
       updates.order_status = "paid";
       updates.supplement_requested = false;
-      updates.paid_amount = (order.paid_amount || 0) + parseFloat(currentPaidAmount);
+      updates.paid_amount = (order?.paid_amount || 0) + parseFloat(currentPaidAmount);
       Object.assign(updates, buildActualCurrencyUpdates(currentPaidAmount));
     } else {
       updates.order_status = "paid";
-      updates.paid_amount = (order.paid_amount || 0) + parseFloat(currentPaidAmount);
+      updates.paid_amount = (order?.paid_amount || 0) + parseFloat(currentPaidAmount);
       Object.assign(updates, buildActualCurrencyUpdates(currentPaidAmount));
     }
-    await updateOrder(order.id, updates);
+    await updateOrder(order?.id, updates);
     onSuccess?.();
   };
 
@@ -331,16 +356,16 @@ export default function PaymentModal({ order, mode = "prepay", onClose, onSucces
       
       // TODO: 触发更新状态的方法
       let payload = {
-        id: order.id,
+        id: order?.id,
         data: {
-          order_id: order.id,
+          order_id: order?.id,
           payment_proof_url: file_url,
           method: selectedMethodMeta
         }
       };
 
       await base44.functions.invoke('order/info/updateProofUrlOrder', payload);
-      toast.success(`订单 [${order.order_number}] 的支付凭证上传成功！`);
+      toast.success(`订单 [${order?.order_number}] 的支付凭证上传成功！`);
       setTimeout(() =>  onSuccess?.(), 2000);
       // onSuccess?.();
     } catch (err) {
@@ -356,6 +381,19 @@ export default function PaymentModal({ order, mode = "prepay", onClose, onSucces
     <>
     <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={e => { if (e.target === e.currentTarget && !uploading && !alipayPaying) onClose(); }}>
       <div className="bg-white rounded-xl shadow-xl w-full max-w-lg relative" onMouseDown={e => e.stopPropagation()}>
+        {orderLoading && (
+          <div className="absolute inset-0 bg-white rounded-xl z-10 flex flex-col items-center justify-center gap-3">
+            <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
+            <p className="text-sm text-gray-600">加载订单中...</p>
+          </div>
+        )}
+        {!orderLoading && !order && (
+          <div className="px-5 py-16 text-center">
+            <p className="text-sm text-gray-500">订单不存在</p>
+            <Button variant="outline" size="sm" className="mt-4" onClick={onClose}>关闭</Button>
+          </div>
+        )}
+        {order && (<>
         {uploading && (
           <div className="absolute inset-0 bg-white/80 backdrop-blur-sm rounded-xl z-10 flex flex-col items-center justify-center gap-3">
             <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
@@ -374,7 +412,7 @@ export default function PaymentModal({ order, mode = "prepay", onClose, onSucces
         <div className="flex items-center justify-between px-5 py-4 border-b">
           <div>
             <h2 className="font-semibold text-gray-900">{title}</h2>
-            <p className="text-xs text-gray-400 mt-0.5">{order.product_name} · {order.order_number}</p>
+            <p className="text-xs text-gray-400 mt-0.5">{order?.product_name} · {order?.order_number}</p>
           </div>
           <button onClick={onClose}><X className="w-4 h-4 text-gray-500" /></button>
         </div>
@@ -437,13 +475,13 @@ export default function PaymentModal({ order, mode = "prepay", onClose, onSucces
                <p className="text-xs text-purple-600 font-medium">费用明细</p>
                <div className="flex items-center justify-between text-xs">
                  <span className="text-gray-600">运费：</span>
-                 <span className="font-medium text-gray-800">{cur} {order.shipping_fee_amount}</span>
-               </div>
-               <div className="flex items-center justify-between text-xs border-t border-purple-100 pt-1">
-                 <span className="text-gray-600">物品尺寸费：</span>
-                 <span className="font-medium text-purple-700">{order.item_size_fee_currency} {itemSizeFee}</span>
-               </div>
-               {order.item_size_title && (
+                  <span className="font-medium text-gray-800">{cur} {order?.shipping_fee_amount}</span>
+                </div>
+                <div className="flex items-center justify-between text-xs border-t border-purple-100 pt-1">
+                  <span className="text-gray-600">物品尺寸费：</span>
+                  <span className="font-medium text-purple-700">{order?.item_size_fee_currency} {itemSizeFee}</span>
+                </div>
+                {order?.item_size_title && (
                  <div className="text-xs text-gray-500 pt-1 border-t border-purple-100">
                    {order.item_size_title}
                  </div>
@@ -535,6 +573,8 @@ export default function PaymentModal({ order, mode = "prepay", onClose, onSucces
         <div className="px-5 py-3 border-t flex gap-2 justify-end">
           <Button variant="outline" size="sm" onClick={onClose} disabled={submitting}>取消</Button>
         </div>
+        </>
+        )}
       </div>
     </div>
 

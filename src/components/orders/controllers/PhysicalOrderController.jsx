@@ -83,7 +83,7 @@ export const PhysicalOrderController = {
       }
       case "user_name": {
         const profile = userAvatars?.[order.user_email] || {};
-        const avatarUrl = profile.avatar_url || null;
+        const avatarUrl = profile.avatar || order?.avatar || null;
         const displayName = profile.display_name || order.user_name || order.user_email || "?";
         return (
           <div className="flex items-center gap-2 min-w-0">
@@ -450,10 +450,11 @@ export const PhysicalOrderController = {
    * 获取分组头像 URL
    */
   getGroupAvatarUrl: (groupKey, groupOrders, groupBy, userProfileMap) => {
+    debugger
     if (groupBy === "user_name") {
       const groupUserEmail = groupOrders[0]?.user_email;
       const groupUserProfile = groupUserEmail ? (userProfileMap[groupUserEmail] || {}) : null;
-      return groupUserProfile?.avatar_url || null;
+      return groupUserProfile?.avatar || null;
     }
     return null;
   },

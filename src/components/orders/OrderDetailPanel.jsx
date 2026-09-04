@@ -364,10 +364,10 @@ export default function OrderDetailPanel({ orderId, onClose, onRefresh, currentU
                         <span className="text-[10px] text-gray-400">购买截图</span>
                       </div>
                     )}
-                    {order.arrival_photo_url && (
+                    {order.storage_image && (
                       <div className="flex flex-col items-center gap-1">
-                        <ImageWithViewer src={order.arrival_photo_url} alt="到货图片">
-                          <img src={order.arrival_photo_url} alt="到货图片" 
+                        <ImageWithViewer src={order.storage_image} alt="到货图片">
+                          <img src={order.storage_image} alt="到货图片" 
                             className="w-full h-24 rounded-lg border object-cover cursor-pointer hover:opacity-80 transition-opacity" />
                         </ImageWithViewer>
                         <span className="text-[10px] text-gray-400">到货图片</span>
@@ -762,7 +762,6 @@ export default function OrderDetailPanel({ orderId, onClose, onRefresh, currentU
                           + (poolFees.packing_fee || 0)
                         ) : (
                           (order.shipping_fee_amount || 0)
-                          + (order.item_size_extra_fee || 0)
                         ))
                     ).toLocaleString()} JPY
                   </span>

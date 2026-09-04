@@ -37,7 +37,7 @@ export default function ShippingEditModal({ order, currentPool, currentUser, onC
     let cancelled = false;
 
     Promise.allSettled([
-      shippingPoolApi.one(currentPool.id),
+      shippingPoolApi.one(currentPool.pool_id),
       fetchShippingPools()
     ]).then(([poolResult, poolsResult]) => {
       if (!cancelled) {
@@ -109,7 +109,7 @@ export default function ShippingEditModal({ order, currentPool, currentUser, onC
     const res = await base44.functions.invoke('mutateTenantEntity/ShippingEditRequest/update', {
       entity: 'ShippingPool',
       action: 'update',
-      id: currentPool.id,
+      id: currentPool.pool_id,
       data: param
     });
 
@@ -123,7 +123,7 @@ export default function ShippingEditModal({ order, currentPool, currentUser, onC
     const res = await base44.functions.invoke(url, {
       entity: 'ShippingPool',
       action: 'update',
-      id: currentPool.id,
+      id: currentPool.pool_id,
       data: param
     });
 
@@ -166,19 +166,19 @@ export default function ShippingEditModal({ order, currentPool, currentUser, onC
     const orderInfo = {
       id: order.id,
       order_number: order.order_number,
-      consolidation_pool_id: currentPool.id
+      consolidation_pool_id: currentPool.pool_id
     }
     
     const edit_request = {
       order_id: order.id,
-      pool_id: currentPool.id, 
+      pool_id: currentPool.pool_id, 
       user_email: currentUser.email,
       target_pool_id: targetPoolId,
       user_note: userNote, 
     }
 
     const source_shipping_pool = {
-      id: currentPool.id,
+      id: currentPool.pool_id,
       order_ids: updatedIds,
       pool_code: poolData.pool_code
     }
@@ -198,8 +198,6 @@ export default function ShippingEditModal({ order, currentPool, currentUser, onC
     };
     //
 
-    console.log(handleUpdateParams)
-
     const handleRes = await handleEditRequest(url, handleUpdateParams);
     const errors = handleRes?.error?.errors;
     if(errors) {
@@ -218,7 +216,7 @@ export default function ShippingEditModal({ order, currentPool, currentUser, onC
       if (editType === "cancel_shipment") {
         updatedIds = (poolData.order_ids || []).filter(id => id !== order.id);
         // await Promise.all([
-        //   shippingPoolApi.update(currentPool.id, {
+        //   shippingPoolApi.update(currentPool.pool_id, {
         //     order_ids: updatedIds,
         //     total_weight_g: Math.max(0, (currentPool.total_weight_g || 0) - (order.weight_g || 0)),
         //   }),
@@ -230,7 +228,7 @@ export default function ShippingEditModal({ order, currentPool, currentUser, onC
         updatedIds = [...new Set([...(targetPool.order_ids || []), order.id])];
         status = '';
         // await Promise.all([
-        //   shippingPoolApi.update(currentPool.id, {
+        //   shippingPoolApi.update(currentPool.pool_id, {
         //     order_ids: (currentPool.order_ids || []).filter(id => id !== order.id),
         //     total_weight_g: Math.max(0, (currentPool.total_weight_g || 0) - w),
         //   }),
@@ -244,7 +242,7 @@ export default function ShippingEditModal({ order, currentPool, currentUser, onC
 
       editRequest = {
         order_id: order.id, 
-        pool_id: currentPool.id, 
+        pool_id: currentPool.pool_id, 
         user_email: currentUser.email,
         edit_type: editType, 
         target_pool_id: editType === "move_pool" ? targetPoolId : "",
@@ -254,7 +252,7 @@ export default function ShippingEditModal({ order, currentPool, currentUser, onC
       }
 
       // await tenantEntity.create('ShippingEditRequest', {
-      //   order_id: order.id, pool_id: currentPool.id, user_email: currentUser.email,
+      //   order_id: order.id, pool_id: currentPool.pool_id, user_email: currentUser.email,
       //   edit_type: editType, target_pool_id: editType === "move_pool" ? targetPoolId : "",
       //   user_note: userNote, status: "auto_applied", is_instant: true,
       // });
@@ -274,7 +272,7 @@ export default function ShippingEditModal({ order, currentPool, currentUser, onC
 
       try {
         await tenantEntity.create('ShippingEditRequest', {
-          order_id: order.id, pool_id: currentPool.id, user_email: currentUser.email,
+          order_id: order.id, pool_id: currentPool.pool_id, user_email: currentUser.email,
           edit_type: editType, target_pool_id: editType === "move_pool" ? targetPoolId : "",
           user_note: userNote, status: "pending", is_instant: false,notice_key: 'order_request_edit_created'
         });
@@ -360,7 +358,7 @@ export default function ShippingEditModal({ order, currentPool, currentUser, onC
           {poolData && (
             <div className="bg-gray-50 rounded-lg px-3 py-2.5 text-xs text-gray-600 space-y-0.5">
               <p className="text-gray-400">当前发货申请</p>
-              <p className="font-medium text-gray-800 font-mono">{poolData.pool_code || currentPool.id.slice(-6).toUpperCase()}</p>
+              <p className="font-medium text-gray-800 font-mono">{poolData.pool_code || currentPool.pool_id.slice(-6).toUpperCase()}</p>
               {poolData.transit_location_name && <p>中转地：{poolData.transit_location_name}</p>}
               {poolData.shipping_method && <p>运输方式：{poolData.shipping_method}</p>}
             </div>

@@ -4,7 +4,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Package, Ticket } from "lucide-react";
 import AdminTicketOrders from "@/pages/AdminTicketOrders";
 import { orderRegistry } from "@/lib/orderRegistry";
-import { Search, RefreshCw, Filter, ChevronUp, ChevronDown, ChevronsUpDown, Trash2, AlertCircle, Layers, Send, LayoutList, Archive, ArchiveRestore, Scissors, X, Loader2 } from "lucide-react";
+import { Search, RefreshCw, Filter, ChevronUp, ChevronDown, ChevronsUpDown, Trash2, AlertCircle, Layers, Send, LayoutList, Archive, ArchiveRestore, Scissors, X, Loader2, Truck, ShoppingCart, CreditCard, PackageCheck, CheckCircle, ClipboardCheck } from "lucide-react";
 import DateRangeFilter from "@/components/orders/DateRangeFilter";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -72,6 +72,7 @@ export default function AdminOrders() {
   const [selectedIds, setSelectedIds] = useState([]);
   const [bulkStatus, setBulkStatus] = useState("");
   const [bulkUpdating, setBulkUpdating] = useState(false);
+  const [bulkActionLabel, setBulkActionLabel] = useState("");
   const [columns, setColumns] = useState(() => physicalController.loadColumns());
 
   const [sortKey, setSortKey] = useState(null);
@@ -252,16 +253,32 @@ export default function AdminOrders() {
   const filtered = orders;
   const visibleCols = columns.filter(c => c.visible);
 
-  const toggleSelect = (id) => {
-    setSelectedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  const toggleSelect = (id, orderNumber) => {
+    setSelectedIds(prev => {
+      const exists = prev.some(item => item.id === id);
+      if (exists) {
+        return prev.filter(item => item.id !== id);
+      } else {
+        return [...prev, { id: id, order_number: orderNumber }];
+      }
+    });
   };
 
   const toggleAll = () => {
-    if (selectedIds.length === orders.length) setSelectedIds([]);
-    else setSelectedIds(orders.map(o => o.id));
+    const eligible = orders.filter(o => o.order_status !== "shipped" && o.order_status !== "cancelled" && o.order_status !== "payment_pending");
+    const allSelected = eligible.length > 0 && eligible.every(o => selectedIds.some(item => item.id === o.id));
+    if (allSelected) {
+      setSelectedIds([]);
+    } else {
+      setSelectedIds(eligible.map(o => ({ id: o.id, order_number: o.order_number })));
+    }
   };
 
   const handleBulkUpdate = async () => {
+
+    toast.error('避免业务逻辑异常，该功能暂停使用');
+    return;
+
     if (!bulkStatus || selectedIds.length === 0) return;
     setBulkUpdating(true);
     // await Promise.all(selectedIds.map(id =>
@@ -292,29 +309,72 @@ export default function AdminOrders() {
   };
 
   // Bulk quick actions: compute shared status of selected orders
-  const selectedOrders = orders.filter(o => selectedIds.includes(o.id));
+  const selectedOrders = orders.filter(o => selectedIds.some(selected => selected.id === o.id));
   const uniqueSelectedStatuses = [...new Set(selectedOrders.map(o => o.order_status))];
   const sharedStatus = uniqueSelectedStatuses.length === 1 ? uniqueSelectedStatuses[0] : null;
 
-  const handleBulkQuickOrdered = async () => {
+  // 批量操作包装函数
+  const withBulkLabel = async (label, fn) => {
+    setBulkActionLabel(label);
     setBulkUpdating(true);
-    await Promise.all(selectedIds.map(id =>
-      base44.functions.invoke('updateTenantOrder', { order_id: id, order_status: "purchased", purchased_date: new Date().toISOString().split("T")[0] })
-    ));
-    setBulkUpdating(false);
-    setSelectedIds([]);
-    fetchOrders();
+    try {
+      await fn();
+    } finally {
+      setBulkUpdating(false);
+      setBulkActionLabel("");
+    }
   };
 
-  const handleBulkInWarehouse = async () => {
-    setBulkUpdating(true);
-    await Promise.all(selectedIds.map(id =>
-      base44.functions.invoke('updateTenantOrder', { order_id: id, order_status: "in_warehouse", storage_time: new Date().toISOString().split("T")[0] })
-    ));
-    setBulkUpdating(false);
-    setSelectedIds([]);
-    fetchOrders();
-  };
+  // 按状态分组的订单（用于分色批量操作条）
+  const pendingPurchaseOrders = orders.filter(o => ["paid", "pending_purchase"].includes(o.order_status));
+  const awaitingConfirmOrders = orders.filter(o => o.order_status === "awaiting_payment_confirmation");
+  const purchasedOrders = orders.filter(o => o.order_status === "purchased");
+  const inWarehouseOrders = orders.filter(o => o.order_status === "in_warehouse");
+  const readyToShipOrders = orders.filter(o => o.order_status === "ready_to_ship");
+  const shippedOrders = orders.filter(o => o.order_status === "shipped");
+  const deliveredOrders = canArchiveOrder ? orders.filter(o => o.order_status === "delivered" && !o.is_archived) : [];
+
+  const selectedPendingPurchase = pendingPurchaseOrders.filter(o => selectedIds.some(item => item.id === o.id));
+  const selectedAwaitingConfirm = awaitingConfirmOrders.filter(o => selectedIds.some(item => item.id === o.id));
+  const selectedPurchased = purchasedOrders.filter(o => selectedIds.some(item => item.id === o.id));
+  const selectedInWarehouse = inWarehouseOrders.filter(o => selectedIds.some(item => item.id === o.id));
+  const selectedReadyToShip = readyToShipOrders.filter(o => selectedIds.some(item => item.id === o.id));
+  const selectedShipped = shippedOrders.filter(o => selectedIds.some(item => item.id === o.id));
+  const selectedDelivered = deliveredOrders.filter(o => selectedIds.some(item => item.id === o.id));
+
+  // 可勾选的订单（排除 shipped、cancelled 和 payment_pending）
+  const selectableOrders = orders.filter(o => o.order_status !== "shipped" && o.order_status !== "cancelled" && o.order_status !== "payment_pending");
+
+  // 批量操作公共函数
+  const handleBulkAction = (label, url, toastMsg, sourceList) =>
+    withBulkLabel(label, async () => {
+      if (sourceList.length === 0) return;
+      const payload = sourceList.map(o => ({
+        id: o.id,
+        data: { order_number: o.order_number }
+      }));
+      const res = await updateTenantOrder(url, payload);
+      const innerCode = res?.data?.code;
+      if (innerCode === 200) {
+        toast.success(toastMsg);
+      } else {
+        const errors = res?.data?.errorInfo?.errors || [];
+        if (errors.length > 0) {
+          setBulkErrors(errors.map(e => e.errorMessage));
+          setShowBulkErrors(true);
+        } else {
+          toast.error(res?.data?.message || "操作失败");
+        }
+      }
+      setSelectedIds([]);
+      fetchOrders();
+    });
+
+  const handleBulkQuickOrdered = () => handleBulkAction("正在标记已下单...", "order/info/handleMarkPurchased", "批量标记已下单成功", selectedPendingPurchase);
+  const handleBulkInWarehouse  = () => handleBulkAction("正在入库...",       "order/info/handleMarkInWarehouse", "批量入库成功",       selectedPurchased);
+  const handleBulkReadyToShip  = () => handleBulkAction("正在设置待发货...", "order/info/forceUpdate",          "批量待发货成功",     selectedInWarehouse);
+  const handleBulkShip         = () => handleBulkAction("正在发货...",       "order/info/forceUpdate",          "批量发货成功",       selectedReadyToShip);
+  const handleBulkArchive      = () => handleBulkAction("正在存档...",       "order/info/forceUpdate",          "批量存档成功",       selectedDelivered);
 
   const handleStatusClick = (order) => {
     // Quick link jump for simple pending_purchase orders
@@ -360,59 +420,34 @@ export default function AdminOrders() {
   const handleConfirmPaid = async (order) => {
 
     let payload = [{
-      id: order.id
+      id: order.id,
+      data: {
+        order_number: order.order_number
+      }
+      
     }];
 
     // await base44.functions.invoke('order/info/confirmProof', payload);
-    await updateTenantOrder('order/info/confirmProof', payload);
+    const res = await updateTenantOrder('order/info/confirmProof', payload);
+    const innerCode = res?.data?.code;
+
+    if (innerCode === 200) {
+      toast.success(`订单 [${order.order_number}] 付费确认成功`);
+    } else {
+      const errors = res?.data?.errorInfo?.errors || [];
+      if (errors.length > 0) {
+        setBulkErrors(errors.map(e => e.errorMessage));
+        setShowBulkErrors(true);
+      } else {
+        toast.error(res?.data?.message || "操作失败");
+      }
+    }
+
     fetchOrders();
   };
 
-  const builkMarkPurchased = async () => {
-   
-    const payload = selectedIds.map(i => { return { id: i }; });
-   
-    // const res = await base44.functions.invoke('order/info/handleMarkPurchased', payload);
-    const res = await updateTenantOrder('order/info/handleMarkPurchased', payload)
-
-    const innerCode = res?.data?.code;
-    if (innerCode === 200) {
-      toast.success("批量已下单成功");
-    } else {
-      const errors = res?.data?.errorInfo?.errors || [];
-      if (errors.length > 0) {
-        setBulkErrors(errors.map(e => e.errorMessage));
-        setShowBulkErrors(true);
-      } else {
-        toast.error(res?.data?.message || "操作失败");
-      }
-    }
-
-    fetchOrders();
-
-  }
-
-  const builkConfirmPaid = async () => {
-
-    const payload = selectedIds.map(i => { return { id: i }; });
-   
-    // const res = await base44.functions.invoke('order/info/confirmProof', payload);
-    const res = await updateTenantOrder('order/info/confirmProof', payload);
-
-    const innerCode = res?.data?.code;
-    if (innerCode === 200) {
-      toast.success("确认收款成功");
-    } else {
-      const errors = res?.data?.errorInfo?.errors || [];
-      if (errors.length > 0) {
-        setBulkErrors(errors.map(e => e.errorMessage));
-        setShowBulkErrors(true);
-      } else {
-        toast.error(res?.data?.message || "操作失败");
-      }
-    }
-    fetchOrders();
-  }
+  const bulkMarkInWarehouse = () => handleBulkAction("正在入库...", "order/info/handleMarkPurchased", "批量入库成功", selectedPurchased);
+  const bulkconfirmProof  = () => handleBulkAction("正在确认收款...", "order/info/confirmProof",       "批量确认收款成功", selectedAwaitingConfirm);
 
   // Find the shipping pool for a notified_shipment order
   const getOrderPool = (order) => {
@@ -455,7 +490,7 @@ export default function AdminOrders() {
       </div>
 
       {/* Filters — full width, search flexes, others fixed */}
-      <div className="flex flex-wrap gap-2 items-center w-full">
+      <div className={`flex flex-wrap gap-2 items-center w-full transition-opacity ${bulkUpdating ? "pointer-events-none opacity-50" : ""}`}>
         {/* 搜索框 - 灵活适配 */}
         <div className="relative flex-1 min-w-[180px]">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
@@ -550,9 +585,9 @@ export default function AdminOrders() {
         </Select>
 
         {/* 清除筛选 - 固定宽度 */}
-        {(statusFilter !== "all" || storeTagFilter !== "all" || weightFilter !== "all" || itemSizeFilter !== "all" || replyFilter !== "all" || dateRangeFilter) && (
+        {(search || statusFilter !== "all" || storeTagFilter !== "all" || weightFilter !== "all" || itemSizeFilter !== "all" || replyFilter !== "all" || dateRangeFilter) && (
           <button
-            onClick={() => { setStatusFilter("all"); setStoreTagFilter("all"); setWeightFilter("all"); setItemSizeFilter("all"); setReplyFilter("all"); setDateRangeFilter(null); setSelectedIds([]); }}
+            onClick={() => { setSearch(""); setStatusFilter("all"); setStoreTagFilter("all"); setWeightFilter("all"); setItemSizeFilter("all"); setReplyFilter("all"); setDateRangeFilter(null); setSelectedIds([]); }}
             className="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600 h-8 px-1 shrink-0"
           >
             <X className="w-3 h-3" />清除
@@ -560,43 +595,84 @@ export default function AdminOrders() {
         )}
       </div>
 
-      {/* Bulk actions */}
-      {selectedIds.length > 0 && (
-        <div className="flex flex-wrap items-center gap-2 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 sticky top-14 z-30 shadow-md">
-          <span className="text-sm text-blue-700 font-medium shrink-0">已选 {selectedIds.length} 条</span>
+      {/* Bulk actions — 分状态彩色条 */}
+      {selectedPendingPurchase.length > 0 && (
+        <div className="flex items-center gap-3 bg-purple-50 border border-purple-200 rounded-xl px-4 py-2.5">
+          <ShoppingCart className="w-4 h-4 text-purple-500 shrink-0" />
+          <span className="text-sm text-purple-700 font-medium">已选 {selectedPendingPurchase.length} 条待下单订单</span>
+          <Button size="sm" className="h-7 text-xs bg-purple-600 hover:bg-purple-700 ml-auto"
+            onClick={handleBulkQuickOrdered} disabled={bulkUpdating}>
+            {bulkUpdating ? "处理中..." : "一键标记已下单"}
+          </Button>
+          <Button size="sm" variant="ghost" className="h-7 text-xs" disabled={bulkUpdating} onClick={() => setSelectedIds([])}>取消</Button>
+        </div>
+      )}
+      {selectedAwaitingConfirm.length > 0 && (
+        <div className="flex items-center gap-3 bg-red-50 border border-red-200 rounded-xl px-4 py-2.5">
+          <CreditCard className="w-4 h-4 text-red-500 shrink-0" />
+          <span className="text-sm text-red-700 font-medium">已选 {selectedAwaitingConfirm.length} 条待确认收款订单</span>
+          <Button size="sm" className="h-7 text-xs bg-red-600 hover:bg-red-700 ml-auto"
+            onClick={bulkconfirmProof} disabled={bulkUpdating}>
+            {bulkUpdating ? "处理中..." : "一键确认收款"}
+          </Button>
+          <Button size="sm" variant="ghost" className="h-7 text-xs" disabled={bulkUpdating} onClick={() => setSelectedIds([])}>取消</Button>
+        </div>
+      )}
+      {selectedPurchased.length > 0 && (
+        <div className="flex items-center gap-3 bg-orange-50 border border-orange-200 rounded-xl px-4 py-2.5">
+          <PackageCheck className="w-4 h-4 text-orange-500 shrink-0" />
+          <span className="text-sm text-orange-700 font-medium">已选 {selectedPurchased.length} 条已下单订单</span>
+          <Button size="sm" className="h-7 text-xs bg-orange-600 hover:bg-orange-700 ml-auto"
+            onClick={handleBulkInWarehouse} disabled={bulkUpdating}>
+            {bulkUpdating ? "处理中..." : "一键入库"}
+          </Button>
+          <Button size="sm" variant="ghost" className="h-7 text-xs" disabled={bulkUpdating} onClick={() => setSelectedIds([])}>取消</Button>
+        </div>
+      )}
+      {selectedInWarehouse.length > 0 && (
+        <div className="flex items-center gap-3 bg-teal-50 border border-teal-200 rounded-xl px-4 py-2.5">
+          <ClipboardCheck className="w-4 h-4 text-teal-500 shrink-0" />
+          <span className="text-sm text-teal-700 font-medium">已选 {selectedInWarehouse.length} 条已入库订单</span>
+          <Button size="sm" className="h-7 text-xs bg-teal-600 hover:bg-teal-700 ml-auto"
+            onClick={handleBulkReadyToShip} disabled={bulkUpdating}>
+            {bulkUpdating ? "处理中..." : "一键待发货"}
+          </Button>
+          <Button size="sm" variant="ghost" className="h-7 text-xs" disabled={bulkUpdating} onClick={() => setSelectedIds([])}>取消</Button>
+        </div>
+      )}
+      {selectedReadyToShip.length > 0 && (
+        <div className="flex items-center gap-3 bg-blue-50 border border-blue-200 rounded-xl px-4 py-2.5">
+          <Truck className="w-4 h-4 text-blue-500 shrink-0" />
+          <span className="text-sm text-blue-700 font-medium">已选 {selectedReadyToShip.length} 条待发货订单</span>
+          <Button size="sm" className="h-7 text-xs bg-blue-600 hover:bg-blue-700 ml-auto"
+            onClick={handleBulkShip} disabled={bulkUpdating}>
+            {bulkUpdating ? "处理中..." : "一键发货"}
+          </Button>
+          <Button size="sm" variant="ghost" className="h-7 text-xs" disabled={bulkUpdating} onClick={() => setSelectedIds([])}>取消</Button>
+        </div>
+      )}
+      {selectedDelivered.length > 0 && canArchiveOrder && (
+        <div className="flex items-center gap-3 bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5">
+          <Archive className="w-4 h-4 text-gray-500 shrink-0" />
+          <span className="text-sm text-gray-700 font-medium">已选 {selectedDelivered.length} 条已收货订单</span>
+          <Button size="sm" className="h-7 text-xs bg-gray-600 hover:bg-gray-700 ml-auto"
+            onClick={handleBulkArchive} disabled={bulkUpdating}>
+            {bulkUpdating ? "处理中..." : "批量存档"}
+          </Button>
+          <Button size="sm" variant="ghost" className="h-7 text-xs" disabled={bulkUpdating} onClick={() => setSelectedIds([])}>取消</Button>
+        </div>
+      )}
 
-          {/* Context-aware quick actions when all selected share the same status */}
-          {(() => {
-            const bulkActions = physicalController.getBulkActions(selectedOrders, sharedStatus, {
-              awaiting_payment_confirmation: builkConfirmPaid,
-              quick_ordered: builkMarkPurchased,
-              purchased: '',
-            });
-            return bulkActions.length > 0 ? (
-              <div className="flex items-center gap-1.5 border-r border-blue-200 pr-2 mr-1">
-                <span className="text-xs text-blue-500 shrink-0">快捷操作：</span>
-                {bulkActions.map(action => (
-                  <Button key={action.key} size="sm" className={`h-7 text-xs ${action.color}`}
-                    onClick={async () => {
-                      setBulkUpdating(true);
-                      if (action.handler) {
-                        await action.handler(selectedIds);
-                      } else {
-                        await Promise.all(selectedIds.map(id =>
-                          base44.functions.invoke('updateTenantOrder', { order_id: id, ...action.updateData })
-                        ));
-                      }
-                      setBulkUpdating(false);
-                      setSelectedIds([]);
-                      fetchOrders();
-                    }} disabled={bulkUpdating}>
-                    {bulkUpdating ? "处理中..." : `${action.label}（${selectedIds.length} 条）`}
-                  </Button>
-                ))}
-              </div>
-            ) : null;
-          })()}
-
+      {/* 手动状态下拉兜底 — 仅当没有分状态条显示时 */}
+      {selectedIds.length > 0 &&
+        selectedPendingPurchase.length === 0 &&
+        selectedAwaitingConfirm.length === 0 &&
+        selectedPurchased.length === 0 &&
+        selectedInWarehouse.length === 0 &&
+        selectedReadyToShip.length === 0 &&
+        selectedDelivered.length === 0 && (
+        <div className="flex flex-wrap items-center gap-2 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 sticky top-14 z-30 shadow-md">
+          <span className="text-sm text-gray-700 font-medium shrink-0">已选 {selectedIds.length} 条</span>
           <Select value={bulkStatus} onValueChange={setBulkStatus}>
             <SelectTrigger className="h-7 text-xs w-40">
               <SelectValue placeholder="批量设置状态" />
@@ -619,9 +695,12 @@ export default function AdminOrders() {
           <thead>
             <tr className="bg-gray-50 border-b border-gray-200">
               <th className="w-8 px-3 py-2 text-left">
-                {groupBy === "none" ? (
-                  <Checkbox checked={orders.length > 0 && orders.every(o => selectedIds.includes(o.id))}
-                    onCheckedChange={toggleAll} />
+                {groupBy === "none" && selectableOrders.length > 0 ? (
+                  <Checkbox
+                    checked={
+                      selectableOrders.length > 0 &&
+                      selectableOrders.every(o => selectedIds.some(item => item.id === o.id))
+                    } onCheckedChange={toggleAll} />
                 ) : null}
               </th>
               {visibleCols.map(col => (
@@ -653,7 +732,9 @@ export default function AdminOrders() {
                 return (
                   <tr key={order.id} className={`hover:bg-gray-50 cursor-pointer ${pendingEdit ? "bg-orange-50/60" : ""}`} onClick={() => handleStatusClick(order)}>
                     <td className="px-3 py-3" onClick={e => e.stopPropagation()}>
-                      <Checkbox checked={selectedIds.includes(order.id)} onCheckedChange={() => toggleSelect(order.id)} />
+                      {order.order_status !== "shipped" && order.order_status !== "cancelled" && order.order_status !== "payment_pending" && (
+                        <Checkbox checked={selectedIds.some(item => item.id === order.id)} onCheckedChange={() => toggleSelect(order.id, order.order_number)} />
+                      )}
                     </td>
                     {visibleCols.map(col => (
                       <td key={col.key} className="px-3 py-3 max-w-[220px]">
@@ -814,17 +895,20 @@ export default function AdminOrders() {
                 return [
                   <tr key={`group-${groupKey}`} className="bg-gray-100 border-y border-gray-200">
                     <td className="px-3 py-2 w-8" onClick={e => e.stopPropagation()}>
-                      {!isCollapsed && (
-                        <Checkbox
-                          checked={groupOrders.length > 0 && groupOrders.every(o => selectedIds.includes(o.id))}
-                          onCheckedChange={() => {
-                            const ids = groupOrders.map(o => o.id);
-                            const allSelected = ids.every(id => selectedIds.includes(id));
-                            if (allSelected) setSelectedIds(prev => prev.filter(id => !ids.includes(id)));
-                            else setSelectedIds(prev => [...new Set([...prev, ...ids])]);
-                          }}
-                        />
-                      )}
+                      {!isCollapsed && (() => {
+                        const selectable = groupOrders.filter(o => o.order_status !== "shipped" && o.order_status !== "cancelled" && o.order_status !== "payment_pending");
+                        return selectable.length > 0 ? (
+                          <Checkbox
+                            checked={selectable.length > 0 && selectable.every(o => selectedIds.some(item => item.id === o.id))}
+                            onCheckedChange={() => {
+                              const ids = selectable.map(o => o.id);
+                              const allSelected = ids.every(id => selectedIds.some(item => item.id === id));
+                              if (allSelected) setSelectedIds(prev => prev.filter(item => !ids.includes(item.id)));
+                              else setSelectedIds(prev => [...new Set([...prev, ...selectable.map(o => ({ id: o.id, order_number: o.order_number }))])]);
+                            }}
+                          />
+                        ) : null;
+                      })()}
                     </td>
                     <td colSpan={visibleCols.length + 1} className="px-3 py-2">
                       <button
@@ -849,9 +933,9 @@ export default function AdminOrders() {
           </tbody>
         </table>
         {bulkUpdating && (
-          <div className="absolute inset-0 bg-white/60 flex items-center justify-center z-20">
-            <Loader2 className="w-5 h-5 text-blue-500 animate-spin mr-2" />
-            <span className="text-sm text-gray-500">更新中...</span>
+          <div className="absolute inset-0 bg-white/80 backdrop-blur-sm flex flex-col items-center justify-center z-20 rounded-xl">
+            <Loader2 className="w-6 h-6 text-blue-500 animate-spin mb-2" />
+            <span className="text-sm text-gray-600 font-medium">{bulkActionLabel || "处理中..."}</span>
           </div>
         )}
       </div>
@@ -860,8 +944,8 @@ export default function AdminOrders() {
         total={total}
         pageSize={pageSize}
         currentPage={currentPage}
-        onPageChange={setCurrentPage}
-        onPageSizeChange={(s) => { setPageSize(s); resetPage(); }}
+        onPageChange={(p) => { setCurrentPage(p); setSelectedIds([]); }}
+        onPageSizeChange={(s) => { setPageSize(s); resetPage(); setSelectedIds([]); }}
         className="mt-1"
       />
 
