@@ -4,7 +4,7 @@ import PaginationBar from "@/components/common/PaginationBar";
 import { base44 } from "@/api/base44Client";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 
-import { Package, RefreshCw, Search, CreditCard, Truck, CheckCircle, ChevronUp, ChevronDown, ChevronsUpDown, Send, Archive, ArchiveRestore, RotateCcw, Zap, MapPin, X, Loader2 } from "lucide-react";
+import { Package, RefreshCw, Search, CreditCard, Truck, CheckCircle, ChevronUp, ChevronDown, ChevronsUpDown, AlertCircle, Send, Archive, ArchiveRestore, RotateCcw, Zap, MapPin, X, Loader2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { usePermissions } from "@/hooks/usePermissions";
 import { Textarea } from "@/components/ui/textarea";
@@ -749,12 +749,24 @@ export default function MyOrders() {
                       </Button>
                     );
                   })()}
-                  {order.order_status === "in_warehouse" && canNotifyShipment && (
-                    <Button size="sm" className="h-7 text-xs bg-teal-600 hover:bg-teal-700"
-                      onClick={() => setShipmentOrder(order)}>
-                      <Truck className="w-3 h-3 mr-1" />通知发货
-                    </Button>
-                  )}
+                  {order.order_status === "in_warehouse" && canNotifyShipment && (() => {
+                    const editRequest = order.edit_request;
+                    const orderId = String(order.id);
+                    const hasPendingAdd = Array.isArray(editRequest) && editRequest.some(r => String(r.order_id) === orderId && r.status === 'pending' && r.edit_type === 'add_to_pool');
+                    if (hasPendingAdd) {
+                      return (
+                        <span className="inline-flex items-center gap-1 text-xs bg-orange-100 text-orange-700 border border-orange-300 px-1.5 py-0.5 rounded-full font-medium">
+                          <AlertCircle className="w-3 h-3" />等待管理员批准添加包裹出货
+                        </span>
+                      );
+                    }
+                    return (
+                      <Button size="sm" className="h-7 text-xs bg-teal-600 hover:bg-teal-700"
+                        onClick={() => setShipmentOrder(order)}>
+                        <Truck className="w-3 h-3 mr-1" />通知发货
+                      </Button>
+                    );
+                  })()}
                   {order.order_status === "in_storage" && (
                     <div className="flex flex-col gap-1 items-start">
                       <span className="inline-flex items-center gap-1 text-xs bg-indigo-100 text-indigo-700 border border-indigo-200 px-1.5 py-0.5 rounded-full font-medium">

@@ -180,6 +180,8 @@ export const shippingPoolApi = {
   moveOrder:                (id, data)  => mutate('ShippingPool', 'moveOrder', { id, data }).then(r => r?.data || r || []),
   fees:                     (id)        => mutate('ShippingPool', 'fees', { id }).then(r => r),
   shipped:                  (id, data)  => mutate('ShippingPool', 'handleShip', { id, data }).then(r => r),
+  returnOrder:              (id, data)  => mutate('ShippingPool', 'handleReturnOrder', { id, data }).then(r => r?.data || r || []),
+  addOrder:                 (id, data)  => mutate('ShippingPool', 'submitAddOrder', { id, data }).then(r => r?.data || r || []),
 };
 
 // ─── ShippingPool Edit Request shortcuts ───────────────────────────────────────────────────

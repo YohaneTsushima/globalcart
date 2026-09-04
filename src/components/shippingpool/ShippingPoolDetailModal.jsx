@@ -60,7 +60,7 @@ export default function ShippingPoolDetailModal({ pool: initialPool, isAdmin, cu
   const [savingPool, setSavingPool] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const [pendingEdits, setPendingEdits] = useState(initialPendingEdits);
+  const [pendingEdits, setPendingEdits] = useState([]);
   const [processingEditId, setProcessingEditId] = useState(null);
   const [rewarehouseFeeInputs, setRewarehouseFeeInputs] = useState({}); // reqId -> fee string
   const [composeDragOver, setComposeDragOver] = useState(false);
@@ -297,9 +297,9 @@ export default function ShippingPoolDetailModal({ pool: initialPool, isAdmin, cu
 
     // Load user credit status for payment panel (non-admin only)
     if (!isAdmin) {
-      base44.functions.invoke('manageCreditApplication', { action: 'get_user_credit' })
-        .then((r) => setUserCredit(r.data || null))
-        .catch(() => {});
+      // base44.functions.invoke('manageCreditApplication', { action: 'get_user_credit' })
+      //   .then((r) => setUserCredit(r.data || null))
+      //   .catch(() => {});
     }
 
     // Mark as read on open
@@ -415,7 +415,12 @@ debugger
       return
     }
 
-    await shippingPoolApi.moveOrder(order.id, movePoolParams);
+    let url = ''
+    if(action === 'move_order') {
+      await shippingPoolApi.moveOrder(order.id, movePoolParams);
+    } else if (action === 'cancel_order') {
+      await shippingPoolApi.returnOrder(order.id, movePoolParams);
+    }
 
     setUserActionOrder(null);
     setUserActionMode(null);
@@ -442,6 +447,46 @@ debugger
 
   const submitAddOrder = async (orderId) => {
     setAddingOrderId(orderId);
+
+    const order = addableOrders.find(o => o.id === orderId);
+
+    const orderInfo = {
+      id: order.id,
+      order_number: order.order_number,
+    }
+
+    const edit_request = {
+      order_id: order.id,
+      pool_id: pool?.id, 
+      user_email: currentUser.email,
+      target_pool_id: pool?.id
+    }
+
+    const target_shipping_pool = {
+      id: pool?.id,
+      pool_code: pool?.pool_code
+    }
+
+    const handleUpdateParams = {
+      edit_request: edit_request,
+      source_shipping_pool: null,
+      target_shipping_pool: target_shipping_pool,
+      order_info: orderInfo,
+      display_name: currentUser.display_name
+    };
+
+
+    console.log(handleUpdateParams)
+
+    await shippingPoolApi.addOrder(order.id, handleUpdateParams);
+
+    setAddingOrderId(null);
+    setShowAddOrder(false);
+    onUpdated?.();
+
+    return;
+
+
     if (isAdmin) {
       // Admin directly mutates the pool
       const order = addableOrders.find(o => o.id === orderId);
@@ -1330,7 +1375,7 @@ debugger
                                 <span className="text-xs text-orange-500 bg-orange-50 border border-orange-200 px-1.5 py-0.5 rounded">审批中</span>
                               )}
                               {/* User can edit/move their own orders */}
-                              {!isAdmin && o.user_email === currentUser?.email && pool.status !== "shipped" && pool.status !== "delivered" && pool.status !== "awaiting_payment" && pool.status !== "awaiting_payment_confirmation" && pool.status !== "ready_to_ship" &&
+                              {isAdmin && o.user_email === currentUser?.email && pool.status !== "shipped" && pool.status !== "delivered" && pool.status !== "awaiting_payment" && pool.status !== "awaiting_payment_confirmation" && pool.status !== "ready_to_ship" &&
                           <button
                                     onClick={() => openUserAction(o, userActionOrder?.id === o.id && userActionMode ? null : 'menu')}
                                     className="flex-shrink-0 p-1 rounded hover:bg-gray-200 text-gray-400 hover:text-gray-600 transition-colors"
@@ -1343,7 +1388,7 @@ debugger
                         </div>
                     }
                       {/* User actions panel */}
-                      {!isAdmin && userActionOrder?.id === o.id && userActionMode && (
+                      {isAdmin && userActionOrder?.id === o.id && userActionMode && (
                         <div className="border-t border-gray-100 bg-gray-50 px-3 py-2.5 space-y-2">
                           {userActionMode === 'menu' ? (
                             <div className="flex gap-2">
@@ -1794,7 +1839,7 @@ debugger
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-1.5 flex-wrap">
-                          <span className="text-xs font-medium text-gray-700">{req.user_email}</span>
+                          <span className="text-xs font-medium text-gray-700">{user.display_name}</span>
                           <Badge className={`text-xs ${req.edit_type === 'cancel_shipment' ? 'bg-red-100 text-red-700' : req.edit_type === 'add_to_pool' ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'}`}>
                             {req.is_rewarehouse_request ? '申请再入库（待付运费）' : req.edit_type === 'cancel_shipment' ? '申请重新入库' : req.edit_type === 'add_to_pool' ? '申请加入此发货申请' : '申请移至其他发货申请'}
                           </Badge>

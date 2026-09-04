@@ -50,6 +50,7 @@ export default function Home() {
 
       // Check if already cached (logged-in path)
       const cached = getTenantConfigCache();
+      console.log('[Home] cached:', !!cached, '| user:', !!user);
       if (cached) {
         raw = cached.settings || [];
         faqCategories = cached.faqCategories || [];
@@ -63,7 +64,7 @@ export default function Home() {
           faqCategories = data.faqCategories || [];
           // Cache it for reuse across components
           setTenantConfigCache({ ...data, faqCategories });
-        } catch { /* silent */ }
+        } catch (err) { console.error('[Home] homeConfig failed:', err); }
       }
 
       var values = {
