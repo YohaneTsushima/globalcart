@@ -310,16 +310,31 @@ export default function UserNotifyShipmentModal({ order, orders, initialData, on
   useEffect(() => {
     // If initialData was provided by the parent page, use it directly — skip all self-fetches
     if (initialData) {
-      const pref = initialData.userPreference;
+      // Normalize: 兼容后端 snake_case 和前端 camelCase 两种命名
+      const data = {
+        ...initialData,
+        userPreference: initialData.userPreference || initialData.user_preference || null,
+        transitLocations: initialData.transitLocations || initialData.transit_locations || [],
+        nonAdminUsers: initialData.nonAdminUsers || initialData.non_admin_users || [],
+        pools: initialData.pools || [],
+        shippingAddons: initialData.shippingAddons || initialData.shipping_addons || [],
+        transitMethods: initialData.transitMethods || initialData.transit_methods || [],
+        shippingMethods: initialData.shippingMethods || initialData.shipping_methods || [],
+      };
+
+      const pref = data.userPreference;
       if (pref?.saved_addresses) setSavedAddresses(pref.saved_addresses);
       if (pref?.preferred_transit_shipping_id) setSelectedTransitMethodId(pref.preferred_transit_shipping_id);
       if (pref?.id) setUserPrefId(pref.id);
       // Auto-select default address
       if (pref?.default_address_id) setFinalAddressId(pref.default_address_id);
-      setTransitLocations(initialData.transitLocations || []);
-      setAllUsers(initialData.nonAdminUsers || []);
+      setTransitLocations(data.transitLocations || []);
+      setAllUsers(data.nonAdminUsers || []);
+      setShippingMethods(data.shippingMethods || []);
+      setTransitMethods(data.transitMethods || []);
+      setShippingAddons(data.shippingAddons || []);
 
-      const allPools = initialData.pools || [];
+      const allPools = data.pools || [];
       base44.auth.me().then(u => {
         setCurrentUser(u);
         const consolidationPools = allPools.filter(p =>
@@ -336,9 +351,9 @@ export default function UserNotifyShipmentModal({ order, orders, initialData, on
         setDirectPools(directShipPools);
       }).catch(() => {});
 
-      tenantEntity.list('ShippingMethod', { is_active: true }).then(methods => {
-        setShippingMethods(methods || []);
-      }).catch(() => {});
+      // tenantEntity.list('ShippingMethod', { is_active: true }).then(methods => {
+      //   setShippingMethods(methods || []);
+      // }).catch(() => {});
 
       // 根据 consolidation_pool_id 查询 pool 并预填表单
       let poolId = order? order?.consolidation_pool_id : null;
@@ -452,10 +467,11 @@ export default function UserNotifyShipmentModal({ order, orders, initialData, on
   //  - user picked a saved address (selectedId is set and not new mode), OR
   //  - new address form is open (isNewMode or no saved addresses) AND form is valid
   const isAddressSlotOk = (slot) => {
+    const id = slot === "final" ? finalAddressId : selectedAddress;
+    if (id) return true;
     const inNewMode = !!addressInputMode[slot] || savedAddresses.length === 0;
     if (inNewMode) return isAddressFormValid(newAddress);
-    const id = slot === "final" ? finalAddressId : selectedAddress;
-    return !!id;
+    return false;
   };
 
   // Calculate total weight for all orders
@@ -528,7 +544,7 @@ export default function UserNotifyShipmentModal({ order, orders, initialData, on
     const hasFeeErrors = Object.entries(addonCustomFees).some(([addonId, fee]) => {
       const addon = shippingAddons.find(a => a.id === addonId);
       return addon && addon.is_user_customizable && selectedAddonIds.includes(addonId) &&
-             (fee < addon.min_fee || fee > addon.max_fee);
+             (fee < addon.fee_min || fee > addon.fee_max);
     });
     if (hasFeeErrors) {
       alert('请确保所有自定义增值服务的金额都在指定区间内');
@@ -575,6 +591,7 @@ export default function UserNotifyShipmentModal({ order, orders, initialData, on
     const addrSlot = consType === "transit" ? "final" : (consType === "other" ? "other" : "direct");
     const addrObj = !skipAddress ? getEffectiveAddr(addrSlot) : null;
     const resolvedAddress = addrObj ? {
+      id: Date.now().toString(),
       recipient_name: addrObj.recipient_name || '',
       country: addrObj.country || '',
       addr1: addrObj.addr1 || '',
@@ -641,7 +658,6 @@ export default function UserNotifyShipmentModal({ order, orders, initialData, on
       new_address: saveNewAddress,
       pref_id: userPrefId
     }
-
     // Call unified engine
     try {
       await base44.functions.invoke('shipping/createShippingPool', {
@@ -651,6 +667,9 @@ export default function UserNotifyShipmentModal({ order, orders, initialData, on
         new_address: saveNewAddress,
         pref_id: userPrefId
       });
+
+      toast.success('通知发货成功');
+
       onSuccess?.();
     } catch (err) {
       let message = err?.response?.data?.message;

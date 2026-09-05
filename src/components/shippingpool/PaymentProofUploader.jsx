@@ -60,22 +60,22 @@ export default function PaymentProofUploader({ selectedMethodMeta, uploadingProo
   return (
     <div className="space-y-2">
       {/* Payment note / QR code */}
-      {(selectedMethodMeta?.payment_note || selectedMethodMeta?.image_url) && (
+      {(selectedMethodMeta?.payment_note || selectedMethodMeta?.payment_description || selectedMethodMeta?.image_url || selectedMethodMeta?.payment_qr_code) && (
         <div className="p-3 bg-gray-50 border border-gray-200 rounded-lg space-y-2">
-          {selectedMethodMeta.image_url && (
+          {(selectedMethodMeta.payment_qr_code || selectedMethodMeta.image_url) && (
             <div className="text-center">
-              <ImageWithViewer src={selectedMethodMeta.image_url} alt="收款码">
+              <ImageWithViewer src={selectedMethodMeta.payment_qr_code || selectedMethodMeta.image_url} alt="收款码">
                 <img
-                  src={selectedMethodMeta.image_url}
+                  src={selectedMethodMeta.payment_qr_code || selectedMethodMeta.image_url}
                   alt="收款码"
                   className="h-40 mx-auto rounded object-contain border border-gray-200 cursor-pointer hover:opacity-80 transition-opacity"
                 />
               </ImageWithViewer>
             </div>
           )}
-          {selectedMethodMeta.payment_note && (
+          {(selectedMethodMeta.payment_note || selectedMethodMeta.payment_description) && (
             <p className="text-sm text-gray-700 whitespace-pre-wrap text-center">
-              {selectedMethodMeta.payment_note}
+              {selectedMethodMeta.payment_note || selectedMethodMeta.payment_description}
             </p>
           )}
         </div>

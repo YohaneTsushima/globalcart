@@ -137,7 +137,7 @@ export default function OrderDetailPanel({ order, pool }) {
                 </div>
                 {displayAddons.map((addon, idx) => (
                   <div key={idx} className="flex items-center justify-between text-gray-700">
-                    <span>{addon.name || addon.id}</span>
+                    <span>{addon.service_name || addon.id}</span>
                     {parseFloat(addon.fee) > 0 && (
                       <span className="font-medium text-yellow-700">+{addon.fee_currency || "JPY"} {Math.round(parseFloat(addon.fee))}</span>
                     )}

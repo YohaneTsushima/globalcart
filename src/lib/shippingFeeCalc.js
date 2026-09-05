@@ -192,7 +192,19 @@ export function calcFeeBreakdownPerUser({
 
     result.push({
       user_email: email,
-      user_orders: userOrders,
+      user_orders: userOrders.map(o => ({
+        id: o.id,
+        order_number: o.order_number,
+        product_name: o.product_name,
+        product_image_url: o.product_image_url,
+        weight_g: o.weight_g,
+        user_email: o.user_email,
+        user_name: o.user_name,
+        selected_addons: o.selected_addons,
+        consolidation_pool_id: o.consolidation_pool_id,
+        admin_note: o.admin_note,
+        storage_image: o.storage_image,
+      })),
       user_weight_g: userWeightG,
       items,
       personal_total_jpy: personalTotal,

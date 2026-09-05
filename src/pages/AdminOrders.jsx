@@ -737,7 +737,7 @@ export default function AdminOrders() {
                       )}
                     </td>
                     {visibleCols.map(col => (
-                      <td key={col.key} className="px-3 py-3 max-w-[220px]">
+                      <td key={col.key} className="px-3 py-3 max-w-[220px] overflow-hidden">
                         {physicalController.renderCell(order, { ...col, _rules: storeTagRules }, {
                           userAvatars: userProfileMap,
                           storeTagRules,
@@ -821,11 +821,18 @@ export default function AdminOrders() {
                           const pool = getOrderPool(order);
                           if (!pool) return null;
                           if (order.order_status === "shipping_fee_pending") return null; // already shown above
-                          if (!["notified_shipment", "ready_to_ship", "notified_shipment_fee_paid", "notified_shipment_fee_pending"].includes(order.order_status)) return null;
+                          if (!["notified_shipment", "ready_to_ship", "notified_shipment_fee_paid", "notified_shipment_fee_pending", "shipped"].includes(order.order_status)) return null;
                           const isConsolidation = pool.consolidation_type && pool.consolidation_type !== "";
                           const isOfficialPool = pool.is_admin_created === true;
                           return (
                             <>
+                            {pool.pool_id && (
+                              <button
+                                className="text-xs font-mono text-purple-700 bg-purple-50 border border-purple-100 px-1.5 py-0.5 rounded hover:bg-purple-100 hover:border-purple-300 transition-colors cursor-pointer"
+                                onClick={() => handleOpenPool(pool)}>
+                                {pool.pool_code}
+                              </button>
+                            )}
                             <Button size="sm" variant="outline"
                               className={`h-6 text-xs px-2 ${isOfficialPool ? "text-blue-600 border-blue-200 hover:bg-blue-50" : isConsolidation ? "text-purple-600 border-purple-200 hover:bg-purple-50" : "text-teal-600 border-teal-200 hover:bg-teal-50"}`}
                               onClick={() => handleOpenPool(pool)}>
@@ -985,7 +992,7 @@ export default function AdminOrders() {
           transitShippingMethods={transitShippingMethods}
           defaultPackingFeeSingle={defaultPackingFeeSingle}
           defaultPackingFeeConsolidation={defaultPackingFeeConsolidation}
-          onClose={() => setSelectedPool(null)}
+          onClose={() => { setSelectedPool(null); fetchOrders(); }}
           onUpdated={() => { setSelectedPool(null); fetchOrders(); }}
         />
       )}

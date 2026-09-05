@@ -101,7 +101,7 @@ export default function PhysicalOrdersTable({
                   />
                 </td>
                 {visibleCols.map(col => (
-                  <td key={col.key} className="px-3 py-3 max-w-[220px]">
+                  <td key={col.key} className="px-3 py-3 max-w-[220px] overflow-hidden">
                     {renderCell(order, col)}
                   </td>
                 ))}

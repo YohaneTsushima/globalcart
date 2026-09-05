@@ -22,6 +22,7 @@ import AdminShippingInfoPanel from "@/components/shippingpool/AdminShippingInfoP
 import ShippingFeeBreakdown from "@/components/shippingpool/ShippingFeeBreakdown";
 import { ImageWithViewer } from "@/components/common/ImageViewer";
 import PaymentMethodSelector from "@/components/common/PaymentMethodSelector";
+import ImageUploader from "@/components/common/ImageUploader";
 import PaymentProofUploader from "@/components/shippingpool/PaymentProofUploader";
 import OrderDetailCard from "@/components/shippingpool/OrderDetailCard";
 import OrderDetailPanel from "@/components/shippingpool/OrderDetailPanel";
@@ -77,6 +78,7 @@ export default function ShippingPoolDetailModal({ pool: initialPool, isAdmin, cu
   const alipayPopupRef = useRef(null);
   const alipayPollTimerRef = useRef(null);
   const [uploadingProof, setUploadingProof] = useState(false);
+  const [proofUrl, setProofUrl] = useState("");
   const [confirmingDelivery, setConfirmingDelivery] = useState(false);
   const [showConfirmDeliveryDialog, setShowConfirmDeliveryDialog] = useState(false);
   const [exchangeRates, setExchangeRates] = useState(null);
@@ -138,6 +140,10 @@ export default function ShippingPoolDetailModal({ pool: initialPool, isAdmin, cu
   const subject = `${user?.display_name} - ${pool?.title}`;
 
   const openConvertToOther = async () => {
+
+    toast.error('功能开发中......');
+    return;
+
     setShowConvertToOther(true);
     setConvertAddressMode("saved");
     setConvertSelectedAddressId("");
@@ -248,59 +254,47 @@ export default function ShippingPoolDetailModal({ pool: initialPool, isAdmin, cu
     setSavingUserPrefs(false);
   };
 
+  // Refresh pool data without closing the modal
+  const refreshPool = async () => {
+    try {
+      const r = await base44.functions.invoke('shipping/getShippingPoolDetail', { id: (pool?.id || pool?.pool_id) });
+      const d = r?.data || {};
+      if (d.pool) setPool(p => ({ ...p, ...d.pool }));
+      if (d?.orders) setOrders(d.orders);
+      if (d.users && d.users.length > 0) {
+        const emailUserMap = {};
+        d.users.forEach(u => { emailUserMap[u.user_email] = u; });
+        setTenantUserMap(emailUserMap);
+      } else if (d.user) {
+        const email = d.user.userEmail || d.user.email || d.user.user_email;
+        if (email) setTenantUserMap(prev => ({ ...prev, [email]: d.user }));
+      }
+      if (d.rates) {
+        const convRates = d.rates.conversion_rates;
+        if (convRates.jpy) {
+          setExchangeRates({
+            jpy_cny: convRates.jpy.cny,
+            jpy_twd: convRates.jpy.twd,
+            jpy_usd: convRates.jpy.usd || convRates.jpy.usr,
+            jpy_eur: convRates.jpy.eur,
+            jpy_gbp: convRates.jpy.gbp,
+            jpy_aud: convRates.jpy.aud,
+            jpy_sgd: convRates.jpy.sgd,
+            jpy_hkd: convRates.jpy.hkd,
+          });
+        } else {
+          setExchangeRates(convRates);
+        }
+      }
+      if (d?.edit_requests) setPendingEdits(d.edit_requests);
+    } catch (err) {
+      console.error('[ShippingPoolDetailModal] refreshPool failed:', err);
+    }
+  };
+
   useEffect(() => {
     // Fetch pool detail (pool + orders + users + rates) in one call
-    base44.functions.invoke('shipping/getShippingPoolDetail', { id: (pool?.id || pool?.pool_id) })
-      .then((r) => {
-        const d = r?.data || {};
-        if (d.pool) setPool((p) => ({ ...p, ...d.pool }));
-        if (d.orders) setOrders(d.orders);
-
-        // Backend returns single "user" object or "users" map
-        if (d.users && d.users.length > 0) {
-          const emailUserMap = {};
-          d.users.forEach(u => {
-            emailUserMap[u.user_email] = u;
-          });
-
-          setTenantUserMap(emailUserMap);
-        } else if (d.user) {
-          // Convert single user object to map keyed by email
-          const email = d.user.userEmail || d.user.email || d.user.user_email;
-          if (email) setTenantUserMap({ [email]: d.user });
-        }
-
-        // Backend returns nested { date, jpy: { cny, twd, usr } }
-        // Frontend expects flat { jpy_cny, jpy_twd, jpy_usd, ... }
-        if (d.rates) {
-          const r = d?.rates?.conversion_rates;
-          
-          if (r.jpy) {
-            setExchangeRates({
-              jpy_cny: r.jpy.cny,
-              jpy_twd: r.jpy.twd,
-              jpy_usd: r.jpy.usd || r.jpy.usr,
-              jpy_eur: r.jpy.eur,
-              jpy_gbp: r.jpy.gbp,
-              jpy_aud: r.jpy.aud,
-              jpy_sgd: r.jpy.sgd,
-              jpy_hkd: r.jpy.hkd,
-            });
-          } else {
-            setExchangeRates(r);
-          }
-        }
-      })
-      .catch((e) => {
-        console.error('[PoolModal] Fetch error:', e);
-      });
-
-    // Load user credit status for payment panel (non-admin only)
-    if (!isAdmin) {
-      // base44.functions.invoke('manageCreditApplication', { action: 'get_user_credit' })
-      //   .then((r) => setUserCredit(r.data || null))
-      //   .catch(() => {});
-    }
+    refreshPool();
 
     // Mark as read on open
     const myRole = isAdmin ? "admin" : "user";
@@ -476,13 +470,21 @@ debugger
     };
 
 
-    console.log(handleUpdateParams)
-
-    await shippingPoolApi.addOrder(order.id, handleUpdateParams);
+    try {
+      const res = await shippingPoolApi.addOrder(order.id, handleUpdateParams);
+    } catch (err) {
+        let message = err?.response?.data?.message;
+        console.error('[ShippingPoolDetailModal] Handle Submit Add Order failed:', message);
+        toast.error(message || "提交失败，请稍后重试");
+        return;
+    }
+    
 
     setAddingOrderId(null);
     setShowAddOrder(false);
-    onUpdated?.();
+    await refreshPool();
+    const message = isAdmin ? '添加成功' : '申请成功，等待管理员审批'
+    toast.success(message);
 
     return;
 
@@ -518,11 +520,39 @@ debugger
   // User: confirm delivery
   const handleConfirmDelivery = async () => {
     setConfirmingDelivery(true);
+
+    const payload = orders.map(order => ({
+      id: order.id,
+      data: {
+        order_number: order.order_number,
+        consolidation_pool_id: order.consolidation_pool_id ?? null
+      }
+    }));
+debugger
+    try {
+      const res = await updateTenantOrder('order/info/handleDelivered', payload);
+      const innerCode = res?.data?.code;
+
+      if (innerCode === 200) {
+        toast.success(`订单 [${pool.tracking_number}] 收货成功`);
+      } else {
+        const errors = res?.data?.errorInfo?.errors || [];
+        if (errors.length > 0) {
+          setBulkErrors(errors.map(e => e.errorMessage));
+          setShowBulkErrors(true);
+        } else {
+          toast.error(res?.data?.message || "操作失败");
+        }
+      }
+    } catch (err) {
+
+    }
+
     const updatedPool = { ...pool, status: "delivered" };
-    await shippingPoolApi.update(pool.id, { status: "delivered" });
-    await Promise.all(
-      (pool.order_ids || []).map(id => updateOrder(id, { order_status: "delivered" }))
-    );
+    // await shippingPoolApi.update(pool.id, { status: "delivered" });
+    // await Promise.all(
+    //   (pool.order_ids || []).map(id => updateOrder(id, { order_status: "delivered" }))
+    // );
     setPool(updatedPool);
     setConfirmingDelivery(false);
     onUpdated?.();
@@ -692,6 +722,33 @@ debugger
     setUploadingProof(false);
   };
 
+  // User: upload payment proof via ImageUploader (like PaymentModal)
+  const handleProofChange = async (file) => {
+    if (!file) return;
+    setUploadingProof(true);
+    try {
+      const { file_url } = await base44.integrations.Core.UploadFile({ file, path: "shipment_proof" });
+      setProofUrl(file_url);
+
+      await shippingPoolApi.proof(pool.id, {
+        pool_code: pool.pool_code,
+        payment_proof_url: file_url,
+        payment_method: selectedMethodMeta?.value || selectedMethodMeta?.label || "",
+        payment_method_id: selectedMethodMeta?.id || null,
+      });
+
+      // await base44.functions.invoke('order/info/updateShipmentProof', payload);
+      toast.success(`[${pool.pool_code}] 的付款凭证上传成功！`);
+
+      await refreshPool();
+    } catch (err) {
+      const message = err?.message || err?.response?.data?.message;
+      toast.error("上传失败: " + (message || err));
+    } finally {
+      setUploadingProof(false);
+    }
+  };
+
   const handlePoolEditSave = async () => {
     if (!editingPoolData) return;
     setSavingPool(true);
@@ -785,7 +842,7 @@ debugger
       setOrders((prev) => prev.filter((o) => o.id !== adminEditingOrder.id));
       setAdminEditingOrder(null);
       setActionMode(null);
-      onUpdated?.();
+      await refreshPool();
     } catch (e) {
       const message = e.response?.data?.message || e.message || '移动失败';
       toast.error(message);
@@ -796,7 +853,41 @@ debugger
 
   // Return order to warehouse
   const handleReturnOrder = async () => {
+
     if (!adminEditingOrder) return;
+    setSavingOrder(true);
+
+    const movePoolParams = {
+      order_info: {
+        id: adminEditingOrder.id,
+        order_number: adminEditingOrder.order_number,
+      },
+      source_shipping_pool: {
+        id: pool.id,
+        pool_code: pool.pool_code,
+      },
+    };
+
+    try {
+      await shippingPoolApi.returnOrder(adminEditingOrder.id, movePoolParams);
+
+      toast.success(`[订单 ${adminEditingOrder.order_number}] 入库成功`);
+
+      const updatedOrderIds = (pool.order_ids || []).filter(id => id !== adminEditingOrder.id);
+      setPool(p => ({ ...p, order_ids: updatedOrderIds }));
+      setOrders(prev => prev.filter(o => o.id !== adminEditingOrder.id));
+      setAdminEditingOrder(null);
+      setActionMode(null);
+      await refreshPool();
+    } catch (e) {
+      const message = e.response?.data?.message || e.message || '退回失败';
+      toast.error(message);
+    } finally {
+      setSavingOrder(false);
+    }
+
+    return;
+
     setSavingOrder(true);
     const poolOrderIds = pool.order_ids || [];
     const removedIdx = poolOrderIds.indexOf(adminEditingOrder.id);
@@ -816,197 +907,121 @@ debugger
     setSavingOrder(false);
   };
 
-  const handleApproveCancelShipment = async (req) => {
-
+  const handleAddToPool = async (req, action) => {
     setProcessingEditId(req.id);
     const targetOrderId = req.order_id;
-    
-    const updatedIds = (pool.order_ids || []).filter((id) => id !== targetOrderId);
+    const orderNumber = req?.order_number || 0;
 
-    const rewarehouseFee = req.is_rewarehouse_request
-      ? (parseFloat(rewarehouseFeeInputs[req.id] ?? req.rewarehouse_fee_jpy ?? 0) || 0)
-      : 0;
-
-    const orderInfo = {
-      id: targetOrderId,
-      consolidation_pool_id: req.pool_id
-    }
-    
-    const edit_request = {
-      id: req.id
-    }
-
-    const source_shipping_pool = {
-      id: pool.id,
-      order_ids: updatedIds,
-    }
-
-    const handleUpdateParams = {
-      edit_request: edit_request,
-      source_shipping_pool: source_shipping_pool,
-      target_shipping_pool: null,
-      order_info: orderInfo,
-      display_name: currentUser.display_name
+    const params = {
+      edit_request: { id: req.id },
+      order_info: { id: targetOrderId, order_number: orderNumber },
+      display_name: currentUser.display_name,
     };
 
-    await processApproveEditRequest('approveCancelShipment', req, handleUpdateParams);
-  }
-
-  const handleRejectCancelShipment = async (req) => {
-
-    setProcessingEditId(req.id);
-
-    const order_info = {
-      id: req.order_id,
-      consolidation_pool_id: req.pool_id
+    if (action === 'approve') {
+      params.source_shipping_pool = null;
+      params.target_shipping_pool = { id: req.target_pool_id, pool_code: pool?.pool_code };
     }
 
-    const edit_request = {
-      id: req.id
-    }
+    await processEditRequest(action, action === 'approve' ? 'approveAddToPool' : 'rejectAddToPool', req, params);
+  };
 
-    const handleUpdateParams = {
-      edit_request: edit_request,
-      order_info: order_info,
-      display_name: currentUser.displayName
-    };
-
-    await processRejectEditRequest('rejectCancelShipment', req, handleUpdateParams);
-  }
-
-  const handleApproveMovePool = async (req) => {
-
+  const handleCancelShipment = async (req, action) => {
     setProcessingEditId(req.id);
-    
     const targetOrderId = req.order_id;
-    const updatedIds = (pool.order_ids || []).filter((id) => id !== targetOrderId);
-    const w = orders.find((o) => o.id === targetOrderId)?.weight_g || 0;
-    const orderNumber = orders.find((o) => o.id === targetOrderId)?.order_number || 0;
-    const targetPool = allPools.find((p) => p.id === req.target_pool_id);
 
-    const source_shipping_pool = {
-      id: pool.id,
-      pool_code: pool.pool_code,
-      order_ids: updatedIds,
-    }
-
-    const target_shipping_pool = {
-      id: req.target_pool_id,
-      pool_code: targetPool.pool_code,
-      order_ids: [...new Set([...(targetPool.order_ids || []), targetOrderId])],
-    }
-
-     const order_info = {
-      id: targetOrderId,
-      order_number: orderNumber,
-      consolidation_pool_id: req.target_pool_id
-    }
-
-    const edit_request = {
-      id: req.id
-    }
-
-    const handleUpdateParams = {
-      edit_request: edit_request,
-      source_shipping_pool: source_shipping_pool,
-      target_shipping_pool: target_shipping_pool,
-      order_info: order_info,
-      display_name: currentUser.display_name
+    const params = {
+      edit_request: { id: req.id },
+      order_info: { id: targetOrderId, consolidation_pool_id: req.pool_id },
+      display_name: currentUser.display_name,
     };
 
-    await processApproveEditRequest('approveMovePool', req, handleUpdateParams);
-  }
+    if (action === 'approve') {
+      const updatedIds = (pool.order_ids || []).filter((id) => id !== targetOrderId);
+      const rewarehouseFee = req.is_rewarehouse_request
+        ? (parseFloat(rewarehouseFeeInputs[req.id] ?? req.rewarehouse_fee_jpy ?? 0) || 0)
+        : 0;
+      params.source_shipping_pool = { id: pool.id, order_ids: updatedIds };
+      params.target_shipping_pool = null;
+      if (rewarehouseFee > 0) params.order_info.rewarehouse_fee_jpy = rewarehouseFee;
+    }
 
-  const handleRejectMovePool = async (req) => {
+    await processEditRequest(action, action === 'approve' ? 'approveCancelShipment' : 'rejectCancelShipment', req, params);
+  };
 
+  const handleMovePool = async (req, action) => {
     setProcessingEditId(req.id);
-    
     const targetOrderId = req.order_id;
     const orderNumber = orders.find((o) => o.id === targetOrderId)?.order_number || 0;
 
-    const source_shipping_pool = {
-      id: pool.id,
-      pool_code: pool.pool_code
-    }
-
-    const order_info = {
-      id: targetOrderId,
-      order_number: orderNumber,
-      consolidation_pool_id: req.target_pool_id
-    }
-
-    const edit_request = {
-      id: req.id
-    }
-
-    const handleUpdateParams = {
-      edit_request: edit_request,
-      source_shipping_pool: source_shipping_pool,
-      order_info: order_info,
-      display_name: currentUser.display_name
+    const params = {
+      edit_request: { id: req.id },
+      source_shipping_pool: { id: pool.id, pool_code: pool.pool_code },
+      order_info: { id: targetOrderId, order_number: orderNumber, consolidation_pool_id: req.target_pool_id },
+      display_name: currentUser.display_name,
     };
 
-    await processApproveEditRequest('rejectMovePool', req, handleUpdateParams);
-  }
+    if (action === 'approve') {
+      const updatedIds = (pool.order_ids || []).filter((id) => id !== targetOrderId);
+      const targetPool = allPools.find((p) => p.id === req.target_pool_id);
+      params.source_shipping_pool.order_ids = updatedIds;
+      params.target_shipping_pool = {
+        id: req.target_pool_id,
+        pool_code: targetPool.pool_code,
+        order_ids: [...new Set([...(targetPool.order_ids || []), targetOrderId])],
+      };
+    }
 
-  const processApproveEditRequest = async(url, req, editRequestParams) => {
+    await processEditRequest(action, action === 'approve' ? 'approveMovePool' : 'rejectMovePool', req, params);
+  };
 
+  const processEditRequest = async (action, url, req, editRequestParams) => {
     try {
-      await editRequestApi.approve(req.id, url, editRequestParams);
+      if (action === 'approve') {
+        await editRequestApi.approve(req.id, url, editRequestParams);
+      } else {
+        await editRequestApi.reject(req.id, url, editRequestParams);
+      }
     } catch (err) {
-      let message = err?.response?.data?.message;
-      console.error('[ShippingPoolDetailModal] Approve Edit Request failed:', message);
+      const message = err?.response?.data?.message;
+      console.error('[ShippingPoolDetailModal] Edit Request failed:', message);
       toast.error(message || "提交失败，请稍后重试");
     }
-
     setPendingEdits((prev) => prev.filter((r) => r.id !== req.id));
     setProcessingEditId(null);
-    onUpdated?.();
-  }
-
-  const processRejectEditRequest = async(url, req, editRequestParams) => {
-
-    await editRequestApi.reject(req.id, url, editRequestParams);
-
-    setPendingEdits((prev) => prev.filter((r) => r.id !== req.id));
-    setProcessingEditId(null);
-    onUpdated?.();
-
+    await refreshPool();
   }
 
 
   // Approve or reject a pending ShippingEditRequest
   const handleEditRequest = async (req, action) => {
     setProcessingEditId(req.id);
-    
-    if(action === 'approve') {
-      if (req.edit_type === 'cancel_shipment') {
-        handleApproveCancelShipment(req);
-      }
 
-      if (req.edit_type === 'move_pool' && req.target_pool_id) {
-        handleApproveMovePool(req);
-      }
+    const handlers = {
+      cancel_shipment: handleCancelShipment,
+      move_pool: handleMovePool,
+      add_to_pool: handleAddToPool,
+    };
 
-      if (req.edit_type === 'add_to_pool') {
+    const targetOrderId = req.order_id;
+    const order = orders.find((o) => o.id === targetOrderId);
 
-      }
-    } else {
-      if (req.edit_type === 'cancel_shipment') {
-        handleRejectCancelShipment(req);
-      }
-
-      if (req.edit_type === 'move_pool' && req.target_pool_id) {
-        handleRejectMovePool(req);
-      }
-
-      if (req.edit_type === 'add_to_pool') {
-
-      }
+    const messages = {
+      cancel_shipment: `重新入库成功`,
+      move_pool: `移动成功`,
+      add_to_pool: `添加成功`,
     }
 
-    setProcessingEditId(null);
-    onUpdated?.();
+    const editType = req.edit_type;
+    if (editType === 'move_pool' && !req.target_pool_id) return;
+
+    const handler = handlers[editType];
+    if (handler) {
+      await handler(req, action);
+    }
+
+    const message = messages[editType];
+    toast.success(message);
 
     return;
 
@@ -1157,6 +1172,19 @@ debugger
   const postShipmentUnpaid = !isAdmin && ["ready_to_ship", "shipped", "delivered"].includes(pool.status) &&
     pool.payment_status !== "paid" && feeNotified;
 
+  const formatDateOnly = (dateString) => {
+    if (!dateString) return '';
+    const date = new Date(dateString);
+    // 格式化成 yyyy-MM-dd HH:mm:ss
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    const hours = String(date.getHours()).padStart(2, '0');
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+    const seconds = String(date.getSeconds()).padStart(2, '0');
+    return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+  };
+
   return (
     <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={e => { if (e.target === e.currentTarget && !alipayPaying) onClose(); }}>
       {/* Loading overlay for Alipay payment — placed outside scrollable container to cover entire viewport */}
@@ -1175,6 +1203,14 @@ debugger
                onClick={e => e.stopPropagation()}>
             <Loader2 className="w-8 h-8 text-blue-600 animate-spin mb-3" />
             <p className="text-sm text-gray-600 font-medium">正在移动订单...</p>
+          </div>
+        )}
+        {/* Loading overlay for proof upload */}
+        {uploadingProof && (
+          <div className="absolute inset-0 bg-white/80 z-50 flex flex-col items-center justify-center rounded-xl"
+               onClick={e => e.stopPropagation()}>
+            <Loader2 className="w-8 h-8 text-blue-600 animate-spin mb-3" />
+            <p className="text-sm text-gray-600 font-medium">上传中...</p>
           </div>
         )}
         {/* Header */}
@@ -1525,11 +1561,11 @@ debugger
                   {grouped.map(({ email, orders: groupOrders }) => {
                     const userData = tenantUserMap[email] || {};
                     const displayName = userData.display_name || userData.full_name || email;
-                    const groupWeight = groupOrders.reduce((s, o) => s + (o.weight_g || 0), 0);
+                    const groupWeight = groupOrders.reduce((s, o) => s + (parseInt(o.weight_g) || 0), 0);
                     const isMyGroup = email === currentUser?.email;
                     // Aggregate addons from this user's orders — deduplicated per user
                     const uniqueGroupAddons = [...new Map(
-                      groupOrders.flatMap(o => o.selected_addons || []).map(a => [a.id || a.name, a])
+                      groupOrders.flatMap(o => o.selected_addons || []).map(a => [a.id || a.service_name, a])
                     ).values()];
                     // Transit method name
                     const transitMethodId = groupOrders[0]?.consolidation_transit_shipping_id || pool.transit_shipping_method_id || "";
@@ -1845,7 +1881,7 @@ debugger
                           </Badge>
                         </div>
                         <p className="text-xs text-gray-500 mt-0.5">
-                          订单：{orders.find((o) => o.id === req.order_id)?.product_name || req.order_id}
+                          订单：{req?.product_name || req.order_id}
                         </p>
                         {req.edit_type === 'move_pool' && req.target_pool_id &&
                           <p className="text-xs text-gray-400 mt-0.5">
@@ -1909,11 +1945,11 @@ debugger
                     <div className="flex items-center gap-1.5 flex-wrap">
                       <Badge className="text-xs bg-orange-100 text-orange-700">待管理员审批</Badge>
                       <Badge className={`text-xs ${req.is_rewarehouse_request ? 'bg-orange-100 text-orange-700' : req.edit_type === 'cancel_shipment' ? 'bg-red-100 text-red-700' : req.edit_type === 'add_to_pool' ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'}`}>
-                        {req.is_rewarehouse_request ? '再入库（待付运费）' : req.edit_type === 'cancel_shipment' ? '重新入库' : req.edit_type === 'add_to_pool' ? '加入此发货申请' : '移至其他发货申请'}
+                        {req.is_rewarehouse_request ? '再入库（待付运费）' : req.edit_type === 'cancel_shipment' ? '重新入库' : req.edit_type === 'add_to_pool' ? '加入此发货的申请' : '移至其他发货申请'}
                       </Badge>
                     </div>
                     <p className="text-xs text-gray-500 mt-1">
-                      包裹：{orders.find((o) => o.id === req.order_id)?.product_name || req.order_id}
+                      包裹：{req?.product_name || req.order_id}
                     </p>
                     {req.user_note && <p className="text-xs text-gray-400 mt-0.5">备注：{req.user_note}</p>}
                   </div>
@@ -1991,7 +2027,7 @@ debugger
               </div>
               <div className="p-4 space-y-3">
                 {pool.shipped_date && (
-                  <p className="text-xs text-gray-500">发货日期：{pool.shipped_date}</p>
+                  <p className="text-xs text-gray-500">发货日期：{ formatDateOnly(pool.shipped_date) }</p>
                 )}
                 {pool.tracking_number ? (
                   <div className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2.5 space-y-2">
@@ -2398,10 +2434,13 @@ debugger
                 }
 
                     {paymentMethod && selectedMethodMeta?.value !== "alipay" && selectedMethodMeta?.value !== "credit" &&
-                    <PaymentProofUploader
-                      selectedMethodMeta={selectedMethodMeta}
-                      uploadingProof={uploadingProof}
-                      onUpload={handleUploadProof}
+                    <ImageUploader
+                      value={proofUrl}
+                      onChange={handleProofChange}
+                      onDelete={() => setProofUrl("")}
+                      uploading={uploadingProof}
+                      label="上传付款凭证"
+                      id="pool-payment-proof"
                     />
                     }
                   </>

@@ -83,7 +83,7 @@ export default function AddressBlock({
               error={error}
             />
           </div>
-          {hasSaved && saveNewAddress !== undefined && (
+          {saveNewAddress !== undefined && (
             <label className="flex items-center gap-2 p-2 rounded-lg bg-gray-50 hover:bg-gray-100 transition-colors cursor-pointer">
               <Checkbox checked={saveNewAddress} onCheckedChange={onSaveToggle} className="data-[state=checked]:bg-blue-500" />
               <span className="text-sm text-gray-600 font-medium">保存到我的地址簿</span>

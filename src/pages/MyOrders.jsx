@@ -16,11 +16,13 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { getStatusLabel, getStatusColor } from "@/lib/orderStatus";
 import OrderDetailPanel from "@/components/orders/OrderDetailPanel";
 import ColumnCustomizer from "@/components/orders/ColumnCustomizer";
 import PaymentModal from "@/components/orders/PaymentModal";
 import UserNotifyShipmentModal from "@/components/orders/UserNotifyShipmentModal";
+import { getNotifyShipmentCache, setNotifyShipmentCache } from "@/lib/notifyShipmentCache";
 import ShippingEditModal from "@/components/shippingpool/ShippingEditModal";
 import ShippingPoolDetailModal from "@/components/shippingpool/ShippingPoolDetailModal";
 import { shippingPoolApi, updateTenantOrder } from "@/lib/tenantApi";
@@ -111,7 +113,16 @@ function CellValue({ col, order }) {
     }
     case "product_name":
       return (
-        <span className="text-sm font-medium text-gray-900 truncate">{order.product_name}</span>
+        <TooltipProvider delayDuration={1000}>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className="text-sm font-medium text-gray-900 truncate block">{order.product_name}</span>
+            </TooltipTrigger>
+            <TooltipContent side="top" className="max-w-xs">
+              <p>{order.product_name}</p>
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
       );
     case "payable_amount": {
       if (order.order_status === "payment_pending" || order.order_status === "awaiting_payment_confirmation") {
@@ -252,6 +263,8 @@ export default function MyOrders() {
   const [paymentOrder, setPaymentOrder] = useState(null);
   const [shipmentOrder, setShipmentOrder] = useState(null);
   const [shipmentOrders, setShipmentOrders] = useState(null); // multi-order bulk
+  const [shipmentInitialData, setShipmentInitialData] = useState(null); // data from findOrderForNotifyShipment
+  const [shipmentLoading, setShipmentLoading] = useState(false); // loading state for notify shipment API call
   const [bulkPaymentOrders, setBulkPaymentOrders] = useState(null); // multi-order bulk payment
   const [editShipOrder, setEditShipOrder] = useState(null); // order being edit-shipped
   const [editShipPool, setEditShipPool] = useState(null); // current pool of that order
@@ -409,13 +422,6 @@ export default function MyOrders() {
           consolidation_pool_id: order.pool_id
         }
       }];
-
-      console.log(payload)
-
-      if(confirm('???')) {
-        setActionLoading(false)
-        return;
-      }
 
       return;
       // await base44.functions.invoke('order/info/handleDelivered', payload);
@@ -620,8 +626,31 @@ export default function MyOrders() {
         <div className="flex items-center gap-3 bg-teal-50 border border-teal-200 rounded-xl px-4 py-2.5">
           <span className="text-sm text-teal-700 font-medium">已选 {selectedInWarehouse.length} 件已入库包裹</span>
           <Button size="sm" className="h-7 text-xs bg-teal-600 hover:bg-teal-700 ml-auto"
-            onClick={() => setShipmentOrders(selectedInWarehouse)} disabled={actionLoading}>
-            <Truck className="w-3 h-3 mr-1" />批量通知发货
+            disabled={actionLoading || shipmentLoading}
+            onClick={async () => {
+              const orderIds = selectedInWarehouse.map(o => o.id);
+              const cached = getNotifyShipmentCache(orderIds);
+              if (cached) {
+                setShipmentInitialData(cached);
+                setShipmentOrders(selectedInWarehouse);
+                return;
+              }
+              setShipmentLoading(true);
+              try {
+                const r = await base44.functions.invoke('order/info/findOrderForNotifyShipment', {
+                  id: null, data: { order_ids: orderIds }
+                });
+                setNotifyShipmentCache(orderIds, r.data);
+                setShipmentInitialData(r.data);
+                setShipmentOrders(selectedInWarehouse);
+              } catch (err) {
+                toast.error('获取发货信息失败');
+              } finally {
+                setShipmentLoading(false);
+              }
+            }}>
+            {shipmentLoading ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <Truck className="w-3 h-3 mr-1" />}
+            {shipmentLoading ? '加载中...' : '批量通知发货'}
           </Button>
           <Button size="sm" variant="ghost" className="h-7 text-xs"
             onClick={() => setSelectedIds([])} disabled={actionLoading}>取消</Button>
@@ -729,7 +758,7 @@ export default function MyOrders() {
                  )}
                 </td>
                 {visibleCols.map(col => (
-                  <td key={col.key} className="px-3 py-3 max-w-[220px]">
+                  <td key={col.key} className="px-3 py-3 max-w-[220px] overflow-hidden">
                     <CellValue col={{ ...col, _rules: storeTagRules }} order={order} />
                   </td>
                 ))}
@@ -762,8 +791,31 @@ export default function MyOrders() {
                     }
                     return (
                       <Button size="sm" className="h-7 text-xs bg-teal-600 hover:bg-teal-700"
-                        onClick={() => setShipmentOrder(order)}>
-                        <Truck className="w-3 h-3 mr-1" />通知发货
+                        disabled={shipmentLoading}
+                        onClick={async () => {
+                          const orderIds = [order.id];
+                          const cached = getNotifyShipmentCache(orderIds);
+                          if (cached) {
+                            setShipmentInitialData(cached);
+                            setShipmentOrder(order);
+                            return;
+                          }
+                          setShipmentLoading(true);
+                          try {
+                            const r = await base44.functions.invoke('order/info/findOrderForNotifyShipment', {
+                              id: null, data: { order_ids: orderIds }
+                            });
+                            setNotifyShipmentCache(orderIds, r.data);
+                            setShipmentInitialData(r.data);
+                            setShipmentOrder(order);
+                          } catch (err) {
+                            toast.error('获取发货信息失败');
+                          } finally {
+                            setShipmentLoading(false);
+                          }
+                        }}>
+                        {shipmentLoading ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <Truck className="w-3 h-3 mr-1" />}
+                        {shipmentLoading ? '加载中...' : '通知发货'}
                       </Button>
                     );
                   })()}
@@ -842,7 +894,7 @@ export default function MyOrders() {
                     );
                   })()}
                   {/* Pre-shipment badge / button: show for all orders not yet in warehouse and not cancelled */}
-                  {!["in_warehouse", "in_storage", "transit_shipped", "notified_shipment", "notified_shipment_fee_pending", "shipping_fee_pending", "ready_to_ship", "shipped", "delivered", "cancelled"].includes(order.order_status) && (
+                  {!["in_warehouse", "in_storage", "transit_shipped", "notified_shipment", "notified_shipment_fee_pending", "notified_shipment_fee_paid", "shipping_fee_pending", "ready_to_ship", "shipped", "delivered", "cancelled"].includes(order.order_status) && (
                     order.pre_shipment
                       ? <Button size="sm" variant="outline" className="h-6 text-xs px-2 text-purple-600 border-purple-200 hover:bg-purple-50"
                           onClick={() => navigate(`/PreShipmentForm?order_id=${order.id}`)}>
@@ -858,6 +910,20 @@ export default function MyOrders() {
                       <Zap className="w-2.5 h-2.5" />已预出货
                     </span>
                   )}
+                  {order.order_status === "notified_shipment_fee_paid" && (() => {
+                    const pool = order?.pool;
+                    return (
+                      <div className="flex flex-col gap-1 items-start">
+                        {pool?.pool_id && (
+                          <button
+                            className="text-xs font-mono text-purple-700 bg-purple-50 border border-purple-100 px-1.5 py-0.5 rounded hover:bg-purple-100 hover:border-purple-300 transition-colors cursor-pointer"
+                            onClick={() => setViewPool(pool)}>
+                            {pool?.pool_code}
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })()}
                   {order.order_status === "notified_shipment" && (() => {
                     const orderId = String(order.id);
                     // const pool = shippingPools.find(p => (p.order_ids || []).some(id => String(id) === orderId));
@@ -908,7 +974,7 @@ export default function MyOrders() {
                         <button
                           className="text-xs font-mono text-purple-700 bg-purple-50 border border-purple-100 px-1.5 py-0.5 rounded hover:bg-purple-100 hover:border-purple-300 transition-colors cursor-pointer"
                           onClick={() => setViewPool(pool)}>
-                          {order.pool_code || pool?.pool_id.slice(-6).toUpperCase()}
+                          {pool?.pool_code || pool?.pool_id.slice(-6).toUpperCase()}
                         </button>
                         <Button size="sm" className="h-7 text-xs bg-orange-600 hover:bg-orange-700"
                           onClick={() => setViewPool(pool)}>
@@ -934,6 +1000,13 @@ export default function MyOrders() {
                     const pool = order.pool;
                     return (
                       <div className="flex flex-col gap-1 items-start">
+                        {pool?.pool_id && (
+                          <button
+                            className="text-xs font-mono text-purple-700 bg-purple-50 border border-purple-100 px-1.5 py-0.5 rounded hover:bg-purple-100 hover:border-purple-300 transition-colors cursor-pointer"
+                            onClick={() => setViewPool(pool)}>
+                            {pool?.pool_code}
+                          </button>
+                        )}
                         {pool?.id && (
                           <Button size="sm" variant="outline" className="h-7 text-xs px-2"
                             onClick={() => setViewPool(pool)}>
@@ -1010,11 +1083,12 @@ export default function MyOrders() {
       {shipmentOrder && (
         <UserNotifyShipmentModal
           order={shipmentOrder}
-          initialData={pageData}
+          initialData={shipmentInitialData}
           hazmatText={pageData.hazmatText || null}
-          onClose={() => setShipmentOrder(null)}
+          onClose={() => { setShipmentOrder(null); setShipmentInitialData(null); }}
           onSuccess={() => {
             setShipmentOrder(null);
+            setShipmentInitialData(null);
             fetchOrders(user);
           }}
         />
@@ -1023,11 +1097,12 @@ export default function MyOrders() {
       {shipmentOrders && (
         <UserNotifyShipmentModal
           orders={shipmentOrders}
-          initialData={pageData}
+          initialData={shipmentInitialData}
           hazmatText={pageData.hazmatText || null}
-          onClose={() => setShipmentOrders(null)}
+          onClose={() => { setShipmentOrders(null); setShipmentInitialData(null); }}
           onSuccess={() => {
             setShipmentOrders(null);
+            setShipmentInitialData(null);
             setSelectedIds([]);
             fetchOrders(user);
           }}
@@ -1052,7 +1127,7 @@ export default function MyOrders() {
           isAdmin={false}
           currentUser={user}
           allowUserRewarehouse={allowUserRewarehouse}
-          onClose={() => setViewPool(null)}
+          onClose={() => { setViewPool(null); fetchOrders(user); }}
           onUpdated={() => { setViewPool(null); fetchOrders(user); }}
         />
       )}

@@ -46,7 +46,7 @@ export default function UserGroupHeader({
       <div className="flex flex-wrap items-center gap-1 flex-1 min-w-0">
         {uniqueGroupAddons.map((a, i) => (
           <span key={i} className="inline-flex items-center gap-0.5 text-xs bg-yellow-50 border border-yellow-200 text-yellow-700 rounded px-1.5 py-0.5">
-            <Star className="w-2.5 h-2.5" />{a.name}
+            <Star className="w-2.5 h-2.5" />{a.service_name}
           </span>
         ))}
         {transitMethodName && (
