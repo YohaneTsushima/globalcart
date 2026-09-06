@@ -25,6 +25,7 @@ import { MOCK_ADMIN_ORDERS_DATA } from "@/mock/adminOrdersMock";
 import { updateOrder, updateTenantOrder } from "@/lib/tenantApi";
 import ConfirmDialog from "@/components/common/ConfirmDialog";
 import { toast } from "sonner";
+import { persistentToastError } from "@/lib/toastUtils.jsx";
 import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogAction } from "@/components/ui/alert-dialog";
 
 const STORAGE_KEY = "admin_orders_columns";
@@ -297,7 +298,7 @@ export default function AdminOrders() {
         setBulkErrors(errors.map(e => e.errorMessage));
         setShowBulkErrors(true);
       } else {
-        toast.error(res?.data?.message || "操作失败");
+        persistentToastError(res?.data?.message || "操作失败");
       }
     }
 
@@ -363,11 +364,11 @@ export default function AdminOrders() {
           setBulkErrors(errors.map(e => e.errorMessage));
           setShowBulkErrors(true);
         } else {
-          toast.error(res?.data?.message || "操作失败");
-        }
+        persistentToastError(res?.data?.message || "操作失败");
       }
-      setSelectedIds([]);
-      fetchOrders();
+    }
+
+    fetchOrders();
     });
 
   const handleBulkQuickOrdered = () => handleBulkAction("正在标记已下单...", "order/info/handleMarkPurchased", "批量标记已下单成功", selectedPendingPurchase);
@@ -439,7 +440,7 @@ export default function AdminOrders() {
         setBulkErrors(errors.map(e => e.errorMessage));
         setShowBulkErrors(true);
       } else {
-        toast.error(res?.data?.message || "操作失败");
+        persistentToastError(res?.data?.message || "操作失败");
       }
     }
 
@@ -826,13 +827,7 @@ export default function AdminOrders() {
                           const isOfficialPool = pool.is_admin_created === true;
                           return (
                             <>
-                            {pool.pool_id && (
-                              <button
-                                className="text-xs font-mono text-purple-700 bg-purple-50 border border-purple-100 px-1.5 py-0.5 rounded hover:bg-purple-100 hover:border-purple-300 transition-colors cursor-pointer"
-                                onClick={() => handleOpenPool(pool)}>
-                                {pool.pool_code}
-                              </button>
-                            )}
+                            
                             <Button size="sm" variant="outline"
                               className={`h-6 text-xs px-2 ${isOfficialPool ? "text-blue-600 border-blue-200 hover:bg-blue-50" : isConsolidation ? "text-purple-600 border-purple-200 hover:bg-purple-50" : "text-teal-600 border-teal-200 hover:bg-teal-50"}`}
                               onClick={() => handleOpenPool(pool)}>

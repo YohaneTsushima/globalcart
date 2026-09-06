@@ -2,6 +2,7 @@
  * ImageUploader — 通用图片上传组件
  * 支持：点击上传、拖拽、Ctrl+V 粘贴（图片或URL）、URL输入框、预览+删除
  */
+import { useState, useEffect } from "react";
 import { useTranslation } from "@/lib/LocaleContext";
 import { useLocale } from "@/lib/LocaleContext";
 import { X, Upload } from "lucide-react";
@@ -19,6 +20,11 @@ export default function ImageUploader({
 }) {
   const { t } = useTranslation();
   const { locale } = useLocale();
+  const [imgError, setImgError] = useState(false);
+
+  useEffect(() => {
+    setImgError(false);
+  }, [value]);
 
   const handleFile = (file) => {
     if (file && file.type?.startsWith("image/")) {
@@ -60,16 +66,24 @@ export default function ImageUploader({
         }}
         onPaste={handlePaste}
       >
-        {value ? (
+        {value && !imgError ? (
           <div className="p-3 flex items-center gap-3 cursor-pointer" onClick={() => document.getElementById(id)?.click()}>
-            <img src={value} alt="" className="h-16 w-16 rounded object-cover border border-green-200" />
+            <img 
+              src={value} 
+              alt="" 
+              className="h-16 w-16 rounded object-cover border border-green-200"
+              onError={() => {
+                setImgError(true);
+                onDelete?.({ isError: true });
+              }}
+            />
             <div className="flex-1 min-w-0">
               <div className="text-xs text-gray-400">{t("点击更换或拖拽新图片", locale)}</div>
             </div>
             <button
               type="button"
               className="p-1 rounded-full hover:bg-red-100 text-gray-400 hover:text-red-500 transition-colors flex-shrink-0"
-              onClick={(e) => { e.stopPropagation(); onDelete?.(); }}
+              onClick={(e) => { e.stopPropagation(); onDelete?.({ isError: false }); }}
             >
               <X className="w-4 h-4" />
             </button>
@@ -94,7 +108,7 @@ export default function ImageUploader({
               <Input
                 type="text"
                 placeholder={t("或输入图片 URL", locale)}
-                value={value || ""}
+                value={imgError ? "" : (value || "")}
                 onChange={(e) => onChange?.(e.target.value)}
                 className="text-sm border-0 shadow-none bg-transparent px-0 h-7 focus-visible:ring-0"
               />

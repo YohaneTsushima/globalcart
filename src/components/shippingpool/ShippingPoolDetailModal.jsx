@@ -31,7 +31,9 @@ import UserGroupHeader from "@/components/shippingpool/UserGroupHeader";
 import MessageThread from "@/components/common/MessageThread";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { toast } from "sonner";
+import { persistentToastError } from "@/lib/toastUtils.jsx";
 import ConfirmDialog from "@/components/common/ConfirmDialog";
+import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription } from "@/components/ui/alert-dialog";
 
 import { STATUS_CONFIG, METHOD_LABELS } from "./shippingFormConstants";
 import AddressForm, { EMPTY_ADDRESS_FORM, serializeAddressToText, isAddressFormValid } from "@/components/common/AddressForm";
@@ -78,6 +80,9 @@ export default function ShippingPoolDetailModal({ pool: initialPool, isAdmin, cu
   const alipayPopupRef = useRef(null);
   const alipayPollTimerRef = useRef(null);
   const [uploadingProof, setUploadingProof] = useState(false);
+  const [alertDialogOpen, setAlertDialogOpen] = useState(false);
+  const [alertDialogMessage, setAlertDialogMessage] = useState("请稍后");
+  const [alertDialogDescription, setAlertDialogDescription] = useState("");
   const [proofUrl, setProofUrl] = useState("");
   const [confirmingDelivery, setConfirmingDelivery] = useState(false);
   const [showConfirmDeliveryDialog, setShowConfirmDeliveryDialog] = useState(false);
@@ -314,6 +319,7 @@ export default function ShippingPoolDetailModal({ pool: initialPool, isAdmin, cu
           alipayPollTimerRef.current = null;
         }
         setAlipayPaying(false);
+        setAlertDialogOpen(false);
         toast.success('支付成功');
         onSuccessRef.current?.();
       }
@@ -472,19 +478,19 @@ debugger
 
     try {
       const res = await shippingPoolApi.addOrder(order.id, handleUpdateParams);
+      const message = isAdmin ? '添加成功' : '申请成功，等待管理员审批'
+      toast.success(message);
+
     } catch (err) {
         let message = err?.response?.data?.message;
         console.error('[ShippingPoolDetailModal] Handle Submit Add Order failed:', message);
-        toast.error(message || "提交失败，请稍后重试");
-        return;
+        persistentToastError(message || "提交失败，请稍后重试");
+        
+    } finally {
+      setAddingOrderId(null);
+      setShowAddOrder(false);
+      await refreshPool();
     }
-    
-
-    setAddingOrderId(null);
-    setShowAddOrder(false);
-    await refreshPool();
-    const message = isAdmin ? '添加成功' : '申请成功，等待管理员审批'
-    toast.success(message);
 
     return;
 
@@ -541,7 +547,7 @@ debugger
           setBulkErrors(errors.map(e => e.errorMessage));
           setShowBulkErrors(true);
         } else {
-          toast.error(res?.data?.message || "操作失败");
+          persistentToastError(res?.data?.message || "操作失败");
         }
       }
     } catch (err) {
@@ -638,7 +644,7 @@ debugger
     });
 
     if(!res?.data?.success) {
-      toast.error(`下单失败: ${res?.data?.result}`);
+      persistentToastError(`下单失败: ${res?.data?.result}`);
       setGeneratingAlipay(false);
       return;
     }
@@ -659,12 +665,16 @@ debugger
 
     if (popup) {
       setAlipayPaying(true);
+      setAlertDialogOpen(true);
+      setAlertDialogMessage("支付中，请在弹出的支付宝窗口完成付款...");
+      setAlertDialogDescription("请不要刷新和关闭本页面...");
       alipayPopupRef.current = popup;
       alipayPollTimerRef.current = setInterval(() => {
         if (popup.closed) {
           clearInterval(alipayPollTimerRef.current);
           alipayPollTimerRef.current = null;
           setAlipayPaying(false);
+          setAlertDialogOpen(false);
         }
       }, 500);
     }
@@ -673,6 +683,8 @@ debugger
   // User: upload payment proof (non-alipay)
   const handleUploadProof = async (file) => {
     setUploadingProof(true);
+    setAlertDialogOpen(true);
+    setAlertDialogMessage("上传中...");
     const method = selectedMethodMeta?.value;
     // const { file_url } = await base44.integrations.Core.UploadFile({ file });
     const file_url = '';
@@ -720,12 +732,15 @@ debugger
       setPool(p => ({ ...p, payment_status: "awaiting_confirmation", payment_method: method, payment_proof_url: file_url, ...(keepStatus ? {} : { status: "awaiting_payment_confirmation" }) }));
     }
     setUploadingProof(false);
+    setAlertDialogOpen(false);
   };
 
   // User: upload payment proof via ImageUploader (like PaymentModal)
   const handleProofChange = async (file) => {
     if (!file) return;
     setUploadingProof(true);
+    setAlertDialogOpen(true);
+    setAlertDialogMessage("上传中...");
     try {
       const { file_url } = await base44.integrations.Core.UploadFile({ file, path: "shipment_proof" });
       setProofUrl(file_url);
@@ -743,9 +758,30 @@ debugger
       await refreshPool();
     } catch (err) {
       const message = err?.message || err?.response?.data?.message;
-      toast.error("上传失败: " + (message || err));
+      persistentToastError("上传失败: " + (message || err));
     } finally {
       setUploadingProof(false);
+      setAlertDialogOpen(false);
+    }
+  };
+
+  const handleDeleteProof = async ({ isError } = {}) => {
+    const url = proofUrl || pool.payment_proof_url;
+    if (!url) return;
+    
+    if (isError) {
+      toast.error("凭证显示错误，请重新上传");
+    }
+    
+    setProofUrl("");
+    try {
+      await base44.integrations.Core.DeleteFile({ imageUrl: url, path: "shipment_proof" });
+    } catch (_) {}
+    
+    setPool(p => ({ ...p, payment_proof_url: "" }));
+    
+    if (!isError) {
+      toast.success("付款凭证已删除");
     }
   };
 
@@ -787,6 +823,8 @@ debugger
   const handleAdminOrderSave = async () => {
     if (!editingOrderData) return;
     setSavingOrder(true);
+    setAlertDialogOpen(true);
+    setAlertDialogMessage("正在保存订单...");
     await updateOrder(editingOrderData.id, {
       product_name: editingOrderData.product_name,
       weight_g: parseFloat(editingOrderData.weight_g) || 0,
@@ -796,6 +834,7 @@ debugger
     setOrders((prev) => prev.map((o) => o.id === editingOrderData.id ? { ...o, ...editingOrderData } : o));
     setEditingOrderData(null);
     setSavingOrder(false);
+    setAlertDialogOpen(false);
   };
 
   // Move order to another pool
@@ -804,10 +843,12 @@ debugger
     if (!adminEditingOrder || !effectiveTargetPoolId) return;
 
     setSavingOrder(true);
+    setAlertDialogOpen(true);
+    setAlertDialogMessage("正在移动订单...");
 
     try {
       const targetPool = otherPools.find((p) => p.id === effectiveTargetPoolId);
-      if (!targetPool) { setSavingOrder(false); return; }
+      if (!targetPool) { setSavingOrder(false); setAlertDialogOpen(false); return; }
 
       const poolOrderIds = pool.order_ids || [];
       const removedIdx = poolOrderIds.indexOf(adminEditingOrder.id);
@@ -845,9 +886,10 @@ debugger
       await refreshPool();
     } catch (e) {
       const message = e.response?.data?.message || e.message || '移动失败';
-      toast.error(message);
+      persistentToastError(message);
     } finally {
       setSavingOrder(false);
+      setAlertDialogOpen(false);
     }
   };
 
@@ -856,6 +898,8 @@ debugger
 
     if (!adminEditingOrder) return;
     setSavingOrder(true);
+    setAlertDialogOpen(true);
+    setAlertDialogMessage("正在退回订单...");
 
     const movePoolParams = {
       order_info: {
@@ -881,9 +925,10 @@ debugger
       await refreshPool();
     } catch (e) {
       const message = e.response?.data?.message || e.message || '退回失败';
-      toast.error(message);
+      persistentToastError(message);
     } finally {
       setSavingOrder(false);
+      setAlertDialogOpen(false);
     }
 
     return;
@@ -985,7 +1030,7 @@ debugger
     } catch (err) {
       const message = err?.response?.data?.message;
       console.error('[ShippingPoolDetailModal] Edit Request failed:', message);
-      toast.error(message || "提交失败，请稍后重试");
+      persistentToastError(message || "提交失败，请稍后重试");
     }
     setPendingEdits((prev) => prev.filter((r) => r.id !== req.id));
     setProcessingEditId(null);
@@ -1187,32 +1232,7 @@ debugger
 
   return (
     <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={e => { if (e.target === e.currentTarget && !alipayPaying) onClose(); }}>
-      {/* Loading overlay for Alipay payment — placed outside scrollable container to cover entire viewport */}
-      {alipayPaying && (
-        <div className="absolute inset-0 bg-white/80 backdrop-blur-sm z-[60] flex flex-col items-center justify-center gap-3"
-             onClick={e => e.stopPropagation()}>
-          <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
-          <p className="text-sm text-gray-600 font-medium">支付中，请在弹出的支付宝窗口完成付款...</p>
-          <p className="text-xs text-gray-400">请不要刷新和关闭本页面...</p>
-        </div>
-      )}
       <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto relative" onMouseDown={e => e.stopPropagation()}>
-        {/* Loading overlay for move operation */}
-        {savingOrder && actionMode === 'move' && (
-          <div className="absolute inset-0 bg-white/80 z-50 flex flex-col items-center justify-center rounded-xl"
-               onClick={e => e.stopPropagation()}>
-            <Loader2 className="w-8 h-8 text-blue-600 animate-spin mb-3" />
-            <p className="text-sm text-gray-600 font-medium">正在移动订单...</p>
-          </div>
-        )}
-        {/* Loading overlay for proof upload */}
-        {uploadingProof && (
-          <div className="absolute inset-0 bg-white/80 z-50 flex flex-col items-center justify-center rounded-xl"
-               onClick={e => e.stopPropagation()}>
-            <Loader2 className="w-8 h-8 text-blue-600 animate-spin mb-3" />
-            <p className="text-sm text-gray-600 font-medium">上传中...</p>
-          </div>
-        )}
         {/* Header */}
         <div className="flex items-start justify-between px-6 py-4 border-b sticky top-0 bg-white z-10">
           <div>
@@ -1388,7 +1408,7 @@ debugger
                             <div className="flex items-center gap-1">
                               <OrderDetailPanel order={o} pool={pool} />
                               {/* Admin can edit any order */}
-                              {canEditPackage && pool.status !== "shipped" && pool.status !== "delivered" &&
+                              {canEditPackage && (pool.status === "pending" || pool.status === "processing") &&
                           <div className="flex items-center gap-1">
                                   <button
                               onClick={() => setEditingOrderData({ ...o })}
@@ -2014,7 +2034,12 @@ debugger
             transitShippingMethods={transitShippingMethods}
             userProfileMap={tenantUserMap}
             exchangeRates={exchangeRates}
-            onPoolUpdated={onUpdated} />
+            onPoolUpdated={onUpdated}
+            onRefresh={refreshPool}
+            alertDialogOpen={alertDialogOpen}
+            setAlertDialogOpen={setAlertDialogOpen}
+            setAlertDialogMessage={setAlertDialogMessage}
+            setAlertDialogDescription={setAlertDialogDescription} />
 
           }
 
@@ -2149,13 +2174,22 @@ debugger
                       !(pool.per_user_payments || []).find(p => p.user_email === email && (p.payment_status === "awaiting_confirmation" || p.payment_status === "paid"))
                     );
                     return (
-                      <div className="bg-blue-50 border border-blue-100 rounded-lg px-3 py-2.5 space-y-1.5 text-sm">
+                      <div className="bg-blue-50 border border-blue-100 rounded-lg px-3 py-2.5 space-y-2 text-sm">
                         <p className="text-blue-700 font-medium">✅ 您的付款信息已提交，等待管理员确认。</p>
                         {othersPending.length > 0 ? (
                           <p className="text-xs text-blue-500">还有 {othersPending.length} 位参与者尚未提交付款。</p>
                         ) : (
                           <p className="text-xs text-blue-500">所有参与者均已提交付款，等待管理员确认。</p>
                         )}
+                        <p className="text-xs text-blue-500">你也可以，重新上传凭证</p>
+                        <ImageUploader
+                          value={proofUrl || pool.payment_proof_url || ''}
+                          onChange={handleProofChange}
+                          onDelete={handleDeleteProof}
+                          uploading={uploadingProof}
+                          label="重新上传付款凭证"
+                          id="pool-payment-proof-reupload-multi"
+                        />
                       </div>
                     );
                   }
@@ -2163,8 +2197,17 @@ debugger
                   // For single-user pool: show global submitted status
                   if (!isMultiUserPool && (pool.payment_status === "awaiting_confirmation" || pool.status === "awaiting_payment_confirmation")) {
                     return (
-                      <div className="bg-blue-50 border border-blue-100 rounded-lg px-3 py-2.5 text-sm text-blue-700">
-                        ✅ 付款信息已提交，等待管理员确认中。
+                      <div className="bg-blue-50 border border-blue-100 rounded-lg px-3 py-2.5 text-sm text-blue-700 space-y-2">
+                        <p>✅ 付款信息已提交，等待管理员确认中。</p>
+                        <p className="text-xs text-blue-500">你也可以，重新上传凭证</p>
+                        <ImageUploader
+                          value={proofUrl || pool.payment_proof_url}
+                          onChange={handleProofChange}
+                          onDelete={handleDeleteProof}
+                          uploading={uploadingProof}
+                          label="重新上传付款凭证"
+                          id="pool-payment-proof-reupload"
+                        />
                       </div>
                     );
                   }
@@ -2574,6 +2617,22 @@ debugger
           confirmText="是"
           onConfirm={handleConfirmDelivery}
         />
+
+        <AlertDialog open={alertDialogOpen} onOpenChange={setAlertDialogOpen}>
+          <AlertDialogContent className="z-[60]">
+            <AlertDialogHeader>
+              <AlertDialogTitle className="flex items-center justify-center gap-2">
+                <Loader2 className="w-5 h-5 animate-spin" />
+                {alertDialogMessage}
+              </AlertDialogTitle>
+              {alertDialogDescription && (
+                <AlertDialogDescription className="text-center">
+                  {alertDialogDescription}
+                </AlertDialogDescription>
+              )}
+            </AlertDialogHeader>
+          </AlertDialogContent>
+        </AlertDialog>
 
         {/* 底部关闭按钮 */}
         <div className="sticky bottom-0 bg-white border-t px-6 py-3 flex justify-end">

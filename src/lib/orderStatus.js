@@ -75,7 +75,7 @@ export const ORDER_STATUS_CONFIG = {
     userColor: "bg-amber-100 text-amber-700",
   },
   ready_to_ship: {
-    admin: "已付运费",
+    admin: "已付运费待出货",
     user: "待发货",
     adminColor: "bg-lime-100 text-lime-700",
     userColor: "bg-amber-100 text-amber-700",

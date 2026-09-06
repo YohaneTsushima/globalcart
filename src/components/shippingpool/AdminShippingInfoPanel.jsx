@@ -11,6 +11,7 @@ import { useState, useMemo, useEffect, useRef } from "react";
 import { base44 } from "@/api/base44Client";
 import { shippingPoolApi, tenantEntity } from "@/lib/tenantApi";
 import { toast } from "sonner";
+import { persistentToastError } from "@/lib/toastUtils.jsx";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -97,6 +98,11 @@ export default function AdminShippingInfoPanel({
   userProfileMap = {},
   exchangeRates: exchangeRatesProp = null,
   onPoolUpdated,
+  onRefresh,
+  alertDialogOpen,
+  setAlertDialogOpen,
+  setAlertDialogMessage,
+  setAlertDialogDescription,
 }) {
   const isConsolidation = (initialPool.consolidation_type === "transit" || initialPool.consolidation_type === "other");
   
@@ -405,7 +411,7 @@ export default function AdminShippingInfoPanel({
       
       console.error("操作失败:", e);
       const message = e?.response?.data?.message;
-      toast.error("操作失败：" + (message || "未知错误"));
+      persistentToastError("操作失败：" + (message || "未知错误"));
     } finally {
       setSaving?.(false);
     }
@@ -420,7 +426,7 @@ export default function AdminShippingInfoPanel({
       if (successMsg) toast.success(successMsg);
     } catch (err) {
       console.error("操作失败:", err);
-      toast.error("操作失败：" + (err?.message || "未知错误"));
+      persistentToastError("操作失败：" + (err?.message || "未知错误"));
     } finally {
       setLoading?.(false);
     }
@@ -579,6 +585,32 @@ export default function AdminShippingInfoPanel({
     await updatePool(fullPayload, { setLoading: setSaving });
   };
 
+  const confirmedAndReadyToShip = async () => {
+
+    setAlertDialogOpen(true);
+    setAlertDialogMessage("确认中...");
+
+    try {
+      debugger
+      await shippingPoolApi.confiredmProof(pool.id, {
+        pool_code: pool.pool_code,
+        actual_fee: actualShippingCostJpy
+      });
+      debugger
+      // await base44.functions.invoke('order/info/updateShipmentProof', payload);
+      toast.success(`发货池 [${pool.pool_code}] 更新为待发货`);
+    } catch (err) {
+      debugger
+      const message = err?.response?.data?.message || err?.message || '更新失败'
+      persistentToastError(message);
+    } finally {
+      setSaving(false);
+      setAlertDialogOpen(false);
+      onRefresh?.();
+    }
+     
+  }
+
   // Notify user of supplement AND immediately move pool to ready_to_ship
   const handleNotifyFeeUpdateAndReadyToShip = async () => {
     setSaving(true);
@@ -655,6 +687,8 @@ export default function AdminShippingInfoPanel({
   const handleShip = async () => {
     if (!trackingNumber) return;
     setSaving(true);
+    setAlertDialogOpen(true);
+    setAlertDialogMessage("正在发货...");
     // const payload = {
     //   ...buildUpdatePayload(),
     //   status: "shipped",
@@ -668,21 +702,24 @@ export default function AdminShippingInfoPanel({
     const payload = {
       id: pool.id,
       pool_code: pool.pool_code,
-      tracking_number: trackingNumber
+      tracking_number: trackingNumber,
+      actual_fee: actualShippingCostJpy
     };
     try {
-      
+      debugger
      const res = await shippingPoolApi.shipped(pool.id, payload);
-     console.log(res)
+     debugger
+     
       setPool(p => ({ ...p, ...res?.data }));
       onPoolUpdated?.({ ...pool, ...res?.data });
       toast.success(`[${pool.pool_code}] 已发货.`);
     } catch (err) {
       const errorMessage = err?.response?.data?.message;
       console.error("操作失败:", err);
-      toast.error("操作失败：" + (errorMessage || "未知错误"));
+      persistentToastError("操作失败：" + (errorMessage || "未知错误"));
     } finally {
-      setLoading?.(false);
+      setSaving(false);
+      setAlertDialogOpen(false);
     }
     // await updatePool(payload, { setLoading: setSaving });
     
@@ -1322,7 +1359,7 @@ export default function AdminShippingInfoPanel({
         title="确认收款"
         description="确认已收到全部款项，将发货池状态变更为「待发货」？"
         confirmText="确认"
-        onConfirm={handleConfirmPayment}
+        onConfirm={confirmedAndReadyToShip}
       />
 
       <ConfirmDialog
@@ -1331,7 +1368,7 @@ export default function AdminShippingInfoPanel({
         title="确认收款并发货"
         description="确认已收到全部款项并直接进入「已发货」状态？"
         confirmText="确认"
-        onConfirm={handleConfirmPaymentAndShip}
+        onConfirm={handleShip}
       />
 
       <ConfirmDialog

@@ -102,7 +102,7 @@ export default function OrderDetailCard({
           </p>
         </div>
         <div className="flex items-center gap-1">
-          {canEditPackage && poolStatus !== "shipped" && poolStatus !== "delivered" && (
+          {canEditPackage && (poolStatus === "pending" || poolStatus === "processing") && (
             <div className="flex items-center gap-1">
               <button onClick={() => setEditingOrderData({ ...order })} className="flex-shrink-0 p-1 rounded hover:bg-gray-200 text-gray-400 hover:text-gray-600 transition-colors" title="编辑包裹信息">
                 <Edit2 className="w-3.5 h-3.5" />

@@ -31,6 +31,7 @@ import ConfirmDialog from "@/components/common/ConfirmDialog";
 import { Ticket } from "lucide-react";
 import MyTicketOrders from "@/components/tickets/MyTicketOrders";
 import { toast } from "sonner";
+import { persistentToastError } from "@/lib/toastUtils.jsx";
 import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogAction } from "@/components/ui/alert-dialog";
 
 const STORAGE_KEY = "my_orders_columns";
@@ -436,7 +437,7 @@ export default function MyOrders() {
           setBulkErrors(errors.map(e => e.errorMessage));
           setShowBulkErrors(true);
         } else {
-          toast.error(res?.data?.message || "操作失败");
+          persistentToastError(res?.data?.message || "操作失败");
         }
       }
       fetchOrders(user);
@@ -476,7 +477,7 @@ export default function MyOrders() {
           setBulkErrors(errors.map(e => e.errorMessage));
           setShowBulkErrors(true);
         } else {
-          toast.error(res?.data?.message || "操作失败");
+          persistentToastError(res?.data?.message || "操作失败");
         }
       }
       setBulkDeliverOrders(null);
@@ -644,7 +645,7 @@ export default function MyOrders() {
                 setShipmentInitialData(r.data);
                 setShipmentOrders(selectedInWarehouse);
               } catch (err) {
-                toast.error('获取发货信息失败');
+                persistentToastError('获取发货信息失败');
               } finally {
                 setShipmentLoading(false);
               }
@@ -769,6 +770,13 @@ export default function MyOrders() {
                       <span className="w-1.5 h-1.5 rounded-full bg-red-500" />新消息
                     </span>
                   )}
+                  {(order.pool?.pool_code || order.pool_code) && (
+                    <button
+                      className="text-xs font-mono text-purple-700 bg-purple-50 border border-purple-100 px-1.5 py-0.5 rounded hover:bg-purple-100 hover:border-purple-300 transition-colors cursor-pointer"
+                      onClick={() => setViewPool(order.pool)}>
+                      {order.pool?.pool_code || order.pool_code}
+                    </button>
+                  )}
                   {order.order_status === "payment_pending" && order.payment_status !== "awaiting_confirmation" && (() => {
                     const isFullPayOnce = order.payment_mode === "fullpay_once";
                     return (
@@ -809,7 +817,7 @@ export default function MyOrders() {
                             setShipmentInitialData(r.data);
                             setShipmentOrder(order);
                           } catch (err) {
-                            toast.error('获取发货信息失败');
+                            persistentToastError('获取发货信息失败');
                           } finally {
                             setShipmentLoading(false);
                           }
@@ -871,13 +879,6 @@ export default function MyOrders() {
                           }}>
                           <CheckCircle className="w-3 h-3 mr-1" />确认收货
                         </Button>
-                        {pool?.pool_id && (
-                          <button
-                            className="text-xs font-mono text-purple-700 bg-purple-50 border border-purple-100 px-1.5 py-0.5 rounded hover:bg-purple-100 transition-colors"
-                            onClick={(e) => { e.stopPropagation(); setViewPool(pool); }}>
-                            { order.pool_code }
-                          </button>
-                        )}
                         {(() => {
                           if (!pool) return null;
                           const feeNotified = (pool.fee_breakdown_per_user || []).length > 0 || (pool.shipping_fee_jpy || 0) > 0;
@@ -914,13 +915,6 @@ export default function MyOrders() {
                     const pool = order?.pool;
                     return (
                       <div className="flex flex-col gap-1 items-start">
-                        {pool?.pool_id && (
-                          <button
-                            className="text-xs font-mono text-purple-700 bg-purple-50 border border-purple-100 px-1.5 py-0.5 rounded hover:bg-purple-100 hover:border-purple-300 transition-colors cursor-pointer"
-                            onClick={() => setViewPool(pool)}>
-                            {pool?.pool_code}
-                          </button>
-                        )}
                       </div>
                     );
                   })()}
@@ -934,13 +928,6 @@ export default function MyOrders() {
                     const poolAwaitingPayment = pool?.id && (pool?.status === "awaiting_payment" || pool?.status === "awaiting_payment_confirmation");
                     return (
                       <div className="flex flex-col gap-1 items-start">
-                        {pool?.pool_id && (
-                          <button
-                            className="text-xs font-mono text-purple-700 bg-purple-50 border border-purple-100 px-1.5 py-0.5 rounded hover:bg-purple-100 hover:border-purple-300 transition-colors cursor-pointer"
-                            onClick={() => setViewPool(pool)}>
-                            { pool?.pool_code }
-                          </button>
-                        )}
                         {hasPendingEdit && (
                           <span className="text-xs text-orange-600 bg-orange-50 border border-orange-200 px-1.5 py-0.5 rounded flex items-center gap-1">
                             ⏳ 申请更改中
@@ -971,11 +958,6 @@ export default function MyOrders() {
                     const hasPendingRewarehouse = pendingEditRequests.some(r => String(r.order_id) === orderId && r.is_rewarehouse_request);
                     return (
                       <div className="flex flex-col gap-1 items-start">
-                        <button
-                          className="text-xs font-mono text-purple-700 bg-purple-50 border border-purple-100 px-1.5 py-0.5 rounded hover:bg-purple-100 hover:border-purple-300 transition-colors cursor-pointer"
-                          onClick={() => setViewPool(pool)}>
-                          {pool?.pool_code || pool?.pool_id.slice(-6).toUpperCase()}
-                        </button>
                         <Button size="sm" className="h-7 text-xs bg-orange-600 hover:bg-orange-700"
                           onClick={() => setViewPool(pool)}>
                           <CreditCard className="w-3 h-3 mr-1" />去付运费
@@ -1000,13 +982,6 @@ export default function MyOrders() {
                     const pool = order.pool;
                     return (
                       <div className="flex flex-col gap-1 items-start">
-                        {pool?.pool_id && (
-                          <button
-                            className="text-xs font-mono text-purple-700 bg-purple-50 border border-purple-100 px-1.5 py-0.5 rounded hover:bg-purple-100 hover:border-purple-300 transition-colors cursor-pointer"
-                            onClick={() => setViewPool(pool)}>
-                            {pool?.pool_code}
-                          </button>
-                        )}
                         {pool?.id && (
                           <Button size="sm" variant="outline" className="h-7 text-xs px-2"
                             onClick={() => setViewPool(pool)}>
