@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { parseNaturalPrice } from "@/lib/naturalNumber";
 import { detectPrimaryStoreTagResult } from "@/lib/onlineStoreTag";
 import { base44 } from "@/api/base44Client";
@@ -7,8 +7,7 @@ import { useAuth } from "@/lib/AuthContext";
 import { timePage } from "@/lib/timing";
 import { useNavigate } from "react-router-dom";
 import { createPageUrl } from "@/utils";
-import { ShoppingBag, Info, Upload, Plus, X, HelpCircle, AlertTriangle, Lock, Truck, Loader2, ChevronDown } from "lucide-react";
-import { isMercariUrl, fetchMercariItemInfo } from "@/lib/mercariApi";
+import { ShoppingBag, Info, Upload, Plus, X, HelpCircle, AlertTriangle, Lock, Truck, ChevronDown } from "lucide-react";
 import { usePermissions } from "@/hooks/usePermissions";
 import FeeCalculator from "@/components/orders/FeeCalculator";
 import PaymentSection from "@/components/orders/PaymentSection";
@@ -64,8 +63,7 @@ export default function SubmitOrder() {
   const [dontShowAgain, setDontShowAgain] = useState(false);
   const [pendingForm, setPendingForm] = useState(null);
   const [uploading, setUploading] = useState(false);
-  const [fetchingPrice, setFetchingPrice] = useState(false);
-  const fetchingRef = useRef(false);
+
   const [paymentMethod, setPaymentMethod] = useState(null);
   const [paymentMethods, setPaymentMethods] = useState([]);
   const [paymentMode, setPaymentMode] = useState("");
@@ -207,37 +205,6 @@ export default function SubmitOrder() {
   };
 
   useEffect(() => { if (form.estimated_jpy) calculate(); }, [form.estimated_jpy, selectedAddons, addonCustomFees, settings, activeRule]);
-
-  // 自动抓取 Mercari 价格（多个链接累加）
-  useEffect(() => {
-    const mercariUrls = productUrls.map(u => u.trim()).filter(u => isMercariUrl(u));
-    if (mercariUrls.length === 0) return;
-
-    const timer = setTimeout(async () => {
-      if (fetchingRef.current) return;
-      fetchingRef.current = true;
-      setFetchingPrice(true);
-      try {
-        const results = await Promise.allSettled(mercariUrls.map(u => fetchMercariItemInfo(u)));
-        const totalPrice = results
-          .filter(r => r.status === 'fulfilled')
-          .reduce((sum, r) => sum + (r.value.price || 0), 0);
-
-        if (totalPrice > 0) {
-          setForm(f => ({ ...f, estimated_jpy: String(totalPrice) }));
-          const successCount = results.filter(r => r.status === 'fulfilled').length;
-          toast.success(`已自动获取 ${successCount} 个 Mercari 商品，合计 ¥${totalPrice}`);
-        }
-      } catch (err) {
-        console.warn('Mercari 价格自动获取失败:', err.message);
-      } finally {
-        setFetchingPrice(false);
-        fetchingRef.current = false;
-      }
-    }, 800);
-
-    return () => clearTimeout(timer);
-  }, [productUrls]);
 
   const deleteImageByUrl = async (imageUrl, path = "submitOrder") => {
     if (!imageUrl) return;
@@ -667,13 +634,7 @@ export default function SubmitOrder() {
                     className={`mt-1 text-sm font-mono ${!(productUrls[0] || "").trim() ? "border-red-400 placeholder:text-red-400 focus-visible:ring-red-300" : ""}`}
                     rows={3}
                   />
-                  {fetchingPrice && isMercariUrl(productUrls[0]) && (
-                    <div className="flex items-center gap-1.5 mt-1">
-                      <Loader2 className="w-3.5 h-3.5 text-blue-500 animate-spin" />
-                      <span className="text-xs text-blue-500">{t("正在获取商品信息...", locale)}</span>
-                    </div>
-                  )}
-                </div>
+                 </div>
               ) : (
                 <div className="mt-1 space-y-2">
                   {productUrls.map((url, idx) => (
@@ -695,10 +656,7 @@ export default function SubmitOrder() {
                           <Plus className="w-4 h-4" />
                         </button>
                       )}
-                      {fetchingPrice && idx === 0 && isMercariUrl(url) && (
-                        <Loader2 className="w-4 h-4 text-blue-500 animate-spin shrink-0" />
-                      )}
-                    </div>
+                     </div>
                   ))}
                 </div>
               )}

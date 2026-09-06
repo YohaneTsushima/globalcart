@@ -104,6 +104,12 @@ export const ORDER_STATUS_CONFIG = {
     adminColor: "bg-red-100 text-red-700",
     userColor: "bg-red-100 text-red-700",
   },
+  archived: {
+    admin: "已存档",
+    user: "已存档",
+    adminColor: "bg-grey-100 text-grey-700",
+    userColor: "bg-grey-100 text-grey-700",
+  },
 };
 
 export function getStatusLabel(status, role = "user") {

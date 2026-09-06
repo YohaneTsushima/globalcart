@@ -495,9 +495,6 @@ export default function MyOrders() {
         id: order.id
       }];
 
-      console.log(selectedIds)
-      return 
-
       await base44.functions.invoke('order/info/handleArchive', payload);
       fetchOrders(user);
     } finally {
