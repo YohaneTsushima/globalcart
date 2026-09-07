@@ -9,8 +9,25 @@ let heartbeatTimer = null;
 let reconnectAttempts = 0;
 let stopped = false;
 const MAX_RECONNECT_DELAY = 30000;
-const HEARTBEAT_INTERVAL = 30000;
+const HEARTBEAT_INTERVAL = 15000;
 const listeners = new Map();
+
+// 页面可见性变化时检查连接
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'ping' }));
+    } else if (!stopped) {
+      reconnectWebSocket();
+    }
+  }
+});
+
+// 网络恢复时重连
+window.addEventListener('online', () => {
+  console.log('[WebSocket] network online, reconnecting...');
+  reconnectWebSocket();
+});
 
 function getWsUrl() {
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';

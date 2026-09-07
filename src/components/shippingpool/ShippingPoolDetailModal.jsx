@@ -748,7 +748,7 @@ debugger
       await shippingPoolApi.proof(pool.id, {
         pool_code: pool.pool_code,
         payment_proof_url: file_url,
-        payment_method: selectedMethodMeta?.value || selectedMethodMeta?.label || "",
+        payment_method: selectedMethodMeta?.method_name || selectedMethodMeta?.label || "",
         payment_method_id: selectedMethodMeta?.id || null,
       });
 
