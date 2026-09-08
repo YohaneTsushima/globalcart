@@ -110,9 +110,9 @@ export default function AdminOrders() {
   const [settlementData, setSettlementData] = useState(null);
   const [actualWeight, setActualWeight] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
-  const [orderedConfirmOrder, setOrderedConfirmOrder] = useState(null);
   const [bulkErrors, setBulkErrors] = useState([]);
   const [showBulkErrors, setShowBulkErrors] = useState(false);
+  const [pendingBulkAction, setPendingBulkAction] = useState(null);
 
   const fetchOrders = async (overridePage) => {
     if (fetchingRef.current) return;
@@ -347,8 +347,7 @@ export default function AdminOrders() {
   const selectableOrders = orders.filter(o => o.order_status !== "shipped" && o.order_status !== "cancelled" && o.order_status !== "payment_pending");
 
   // 批量操作公共函数
-  const handleBulkAction = (label, url, toastMsg, sourceList) =>
-    withBulkLabel(label, async () => {
+  const handleBulkAction = (label, url, toastMsg, sourceList) => withBulkLabel(label, async () => {
       if (sourceList.length === 0) return;
       const payload = sourceList.map(o => ({
         id: o.id,
@@ -369,7 +368,7 @@ export default function AdminOrders() {
     }
 
     fetchOrders();
-    });
+  });
 
   const handleBulkQuickOrdered = () => handleBulkAction("正在标记已下单...", "order/info/handleMarkPurchased", "批量标记已下单成功", selectedPendingPurchase);
   const handleBulkInWarehouse  = () => handleBulkAction("正在入库...",       "order/info/handleMarkInWarehouse", "批量入库成功",       selectedPurchased);
@@ -392,6 +391,12 @@ export default function AdminOrders() {
   };
 
   const handleQuickOrdered = async (order) => {
+    debugger
+    const payload = [order];
+
+    handleBulkAction("正在标记已下单...", "order/info/handleMarkPurchased", "下单成功", payload);
+
+    return;
 
     updateOrder(order.id, {
       order_id: order.id,
@@ -405,7 +410,7 @@ export default function AdminOrders() {
     //   purchased_date: new Date().toISOString().split("T")[0],
     //   notice_key: 'order_purchased'
     // });
-    fetchOrders();
+    // fetchOrders();
   };
 
   const handleQuickInWarehouse = async (order) => {
@@ -602,7 +607,7 @@ export default function AdminOrders() {
           <ShoppingCart className="w-4 h-4 text-purple-500 shrink-0" />
           <span className="text-sm text-purple-700 font-medium">已选 {selectedPendingPurchase.length} 条待下单订单</span>
           <Button size="sm" className="h-7 text-xs bg-purple-600 hover:bg-purple-700 ml-auto"
-            onClick={handleBulkQuickOrdered} disabled={bulkUpdating}>
+            onClick={() => setPendingBulkAction({ title: "确认批量标记已下单", description: `确定将 ${selectedPendingPurchase.length} 条订单标记为已下单吗？`, onConfirm: handleBulkQuickOrdered })} disabled={bulkUpdating}>
             {bulkUpdating ? "处理中..." : "一键标记已下单"}
           </Button>
           <Button size="sm" variant="ghost" className="h-7 text-xs" disabled={bulkUpdating} onClick={() => setSelectedIds([])}>取消</Button>
@@ -613,7 +618,7 @@ export default function AdminOrders() {
           <CreditCard className="w-4 h-4 text-red-500 shrink-0" />
           <span className="text-sm text-red-700 font-medium">已选 {selectedAwaitingConfirm.length} 条待确认收款订单</span>
           <Button size="sm" className="h-7 text-xs bg-red-600 hover:bg-red-700 ml-auto"
-            onClick={bulkconfirmProof} disabled={bulkUpdating}>
+            onClick={() => setPendingBulkAction({ title: "确认批量收款", description: `确定确认 ${selectedAwaitingConfirm.length} 条订单的收款吗？`, onConfirm: bulkconfirmProof })} disabled={bulkUpdating}>
             {bulkUpdating ? "处理中..." : "一键确认收款"}
           </Button>
           <Button size="sm" variant="ghost" className="h-7 text-xs" disabled={bulkUpdating} onClick={() => setSelectedIds([])}>取消</Button>
@@ -624,7 +629,7 @@ export default function AdminOrders() {
           <PackageCheck className="w-4 h-4 text-orange-500 shrink-0" />
           <span className="text-sm text-orange-700 font-medium">已选 {selectedPurchased.length} 条已下单订单</span>
           <Button size="sm" className="h-7 text-xs bg-orange-600 hover:bg-orange-700 ml-auto"
-            onClick={handleBulkInWarehouse} disabled={bulkUpdating}>
+            onClick={() => setPendingBulkAction({ title: "确认批量入库", description: `确定将 ${selectedPurchased.length} 条订单标记为已入库吗？`, onConfirm: handleBulkInWarehouse })} disabled={bulkUpdating}>
             {bulkUpdating ? "处理中..." : "一键入库"}
           </Button>
           <Button size="sm" variant="ghost" className="h-7 text-xs" disabled={bulkUpdating} onClick={() => setSelectedIds([])}>取消</Button>
@@ -635,7 +640,7 @@ export default function AdminOrders() {
           <ClipboardCheck className="w-4 h-4 text-teal-500 shrink-0" />
           <span className="text-sm text-teal-700 font-medium">已选 {selectedInWarehouse.length} 条已入库订单</span>
           <Button size="sm" className="h-7 text-xs bg-teal-600 hover:bg-teal-700 ml-auto"
-            onClick={handleBulkReadyToShip} disabled={bulkUpdating}>
+            onClick={() => setPendingBulkAction({ title: "确认批量待发货", description: `确定将 ${selectedInWarehouse.length} 条订单设置为待发货吗？`, onConfirm: handleBulkReadyToShip })} disabled={bulkUpdating}>
             {bulkUpdating ? "处理中..." : "一键待发货"}
           </Button>
           <Button size="sm" variant="ghost" className="h-7 text-xs" disabled={bulkUpdating} onClick={() => setSelectedIds([])}>取消</Button>
@@ -646,7 +651,7 @@ export default function AdminOrders() {
           <Truck className="w-4 h-4 text-blue-500 shrink-0" />
           <span className="text-sm text-blue-700 font-medium">已选 {selectedReadyToShip.length} 条待发货订单</span>
           <Button size="sm" className="h-7 text-xs bg-blue-600 hover:bg-blue-700 ml-auto"
-            onClick={handleBulkShip} disabled={bulkUpdating}>
+            onClick={() => setPendingBulkAction({ title: "确认批量发货", description: `确定将 ${selectedReadyToShip.length} 条订单标记为已发货吗？`, onConfirm: handleBulkShip })} disabled={bulkUpdating}>
             {bulkUpdating ? "处理中..." : "一键发货"}
           </Button>
           <Button size="sm" variant="ghost" className="h-7 text-xs" disabled={bulkUpdating} onClick={() => setSelectedIds([])}>取消</Button>
@@ -657,7 +662,7 @@ export default function AdminOrders() {
           <Archive className="w-4 h-4 text-gray-500 shrink-0" />
           <span className="text-sm text-gray-700 font-medium">已选 {selectedDelivered.length} 条已收货订单</span>
           <Button size="sm" className="h-7 text-xs bg-gray-600 hover:bg-gray-700 ml-auto"
-            onClick={handleBulkArchive} disabled={bulkUpdating}>
+            onClick={() => setPendingBulkAction({ title: "确认批量存档", description: `确定将 ${selectedDelivered.length} 条订单存档吗？`, onConfirm: handleBulkArchive })} disabled={bulkUpdating}>
             {bulkUpdating ? "处理中..." : "批量存档"}
           </Button>
           <Button size="sm" variant="ghost" className="h-7 text-xs" disabled={bulkUpdating} onClick={() => setSelectedIds([])}>取消</Button>
@@ -793,7 +798,7 @@ export default function AdminOrders() {
                                 查看详情
                               </Button>
                             : <Button size="sm" variant="outline" className="h-6 text-xs px-2 text-indigo-600 border-indigo-200"
-                                onClick={() => setOrderedConfirmOrder(order)}>
+                                onClick={() => handleQuickOrdered(order)}>
                                 已下单
                               </Button>
                         )}
@@ -1109,20 +1114,20 @@ export default function AdminOrders() {
         </div>
       )}
       </TabsContent>
+
       <ConfirmDialog
-        open={!!orderedConfirmOrder}
-        onOpenChange={(open) => { if (!open) setOrderedConfirmOrder(null); }}
-        title="确认已下单"
-        description={`确定将订单"${orderedConfirmOrder?.product_name}"标记为已下单吗？${orderedConfirmOrder?.has_uploaded_screenshot === false ? '\n\n⚠️ 尚未上传完成购买后上传截图' : ''}`}
-        confirmText="确认已下单"
+        open={!!pendingBulkAction}
+        onOpenChange={(open) => { if (!open) setPendingBulkAction(null); }}
+        title={pendingBulkAction?.title || ""}
+        description={pendingBulkAction?.description || ""}
+        confirmText="确认"
         cancelText="取消"
         onConfirm={() => {
-          if (orderedConfirmOrder) {
-            handleQuickOrdered(orderedConfirmOrder);
-            setOrderedConfirmOrder(null);
-          }
+          pendingBulkAction?.onConfirm?.();
+          setPendingBulkAction(null);
         }}
       />
+
       <AlertDialog open={showBulkErrors} onOpenChange={setShowBulkErrors}>
         <AlertDialogContent>
           <AlertDialogHeader>

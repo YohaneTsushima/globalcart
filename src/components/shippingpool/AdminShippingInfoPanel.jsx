@@ -271,7 +271,7 @@ export default function AdminShippingInfoPanel({
 
   // Auto-calculate shipping fee from weight using the matched shipping method's rates
   const calcFeeFromWeight = (weightG) => {
-
+debugger
     if (!matchedShippingMethod || !pool.destination_country) return null;
     const country = pool.destination_country;
     // Resolve zone code: if rates are stored by zone (e.g. "zone1"), map the country code first
@@ -591,16 +591,13 @@ export default function AdminShippingInfoPanel({
     setAlertDialogMessage("确认中...");
 
     try {
-      debugger
       await shippingPoolApi.confiredmProof(pool.id, {
         pool_code: pool.pool_code,
         actual_fee: actualShippingCostJpy
       });
-      debugger
       // await base44.functions.invoke('order/info/updateShipmentProof', payload);
       toast.success(`发货池 [${pool.pool_code}] 更新为待发货`);
     } catch (err) {
-      debugger
       const message = err?.response?.data?.message || err?.message || '更新失败'
       persistentToastError(message);
     } finally {
@@ -706,9 +703,7 @@ export default function AdminShippingInfoPanel({
       actual_fee: actualShippingCostJpy
     };
     try {
-      debugger
      const res = await shippingPoolApi.shipped(pool.id, payload);
-     debugger
      
       setPool(p => ({ ...p, ...res?.data }));
       onPoolUpdated?.({ ...pool, ...res?.data });
@@ -861,6 +856,7 @@ export default function AdminShippingInfoPanel({
 
           {/* Weight & shipping fee */}
           {(() => {
+            debugger
             const wNum = parseFloat(finalWeightG);
             const calcResult = shippingCalcResult;
             const feeCurrency = calcResult ? calcResult.currency : "JPY";

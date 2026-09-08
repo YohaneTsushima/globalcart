@@ -70,7 +70,7 @@ export default function ShippingPoolCard({ pool, onClick, pendingEditCount = 0, 
               }
               {pool.shipping_method &&
               <span className="inline-flex items-center gap-1 text-xs bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded">
-                  <Truck className="w-2.5 h-2.5" />{METHOD_LABELS[pool.shipping_method] || pool.shipping_method}
+                  <Truck className="w-2.5 h-2.5" />{METHOD_LABELS[pool.shipping_method.toUpperCase()] || pool.shipping_method}
                 </span>
               }
               
@@ -197,7 +197,8 @@ export default function ShippingPoolCard({ pool, onClick, pendingEditCount = 0, 
         {/* Footer */}
         <div className="flex items-center justify-between pt-1 border-t border-gray-50">
           <span className="text-xs text-gray-400">
-            {new Date(pool.created_date).toLocaleDateString("zh-CN")}
+            {new Date(pool.created_at).toLocaleDateString("zh-CN")}
+            
           </span>
           <div className="flex items-center gap-2">
             {pendingEditCount > 0 && (

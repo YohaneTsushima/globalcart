@@ -24,6 +24,7 @@ import ShippingPoolCard from "@/components/shippingpool/ShippingPoolCard";
 import ShippingPoolDetailModal from "@/components/shippingpool/ShippingPoolDetailModal";
 import CreateShippingPoolModal from "@/components/shippingpool/CreateShippingPoolModal";
 import OfficialPoolKanban from "@/components/shippingpool/OfficialPoolKanban.jsx";
+import { shippingPoolApi } from "@/lib/tenantApi";
 
 const STATUS_FILTERS = [
   { v: "all",              l: "全部状态" },
@@ -55,6 +56,7 @@ export default function AdminShippingPool() {
   const [showCreate, setShowCreate] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
   const [showPoolSorter, setShowPoolSorter] = useState(false);
+  const [total, setTotal] = useState(0);
 
   // Location form
   const [showLocForm, setShowLocForm] = useState(false);
@@ -78,20 +80,33 @@ export default function AdminShippingPool() {
   const [allOrders, setAllOrders] = useState([]);
   const { pageSize: poolPageSize, setPageSize: setPoolPageSize, currentPage: poolPage, setCurrentPage: setPoolPage, resetPage: resetPoolPage, PAGE_SIZES } = usePageSize("admin_shipping_pool_page_size", 20);
 
+  const [poolsCount, setPoolsCount] = useState(0);
+  const [totalConsolidation, setTotalConsolidationCount] = useState(0);
+  const [totalLocations, setTotalLocationsCount] = useState(0);
+  const [totalOfficial, setTotalOfficialCount] = useState(0);
+
   const fetchPageData = async () => {
     setLoading(true);
     const t = timePage('AdminShippingPool');
-    // const r = await t.timeCall('getAdminShippingPoolPageData', () => base44.functions.invoke('getAdminShippingPoolPageData', {}));
-    const r = {};
-    const data = r.data || {};
+    const r = await fetchPools();
+    
+    const data = r || {};
+    const poolsCount = data?.poolsCount;
     setPools(data.pools || []);
+
+    setTotal(data?.total)
+    setPoolsCount(poolsCount?.pools || 0);
+    setTotalConsolidationCount(poolsCount?.consolidation)
+    setTotalLocationsCount(poolsCount?.locations)
+    setTotalOfficialCount(poolsCount?.officialKanban)
+
     setLocations(data.locations || []);
     setAllUsers(data.users || []);
-    setTransitMethods(data.transitMethods || []);
-    setAddonOptions(data.addonOptions || []);
+    setTransitMethods(data.transit_methods || []);
+    setAddonOptions(data.selected_addons || []);
     setPendingEditRequests(data.pendingEditRequests || []);
-    setBoxTemplates(data.boxTemplates || []);
-    setShippingMethods(data.shippingMethods || []);
+    setBoxTemplates(data.box_templates || []);
+    setShippingMethods(data.shipping_methods || []);
     setDefaultPackingFeeSingle(data.defaultPackingFeeSingle || 0);
     setDefaultPackingFeeConsolidation(data.defaultPackingFeeConsolidation || 0);
     setAllowReadyToShipWithoutPayment(data.allowShipWithoutPayment || false);
@@ -108,9 +123,16 @@ export default function AdminShippingPool() {
   // fetchPools is still used for post-mutation refresh (pools only)
   const fetchPools = async () => {
     setLoading(true);
-    const r = await base44.functions.invoke('getTenantShippingPools', {});
-    setPools(r.data?.pools || []);
+    const r = await shippingPoolApi.page(null, {
+      page: poolPage,
+      page_size: poolPageSize,
+      status: statusFilter,
+      show_archived: showArchived,
+      tab: activeTab,
+    });
+    
     setLoading(false);
+    return r;
   };
 
   const fetchLocations = async () => {
@@ -121,7 +143,7 @@ export default function AdminShippingPool() {
   useEffect(() => {
     if (!user) return;
     fetchPageData();
-  }, [user]);
+  }, [user, poolPage, poolPageSize, statusFilter, showArchived, activeTab]);
 
   // Archive handler for pools
   const handleArchivePool = async (pool) => {
@@ -141,26 +163,26 @@ export default function AdminShippingPool() {
   };
 
   // "发货申请" tab: direct (non-consolidation) pools, excluding pending pools
-  const directPools = pools.filter(p =>
-    !p.is_pending_pool &&
-    (!p.consolidation_type || p.consolidation_type === "") &&
-    (showArchived ? !!p.is_archived : !p.is_archived) &&
-    (statusFilter === "all" || p.status === statusFilter)
-  );
+  // const directPools = pools.filter(p =>
+  //   !p.is_pending_pool &&
+  //   (!p.consolidation_type || p.consolidation_type === "") &&
+  //   (showArchived ? !!p.is_archived : !p.is_archived) &&
+  //   (statusFilter === "all" || p.status === statusFilter)
+  // );
 
-  // "用户拼邮" tab: user-initiated consolidation pools
-  const userConsPools = pools.filter(p =>
-    p.consolidation_type && p.consolidation_type !== "" && !p.is_admin_created &&
-    (showArchived ? !!p.is_archived : !p.is_archived) &&
-    (statusFilter === "all" || p.status === statusFilter)
-  );
+  // // "用户拼邮" tab: user-initiated consolidation pools
+  // const userConsPools = pools.filter(p =>
+  //   p.consolidation_type && p.consolidation_type !== "" && !p.is_admin_created &&
+  //   (showArchived ? !!p.is_archived : !p.is_archived) &&
+  //   (statusFilter === "all" || p.status === statusFilter)
+  // );
 
-  // "官方拼邮看板" tab: admin-created consolidation pools only (staging is derived from allOrders)
-  const officialConsPools = pools.filter(p =>
-    p.consolidation_type && p.consolidation_type !== "" && !!p.is_admin_created &&
-    !p.is_pending_pool &&
-    !p.is_archived
-  );
+  // // "官方拼邮看板" tab: admin-created consolidation pools only (staging is derived from allOrders)
+  // const officialConsPools = pools.filter(p =>
+  //   p.consolidation_type && p.consolidation_type !== "" && !!p.is_admin_created &&
+  //   !p.is_pending_pool &&
+  //   !p.is_archived
+  // );
 
   // Location handlers
   const lf = (k, v) => setLocForm(p => ({ ...p, [k]: v }));
@@ -256,10 +278,10 @@ export default function AdminShippingPool() {
           <button key={tab.key} onClick={() => setActiveTab(tab.key)}
             className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors -mb-px ${activeTab === tab.key ? "border-red-600 text-red-600" : "border-transparent text-gray-500 hover:text-gray-800"}`}>
             {tab.label}
-            {tab.key === "pools" && <span className="ml-1.5 text-xs bg-gray-100 text-gray-600 rounded px-1.5 py-0.5">{directPools.length}</span>}
-            {tab.key === "consolidation" && <span className="ml-1.5 text-xs bg-gray-100 text-gray-600 rounded px-1.5 py-0.5">{userConsPools.length}</span>}
-            {tab.key === "official_kanban" && <span className="ml-1.5 text-xs bg-gray-100 text-gray-600 rounded px-1.5 py-0.5">{officialConsPools.length}</span>}
-            {tab.key === "locations" && <span className="ml-1.5 text-xs bg-gray-100 text-gray-600 rounded px-1.5 py-0.5">{locations.length}</span>}
+            {tab.key === "pools" && <span className="ml-1.5 text-xs bg-gray-100 text-gray-600 rounded px-1.5 py-0.5">{poolsCount}</span>}
+            {tab.key === "consolidation" && <span className="ml-1.5 text-xs bg-gray-100 text-gray-600 rounded px-1.5 py-0.5">{totalConsolidation}</span>}
+            {tab.key === "official_kanban" && <span className="ml-1.5 text-xs bg-gray-100 text-gray-600 rounded px-1.5 py-0.5">{totalOfficial}</span>}
+            {tab.key === "locations" && <span className="ml-1.5 text-xs bg-gray-100 text-gray-600 rounded px-1.5 py-0.5">{totalLocations}</span>}
           </button>
         ))}
       </div>
@@ -284,7 +306,7 @@ export default function AdminShippingPool() {
 
           {loading ? (
             <div className="text-center py-16 text-gray-400 text-sm">加载中...</div>
-          ) : directPools.length === 0 ? (
+          ) : pools.length === 0 ? (
             <div className="flex flex-col items-center py-20 text-gray-400">
               <Truck className="w-12 h-12 mb-3 opacity-20" />
               <p className="text-sm">暂无发货申请</p>
@@ -292,11 +314,10 @@ export default function AdminShippingPool() {
           ) : (() => {
             const userProfileMap = {};
             (allUsers || []).forEach(u => { userProfileMap[u.email] = u; });
-            const pagedDirect = directPools.slice((poolPage - 1) * poolPageSize, poolPage * poolPageSize);
             return (
               <>
               <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
-              {pagedDirect.map(pool => (
+              {pools.map(pool => (
                 <ShippingPoolCard
                   key={pool.id}
                   pool={pool}
@@ -310,7 +331,7 @@ export default function AdminShippingPool() {
                 />
               ))}
               </div>
-              <PaginationBar total={directPools.length} pageSize={poolPageSize} currentPage={poolPage}
+              <PaginationBar total={total} pageSize={poolPageSize} currentPage={poolPage}
                 onPageChange={setPoolPage} onPageSizeChange={s => { setPoolPageSize(s); resetPoolPage(); }} className="mt-3" />
               </>
             );
@@ -331,7 +352,7 @@ export default function AdminShippingPool() {
           </div>
           {loading ? (
             <div className="text-center py-16 text-gray-400 text-sm">加载中...</div>
-          ) : userConsPools.length === 0 ? (
+          ) : pools.length === 0 ? (
             <div className="flex flex-col items-center py-20 text-gray-400">
               <Layers className="w-12 h-12 mb-3 opacity-20" />
               <p className="text-sm">暂无用户拼邮请求</p>
@@ -339,11 +360,10 @@ export default function AdminShippingPool() {
           ) : (() => {
             const userProfileMap = {};
             (allUsers || []).forEach(u => { userProfileMap[u.email] = u; });
-            const pagedCons = userConsPools.slice((poolPage - 1) * poolPageSize, poolPage * poolPageSize);
             return (
               <>
               <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
-                {pagedCons.map(pool => (
+                {pools.map(pool => (
                   <ShippingPoolCard
                     key={pool.id}
                     pool={pool}
@@ -356,7 +376,7 @@ export default function AdminShippingPool() {
                   />
                 ))}
               </div>
-              <PaginationBar total={userConsPools.length} pageSize={poolPageSize} currentPage={poolPage}
+              <PaginationBar total={total} pageSize={poolPageSize} currentPage={poolPage}
                 onPageChange={setPoolPage} onPageSizeChange={s => { setPoolPageSize(s); resetPoolPage(); }} className="mt-3" />
               </>
             );
@@ -371,7 +391,7 @@ export default function AdminShippingPool() {
             <div className="text-center py-16 text-gray-400 text-sm">加载中...</div>
           ) : (
             <OfficialPoolKanban
-              pools={[...pools.filter(p => p.is_pending_pool && !p.is_archived), ...officialConsPools]}
+              pools={pools}
               allOrders={allOrders}
               currentUser={user}
               isAdmin={true}
@@ -524,7 +544,7 @@ export default function AdminShippingPool() {
                               : [...(locForm.disabled_addon_ids || []), a.id]
                             )}
                             className="accent-red-600" />
-                          <span className="text-xs text-gray-700">{a.name}</span>
+                          <span className="text-xs text-gray-700">{a.service_name}</span>
                           {a.fee > 0 && <span className="text-xs text-gray-400">+{a.fee_currency} {a.fee}</span>}
                         </label>
                       );

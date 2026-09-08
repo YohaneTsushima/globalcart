@@ -3,6 +3,8 @@
  * 全局一个连接，所有页面共享，通过事件分发
  */
 
+import { doRefreshToken } from '@/api/base44Client';
+
 let ws = null;
 let reconnectTimer = null;
 let heartbeatTimer = null;
@@ -17,9 +19,8 @@ document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible') {
     if (ws && ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify({ type: 'ping' }));
-    } else if (!stopped) {
-      reconnectWebSocket();
     }
+    // 不主动调用 reconnectWebSocket()，避免与 ws.onclose 的重连逻辑重复触发刷新
   }
 });
 
@@ -34,47 +35,15 @@ function getWsUrl() {
   return `${protocol}//${window.location.host}/globalcart/ws`;
 }
 
-// 单飞：并发调用共享同一个 Promise，避免多个入口同时用旧 refresh token 轮换
-let refreshPromise = null;
-
-function refreshTokens() {
-  refreshPromise ??= (async () => {
-    try {
-      
-      const res = await fetch(`/globalcart/auth/refresh`, {
-        method: 'POST',
-        credentials: 'include',
-      });
-      if (!res.success) {
-        console.warn('[WebSocket] refresh token failed, status:', res.status);
-        return null;
-      }
-      // const data = await res.json().catch(() => null);
-      // const { token: newToken } = data?.data || data || {};
-      // if (!newToken) return null;
-      // return newToken;
-      // const token = data?.data?.token;
-      return true;   // 有 token 返回 token，否则只要请求成功就算刷新成功
-    } catch (e) {
-      console.error('[WebSocket] refresh token error:', e);
-      return null;
-    } finally {
-      refreshPromise = null;
-    }
-  })();
-  return refreshPromise;
-}
-
 async function refreshAndReconnect() {
-  const newToken = await refreshTokens();
-  if (newToken) {
+  try {
+    await doRefreshToken();
     console.log('[WebSocket] token refreshed, reconnecting...');
     connect();
-  } 
-  // else {
-  //   // 刷新失败也要安排退避重连，避免 ws 静默死亡再也不恢复
-  //   scheduleReconnect();
-  // }
+  } catch (e) {
+    console.warn('[WebSocket] refresh token failed:', e.message);
+    scheduleReconnect();
+  }
 }
 
 // 指数退避重连（从原 onclose else 分支提取）

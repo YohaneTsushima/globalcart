@@ -34,6 +34,7 @@ import { toast } from "sonner";
 import { persistentToastError } from "@/lib/toastUtils.jsx";
 import ConfirmDialog from "@/components/common/ConfirmDialog";
 import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription } from "@/components/ui/alert-dialog";
+import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
 
 import { STATUS_CONFIG, METHOD_LABELS } from "./shippingFormConstants";
 import AddressForm, { EMPTY_ADDRESS_FORM, serializeAddressToText, isAddressFormValid } from "@/components/common/AddressForm";
@@ -2625,10 +2626,14 @@ debugger
                 <Loader2 className="w-5 h-5 animate-spin" />
                 {alertDialogMessage}
               </AlertDialogTitle>
-              {alertDialogDescription && (
+              {alertDialogDescription ? (
                 <AlertDialogDescription className="text-center">
                   {alertDialogDescription}
                 </AlertDialogDescription>
+              ) : (
+                <VisuallyHidden>
+                  <AlertDialogDescription>处理中</AlertDialogDescription>
+                </VisuallyHidden>
               )}
             </AlertDialogHeader>
           </AlertDialogContent>

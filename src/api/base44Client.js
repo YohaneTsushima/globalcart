@@ -26,6 +26,28 @@ const processQueue = (error, token = null) => {
   failedQueue = [];
 };
 
+/**
+ * 共享的 token 刷新函数（单飞模式）
+ * socket.js 和 axios 拦截器共用同一把锁，避免并发刷新导致 token 轮换冲突
+ */
+export async function doRefreshToken() {
+  if (isRefreshing) {
+    return new Promise((resolve, reject) => {
+      failedQueue.push({ resolve, reject });
+    });
+  }
+  isRefreshing = true;
+  try {
+    await axios.post(`/globalcart/auth/refresh`, null, { withCredentials: true });
+    processQueue(null, true);
+    return true;
+  } catch (e) {
+    processQueue(e, null);
+    throw e;
+  } finally {
+    isRefreshing = false;
+  }
+}
 
 
 // ── 响应拦截：401 自动 refresh → 重试 ─────────────────────────────────────────
@@ -85,20 +107,11 @@ api.interceptors.response.use(
       }).catch(Promise.reject);
     }
 
-    isRefreshing = true;
-
     try {
-      await axios.post(`/globalcart/auth/refresh`, null, { withCredentials: true });
-      // const { token: newToken } = res.data?.data || res.data || {};
-      // if (!newToken) throw new Error('no token');
-
+      await doRefreshToken();
       reconnectWebSocket();
-
-      const retryConfig = { ...originalRequest };
-      processQueue(null, true);
-      return api(retryConfig);
+      return api({ ...originalRequest });
     } catch (refreshErr) {
-      processQueue(refreshErr, null);
       localStorage.removeItem('auth_cache');
       const path = window.location.pathname;
       if (!path.includes('/Login')) {
@@ -106,8 +119,6 @@ api.interceptors.response.use(
         window.location.href = `/${path.split('/')[1] || 'zhcn'}/Login?next=${next}`;
       }
       return Promise.reject(refreshErr);
-    } finally {
-      isRefreshing = false;
     }
   }
 );

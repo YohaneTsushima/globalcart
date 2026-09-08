@@ -170,6 +170,7 @@ export const tenantEntity = {
 
 export const shippingPoolApi = {
   list:                     (filter)    => tenantEntity.list('ShippingPool', filter),
+  page:                     (id, data)  => mutate('ShippingPool', 'page', { id, data }).then(r => r),
   create:                   (data)      => tenantEntity.create('ShippingPool', data),
   update:                   (id, d)     => tenantEntity.update('ShippingPool', id, d),
   handleSaveInfoOnly:       (id, data)  => mutate('ShippingPool', 'handleSaveInfoOnly', { id, data }).then(r => r || r?.data || r?.data || r.data?.results || r || []),
