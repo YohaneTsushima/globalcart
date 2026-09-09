@@ -92,7 +92,10 @@ export function calcFeeBreakdownPerUser({
         }
       }
     }
-    const userAddonFeeJpy = userAddons.reduce((s, a) => s + (parseFloat(a.fee) || 0), 0);
+    const userAddonFeeJpy = userAddons.reduce((s, a) => {
+      const fee = a.custom_fee != null ? a.custom_fee : a.fee;
+      return s + (parseFloat(fee) || 0);
+    }, 0);
 
     // 货款尾款: remaining goods balance after prepayment, collected with the shipping fee.
     // order_balance_due_jpy / order_balance_surcharge_jpy are computed server-side at order creation.
@@ -117,7 +120,6 @@ export function calcFeeBreakdownPerUser({
     }
 
     const items = [];
-
     if (balanceDueJpy > 0) {
       items.push({ label: "货款尾款（未付货款差额）", amount_jpy: balanceDueJpy });
     }
@@ -147,7 +149,15 @@ export function calcFeeBreakdownPerUser({
     }
 
     if (userAddonFeeJpy > 0) {
-      items.push({ label: `发货增值服务（${userAddons.map(a => a.service_name).join("、")}）`, amount_jpy: userAddonFeeJpy });
+      const hasCustomAddon = userAddons.some(a => a.custom_fee != null);
+      const originalAddonFee = userAddons.reduce((s, a) => s + (parseFloat(a.fee) || 0), 0);
+      items.push({ 
+        label: `发货增值服务（${userAddons.map(a => a.service_name).join("、")}）`, 
+        amount_jpy: userAddonFeeJpy,
+        is_addon: true,
+        original_fee: originalAddonFee,
+        has_custom: hasCustomAddon
+      });
     }
 
     if (transitShippingFee > 0) {

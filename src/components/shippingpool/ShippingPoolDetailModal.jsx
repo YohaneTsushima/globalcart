@@ -46,7 +46,8 @@ export default function ShippingPoolDetailModal({ pool: initialPool, isAdmin, cu
   const canRequestRewarehouse = !isAdmin && can("shipping:request_rewarehouse");
   const canSendShippingMessage = isAdmin || can("message:send_shipping_message");
 
-  const [pool, setPool] = useState(initialPool);
+  const [pool, setPool] = useState(initialPool || {});
+  const [loading, setLoading] = useState(true);
   const [orders, setOrders] = useState([]);
   const [saving, setSaving] = useState(false);
   const [imageFile, setImageFile] = useState(null);
@@ -261,9 +262,15 @@ export default function ShippingPoolDetailModal({ pool: initialPool, isAdmin, cu
   };
 
   // Refresh pool data without closing the modal
-  const refreshPool = async () => {
+  const refreshPool = async (poolId) => {
     try {
-      const r = await base44.functions.invoke('shipping/getShippingPoolDetail', { id: (pool?.id || pool?.pool_id) });
+      const id = poolId || pool?.id || pool?.pool_id;
+      if (!id) {
+        setLoading(false);
+        return;
+      }
+      
+      const r = await base44.functions.invoke('shipping/getShippingPoolDetail', { id });
       const d = r?.data || {};
       if (d.pool) setPool(p => ({ ...p, ...d.pool }));
       if (d?.orders) setOrders(d.orders);
@@ -299,14 +306,20 @@ export default function ShippingPoolDetailModal({ pool: initialPool, isAdmin, cu
   };
 
   useEffect(() => {
-    // Fetch pool detail (pool + orders + users + rates) in one call
-    refreshPool();
-
+    const loadPool = async () => {
+      setLoading(true);
+      await refreshPool(initialPool?.id || initialPool?.pool_id);
+      setLoading(false);
+    };
+    loadPool();
+    
     // Mark as read on open
     const myRole = isAdmin ? "admin" : "user";
-    if ((pool.unread_roles || []).includes(myRole)) {
-      const newRoles = (pool.unread_roles || []).filter((r) => r !== myRole);
-      shippingPoolApi.update(pool.id, { unread_roles: newRoles }).catch(() => {});
+    if ((initialPool?.unread_roles || []).includes(myRole)) {
+      const newRoles = (initialPool?.unread_roles || []).filter((r) => r !== myRole);
+      if (initialPool?.id) {
+        shippingPoolApi.update(initialPool.id, { unread_roles: newRoles }).catch(() => {});
+      }
       setPool((p) => ({ ...p, unread_roles: newRoles }));
     }
   }, []);
@@ -410,7 +423,7 @@ export default function ShippingPoolDetailModal({ pool: initialPool, isAdmin, cu
       source_shipping_pool: source_shipping_pool,
       target_shipping_pool: target_shipping_pool
     }
-debugger
+
     if(confirm('???')) {
       setSubmittingUserAction(false);
       return
@@ -535,7 +548,7 @@ debugger
         consolidation_pool_id: order.consolidation_pool_id ?? null
       }
     }));
-debugger
+
     try {
       const res = await updateTenantOrder('order/info/handleDelivered', payload);
       const innerCode = res?.data?.code;
@@ -1231,6 +1244,17 @@ debugger
     return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
   };
 
+  if (loading || !pool?.id) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+        <div className="bg-white rounded-lg p-8 flex flex-col items-center gap-4">
+          <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+          <p className="text-gray-600">加载中...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={e => { if (e.target === e.currentTarget && !alipayPaying) onClose(); }}>
       <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto relative" onMouseDown={e => e.stopPropagation()}>
@@ -1323,14 +1347,27 @@ debugger
               <p className="text-xs text-yellow-700 font-medium mb-1.5">发货增值服务</p>
               <div className="space-y-1">
                 {(pool.selected_addons || []).length > 0 ?
-              pool.selected_addons.map((a, i) =>
-              <div key={i} className="flex items-center justify-between text-xs">
-                        <span className="text-gray-700">{a.service_name || a.id}</span>
-                        {parseFloat(a.fee) > 0 &&
-                <span className="font-medium text-yellow-700">+{a.fee_currency || "JPY"} {Math.round(parseFloat(a.fee))}</span>
-                }
+              pool.selected_addons.map((a, i) => {
+                const hasCustom = a.custom_fee != null;
+                const displayFee = hasCustom ? a.custom_fee : a.fee;
+                return (
+                  <div key={i} className="flex flex-col">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-gray-700">{a.service_name || a.id}</span>
+                      {parseFloat(a.fee) > 0 && (
+                        <span className={`font-medium ${hasCustom ? "line-through text-gray-400" : "text-yellow-700"}`}>
+                          +{a.fee_currency || "JPY"} {Math.round(parseFloat(a.fee))}
+                        </span>
+                      )}
+                    </div>
+                    {hasCustom && parseFloat(displayFee) > 0 && (
+                      <div className="text-xs text-yellow-600 text-right">
+                        用户自定义 +{a.fee_currency || "JPY"} {Math.round(parseFloat(displayFee))}
                       </div>
-              ) :
+                    )}
+                  </div>
+                );
+              }) :
               (pool.selected_addon_ids || []).map((id, i) =>
               <div key={i} className="text-xs text-gray-500 font-mono">{id}</div>
               )
@@ -1726,7 +1763,7 @@ debugger
               );
             })() :
 
-                    <p className="text-xs text-gray-400">加载中...</p>
+                    <p className="text-xs text-gray-400">没有包裹...</p>
             }
           </div>
 
@@ -2310,7 +2347,10 @@ debugger
                       const shippingFee = Math.round(parseFloat(pool.shipping_fee_jpy) || 0);
                       const packingFee = Math.round(parseFloat(pool.packing_fee_jpy) || 0);
                       const itemSizeFee = orders.reduce((sum, o) => sum + (parseFloat(o.item_size_extra_fee) || 0), 0);
-                      const addonFee = (pool.selected_addons || []).reduce((sum, a) => sum + (parseFloat(a.fee) || 0), 0);
+                      const addonFee = (pool.selected_addons || []).reduce((sum, a) => {
+                        const fee = a.custom_fee != null ? a.custom_fee : a.fee;
+                        return sum + (parseFloat(fee) || 0);
+                      }, 0);
                       const grandTotal = boxFee + shippingFee + packingFee + itemSizeFee + addonFee;
                       const hasFeeItems = boxFee > 0 || shippingFee > 0 || packingFee > 0 || itemSizeFee > 0 || addonFee > 0;
                       return (
@@ -2398,6 +2438,24 @@ debugger
                         );
                       })()}
                     </div>
+
+                    {/* 显示支付方式的收款码/图片 */}
+                    {(selectedMethodMeta?.payment_qr_code || selectedMethodMeta?.image_url) && (
+                      <div className="p-3 bg-gray-50 border border-gray-200 rounded-lg space-y-2">
+                        <div className="text-center">
+                          <ImageWithViewer
+                            src={selectedMethodMeta.payment_qr_code || selectedMethodMeta.image_url}
+                            alt="收款码"
+                            thumbClassName="h-40 mx-auto rounded object-contain border border-gray-200"
+                          />
+                        </div>
+                        {(selectedMethodMeta.method_description || selectedMethodMeta.payment_note) && (
+                          <p className="text-sm text-gray-700 whitespace-pre-wrap text-center">
+                            {selectedMethodMeta.method_description || selectedMethodMeta.payment_note}
+                          </p>
+                        )}
+                      </div>
+                    )}
 
                     {/* Currency conversion display */}
                     {selectedMethodMeta?.payment_currency && selectedMethodMeta.payment_currency !== "JPY" && (() => {

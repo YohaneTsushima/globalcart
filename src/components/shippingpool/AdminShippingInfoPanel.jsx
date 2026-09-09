@@ -271,7 +271,7 @@ export default function AdminShippingInfoPanel({
 
   // Auto-calculate shipping fee from weight using the matched shipping method's rates
   const calcFeeFromWeight = (weightG) => {
-debugger
+
     if (!matchedShippingMethod || !pool.destination_country) return null;
     const country = pool.destination_country;
     // Resolve zone code: if rates are stored by zone (e.g. "zone1"), map the country code first
@@ -856,7 +856,7 @@ debugger
 
           {/* Weight & shipping fee */}
           {(() => {
-            debugger
+
             const wNum = parseFloat(finalWeightG);
             const calcResult = shippingCalcResult;
             const feeCurrency = calcResult ? calcResult.currency : "JPY";

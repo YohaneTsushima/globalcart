@@ -4,7 +4,7 @@
  * Works for both users and admins.
  */
 import { useState, useEffect } from "react";
-import { X, Package, MapPin, ChevronRight, ChevronLeft, Plus, Check } from "lucide-react";
+import { X, Package, MapPin, ChevronRight, ChevronLeft, Plus, Check, Loader2 } from "lucide-react";
 import CountrySelect from "@/components/common/CountrySelect";
 import { getCountry } from "@/lib/countries";
 import { base44 } from "@/api/base44Client";
@@ -16,7 +16,11 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { shippingPoolApi } from "@/lib/tenantApi";
 import { Truck, Star } from "lucide-react";
+import { toast } from "sonner";
+import { persistentToastError } from "@/lib/toastUtils.jsx";
+import { serializeAddressToText, isAddressFormValid, EMPTY_ADDRESS_FORM } from "@/components/common/AddressForm";
 
 export default function CreateShippingPoolModal({ isAdmin, onClose, onSuccess }) {
   const [step, setStep] = useState(1);
@@ -29,6 +33,8 @@ export default function CreateShippingPoolModal({ isAdmin, onClose, onSuccess })
   const [saveAddress, setSaveAddress] = useState(false);
   const [newAddressLabel, setNewAddressLabel] = useState("");
   const [transitLocations, setTransitLocations] = useState([]);
+  const [prefs, setPrefs] = useState([]);
+
   const [submitting, setSubmitting] = useState(false);
   const [loading, setLoading] = useState(true);
 
@@ -44,6 +50,7 @@ export default function CreateShippingPoolModal({ isAdmin, onClose, onSuccess })
     postal_code: "",
     destination_country: "",
     shipping_method: "",
+    shipping_method_id: null,
     scheduled_ship_date: "",
     transit_location_id: "",
     transit_shipping_method_id: "",
@@ -54,6 +61,8 @@ export default function CreateShippingPoolModal({ isAdmin, onClose, onSuccess })
   const [transitMethods, setTransitMethods] = useState([]);
   const [shippingAddons, setShippingAddons] = useState([]);
   const [selectedAddonIds, setSelectedAddonIds] = useState([]);
+  const [addonCustomFees, setAddonCustomFees] = useState({});
+  const [addonFeeErrors, setAddonFeeErrors] = useState({});
 
   const f = (k, v) => setForm(p => ({ ...p, [k]: v }));
 
@@ -61,30 +70,42 @@ export default function CreateShippingPoolModal({ isAdmin, onClose, onSuccess })
     const init = async () => {
       setLoading(true);
       const u = await base44.auth.me();
-      setUser(u);
+      setUser(u?.data);
 
-      const [ordersRes, locs, prefs, cfg, tMethods, addons] = await Promise.all([
-        base44.functions.invoke('getTenantOrders', {}).then(r => r.data?.orders || []),
-        tenantEntity.list('TransitLocation', { is_active: true }),
-        userPrefApi.list({ user_email: u.email }),
-        fetchTenantConfig(),
-        tenantEntity.list('TransitShippingMethod', { is_active: true }),
-        tenantEntity.list('AddonOption', { addon_type: "shipping", is_active: true }),
-      ]);
-      const warehouseOrders = ordersRes.filter(o => o.order_status === "in_warehouse");
-      setAvailableOrders(warehouseOrders);
-      setTransitLocations(locs);
+      // const [ordersRes, locs, prefs, cfg, tMethods, addons] = await Promise.all([
+      //   base44.functions.invoke('getTenantOrders', {}).then(r => r.data?.orders || []),
+      //   tenantEntity.list('TransitLocation', { is_active: true }),
+      //   userPrefApi.list({ user_email: u.email }),
+      //   fetchTenantConfig(),
+      //   tenantEntity.list('TransitShippingMethod', { is_active: true }),
+      //   tenantEntity.list('AddonOption', { addon_type: "shipping", is_active: true }),
+      // ]);
+
+      const payload = {
+        user_email: u?.data?.user_email
+      }
+
+      const res = await shippingPoolApi.adminCreate(u.id, payload);
+
+
+      // const warehouseOrders = ordersRes.filter(o => o.order_status === "in_warehouse");
+      setAvailableOrders(res?.orders);
+      setTransitLocations(res?.transit_locations);
       
       // Load shipping methods filtered by enabled_for_user_pool (since this is for creating a pool)
-      const methods = (cfg.shippingMethods || []).filter(m => m.is_active !== false && m.enabled_for_user_pool !== false);
-      setShippingMethods(methods);
-      setTransitMethods(tMethods || []);
-      setShippingAddons(addons || []);
+      // const methods = (cfg.shippingMethods || []).filter(m => m.is_active !== false && m.enabled_for_user_pool !== false);
+      setShippingMethods(res?.shipping_methods);
+      setTransitMethods(res?.transit_methods || []);
+      setShippingAddons(res?.shipping_addons || []);
 
-      if (prefs.length > 0 && prefs[0].saved_addresses?.length > 0) {
-        setSavedAddresses(prefs[0].saved_addresses);
-        setSelectedAddressId(prefs[0].saved_addresses[0].id);
-        applyAddress(prefs[0].saved_addresses[0]);
+      const prefs = res?.user_pref;
+
+      setPrefs(prefs);
+
+      if (prefs && prefs.saved_addresses?.length > 0) {
+        setSavedAddresses(prefs.saved_addresses);
+        setSelectedAddressId(prefs.saved_addresses[0].id);
+        applyAddress(prefs.saved_addresses[0]);
       } else {
         setUseNewAddress(true);
       }
@@ -124,25 +145,38 @@ export default function CreateShippingPoolModal({ isAdmin, onClose, onSuccess })
   };
 
   const selectedOrders = availableOrders.filter(o => selectedOrderIds.includes(o.id));
-  const totalWeight = selectedOrders.reduce((s, o) => s + (o.weight_g || 0), 0);
+  const totalWeight = selectedOrders.reduce((s, o) => s + (parseFloat(o.weight_g) || 0), 0);
 
   const handleSubmit = async () => {
     if (selectedOrderIds.length === 0 || !form.destination_country) return;
+
+    // Validate addon custom fees are within range
+    const hasFeeErrors = Object.entries(addonCustomFees).some(([addonId, fee]) => {
+      const addon = shippingAddons.find(a => a.id === addonId);
+      return addon && addon.is_user_customizable && selectedAddonIds.includes(addonId) &&
+             (fee < addon.fee_min || fee > addon.fee_max);
+    });
+    if (hasFeeErrors) {
+      persistentToastError("请确保所有自定义增值服务的金额都在指定区间内");
+      return;
+    }
+
     setSubmitting(true);
 
+    let addrEntry = {};
     // Save new address to address book if requested
     if (useNewAddress && saveAddress && newAddressLabel.trim()) {
-      const existingPrefs = await userPrefApi.list({ user_email: user.email });
-      const addrEntry = {
-        id: Date.now().toString(),
-        label: newAddressLabel.trim(),
-        full_text: [form.recipient_name, form.address_line1, form.address_line2, form.city].filter(Boolean).join("\n"),
-      };
-      if (existingPrefs.length > 0) {
-        await userPrefApi.update(existingPrefs[0].id, { saved_addresses: [...(existingPrefs[0].saved_addresses || []), addrEntry] });
-      } else {
-        await userPrefApi.create({ user_email: user.email, saved_addresses: [addrEntry] });
-      }
+      // const existingPrefs = await userPrefApi.list({ user_email: user.email });
+      // addrEntry = {
+      //   id: Date.now().toString(),
+      //   label: newAddressLabel.trim(),
+      //   full_text: [form.recipient_name, form.address_line1, form.address_line2, form.city].filter(Boolean).join("\n"),
+      // };
+      // if (existingPrefs.length > 0) {
+      //   await userPrefApi.update(existingPrefs[0].id, { saved_addresses: [...(existingPrefs[0].saved_addresses || []), addrEntry] });
+      // } else {
+      //   await userPrefApi.create({ user_email: user.email, saved_addresses: [addrEntry] });
+      // }
     }
 
     const transitLoc = transitLocations.find(l => l.id === form.transit_location_id);
@@ -151,6 +185,8 @@ export default function CreateShippingPoolModal({ isAdmin, onClose, onSuccess })
 
     // Build standard address object for the engine (skip for pickup/storage)
     const resolvedAddress = isPickupOrStorage ? null : {
+      id: Date.now().toString(),
+      label: useNewAddress ? newAddressLabel : form.label,
       recipient_name: form.recipient_name || '',
       country: form.destination_country || '',
       addr1: form.address_line1 || '',
@@ -158,22 +194,31 @@ export default function CreateShippingPoolModal({ isAdmin, onClose, onSuccess })
       addr3: '',
       state: form.state || '',
       phone: form.recipient_phone || '',
+      postal_code: form.postal_code,
     };
+
+    const full_text = serializeAddressToText(resolvedAddress);
+
+    resolvedAddress.full_text = full_text;
 
     // Build selected addons
     const selectedAddons = shippingAddons.filter(a => selectedAddonIds.includes(a.id)).map(a => ({
       id: a.id,
-      name: a.name,
+      service_name: a.service_name,
       fee: a.fee,
+      fee_max: a.fee_max,
+      fee_min: a.fee_min,
       fee_currency: a.fee_currency,
+      is_user_customizable: a.is_user_customizable,
+      custom_fee: (a.is_user_customizable && addonCustomFees[a.id] !== undefined) ? addonCustomFees[a.id] : null
     }));
 
-    // Call unified engine — pool_code generation and per_user_groups are handled server-side
-    await base44.functions.invoke('createShippingPool', {
+    const payload = {
       order_ids: selectedOrderIds,
       payload: {
         consType: form.transit_location_id ? 'transit' : '',
         shipping_method: form.shipping_method || '',
+        shipping_method_id: form.shipping_method_id,
         scheduled_ship_date: form.scheduled_ship_date || '',
         user_note: form.user_note || '',
         pool_title: poolTitle.trim() || '',
@@ -191,7 +236,48 @@ export default function CreateShippingPoolModal({ isAdmin, onClose, onSuccess })
         shared_with_emails: [],
         customs_declaration: null,
       },
-    });
+      new_address: useNewAddress,
+      pref_id: prefs.id,
+      
+    }
+
+    try {
+      const res = await shippingPoolApi.handleAdminCreate(payload);
+      toast.success(`发货池 [${res?.pool_code}] 创建成功`);
+      onSuccess?.();
+    } catch (err) {
+        let message = err?.response?.data?.message;
+        console.error('[CreatShippingPoolModal] Handle Submit Create Shipping Pool failed:', message);
+        persistentToastError(message || "提交失败，请稍后重试");
+        setSubmitting(false);
+        return;
+    } finally {
+      
+    }
+    // Call unified engine — pool_code generation and per_user_groups are handled server-side
+    // await base44.functions.invoke('createShippingPool', {
+    //   order_ids: selectedOrderIds,
+    //   payload: {
+    //     consType: form.transit_location_id ? 'transit' : '',
+    //     shipping_method: form.shipping_method || '',
+    //     scheduled_ship_date: form.scheduled_ship_date || '',
+    //     user_note: form.user_note || '',
+    //     pool_title: poolTitle.trim() || '',
+    //     address: resolvedAddress,
+    //     transit_location_id: form.transit_location_id || '',
+    //     transit_location_name: transitLoc?.name || '',
+    //     transit_location_country: transitLoc?.country || '',
+    //     transit_shipping_method_id: form.transit_shipping_method_id || '',
+    //     transit_shipping_method_name: transitMethod?.name || '',
+    //     selected_addon_ids: selectedAddonIds,
+    //     selected_addons: selectedAddons,
+    //     target_pool_id: '',
+    //     join_existing_pool: false,
+    //     is_private: false,
+    //     shared_with_emails: [],
+    //     customs_declaration: null,
+    //   },
+    // });
 
     onSuccess?.();
   };
@@ -207,7 +293,10 @@ export default function CreateShippingPoolModal({ isAdmin, onClose, onSuccess })
   if (loading) {
     return (
       <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center" onMouseDown={onClose}>
-        <div className="bg-white rounded-xl p-8 text-center text-gray-400 text-sm" onMouseDown={e => e.stopPropagation()}>加载中...</div>
+        <div className="bg-white rounded-xl shadow-xl p-8 flex flex-col items-center gap-4" onMouseDown={e => e.stopPropagation()}>
+          <Loader2 className="w-8 h-8 animate-spin text-teal-600" />
+          <p className="text-gray-600 text-sm">正在加载数据...</p>
+        </div>
       </div>
     );
   }
@@ -376,7 +465,11 @@ export default function CreateShippingPoolModal({ isAdmin, onClose, onSuccess })
                 </div>
                 <div>
                   <Label className="text-xs text-gray-500">运输方式</Label>
-                  <Select value={form.shipping_method} onValueChange={v => f("shipping_method", v)}>
+                  <Select value={form.shipping_method} onValueChange={v => {
+                    f("shipping_method", v);
+                    const selected = shippingMethods.find(m => m.code === v);
+                    f("shipping_method_id", selected?.id || null);
+                  }}>
                     <SelectTrigger className="mt-1 h-8 text-sm"><SelectValue placeholder={shippingMethods.length > 0 ? "选择..." : "暂无可用运输方式"} /></SelectTrigger>
                     <SelectContent>
                       {shippingMethods.length > 0 ? (
@@ -433,15 +526,65 @@ export default function CreateShippingPoolModal({ isAdmin, onClose, onSuccess })
                 <div>
                   <Label className="text-xs text-gray-500">发货增值服务（可选）</Label>
                   <div className="mt-1.5 space-y-1.5">
-                    {shippingAddons.map(a => (
-                      <label key={a.id} className={`flex items-center justify-between gap-2 p-2 rounded-lg border cursor-pointer transition-colors text-xs ${selectedAddonIds.includes(a.id) ? "border-yellow-400 bg-yellow-50" : "border-gray-200 hover:bg-gray-50"}`}>
-                        <div className="flex items-center gap-2">
-                          <Checkbox checked={selectedAddonIds.includes(a.id)} onCheckedChange={v => setSelectedAddonIds(prev => v ? [...prev, a.id] : prev.filter(id => id !== a.id))} />
-                          <span className="text-gray-700">{a.name}</span>
+                    {shippingAddons.map(a => {
+                      const isSelected = selectedAddonIds.includes(a.id);
+                      const isCustomizable = a.is_user_customizable;
+                      return (
+                        <div key={a.id}>
+                          <label className={`flex items-center justify-between gap-2 p-2 rounded-lg border cursor-pointer transition-colors text-xs ${isSelected ? "border-yellow-400 bg-yellow-50" : "border-gray-200 hover:bg-gray-50"}`}>
+                            <div className="flex items-center gap-2 flex-1 min-w-0">
+                              <Checkbox 
+                                checked={isSelected} 
+                                onCheckedChange={v => setSelectedAddonIds(prev => v ? [...prev, a.id] : prev.filter(id => id !== a.id))} 
+                              />
+                              <div className="flex flex-col min-w-0">
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <span className="text-gray-700">{a.service_name}</span>
+                                  {isCustomizable && (
+                                    <Badge className="text-[9px] bg-green-100 text-green-700 border-green-200">可自定义</Badge>
+                                  )}
+                                </div>
+                                {isCustomizable && (
+                                  <span className="text-[10px] text-gray-400">区间：{a.fee_currency || "JPY"} {a.fee_min} - {a.fee_max}</span>
+                                )}
+                              </div>
+                            </div>
+                            {!isCustomizable && a.fee > 0 && (
+                              <span className="text-yellow-700 font-medium flex-shrink-0">+{a.fee_currency || "JPY"} {Number(a.fee).toLocaleString()}</span>
+                            )}
+                          </label>
+                          {isCustomizable && isSelected && (
+                            <div className="ml-7 mr-2 mb-1.5 flex items-center gap-2">
+                              <Input
+                                type="number"
+                                className={`h-7 w-28 text-xs ${addonFeeErrors[a.id] ? 'border-red-500 focus-visible:ring-red-500' : ''}`}
+                                placeholder={`${a.fee_min}-${a.fee_max}`}
+                                value={addonCustomFees[a.id] ?? a.fee}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  const value = val === '' ? '' : parseFloat(val) || 0;
+                                  setAddonCustomFees(prev => ({ ...prev, [a.id]: value }));
+                                  if (value === '' || value < a.fee_min || value > a.fee_max) {
+                                    setAddonFeeErrors(prev => ({ ...prev, [a.id]: value === '' ? '请输入金额' : `请输入${a.fee_min}-${a.fee_max}之间的金额` }));
+                                  } else {
+                                    setAddonFeeErrors(prev => {
+                                      const newErrors = { ...prev };
+                                      delete newErrors[a.id];
+                                      return newErrors;
+                                    });
+                                  }
+                                }}
+                                onClick={(e) => e.stopPropagation()}
+                              />
+                              <span className="text-[10px] text-gray-400">{a.fee_currency || "JPY"}</span>
+                              {addonFeeErrors[a.id] && (
+                                <span className="text-[10px] text-red-600">{addonFeeErrors[a.id]}</span>
+                              )}
+                            </div>
+                          )}
                         </div>
-                        {a.fee > 0 && <span className="text-yellow-700 font-medium">+{a.fee_currency || "JPY"} {Number(a.fee).toLocaleString()}</span>}
-                      </label>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               )}

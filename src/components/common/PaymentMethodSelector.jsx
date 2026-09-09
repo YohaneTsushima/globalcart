@@ -79,7 +79,11 @@ export default function PaymentMethodSelector({ value, onChange, className = "",
             : "border-gray-200 text-gray-500 hover:border-gray-300"
         }`}
       >
-        {m.icon && <span className="text-base leading-none">{m.icon}</span>}
+        {m.image_url ? (
+          <img src={m.image_url} alt={m.method_name} className="w-5 h-5 object-contain" />
+        ) : m.icon ? (
+          <span className="text-base leading-none">{m.icon}</span>
+        ) : null}
         <span>{m.method_name}</span>
       </button>
     );

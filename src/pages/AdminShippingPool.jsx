@@ -25,6 +25,7 @@ import ShippingPoolDetailModal from "@/components/shippingpool/ShippingPoolDetai
 import CreateShippingPoolModal from "@/components/shippingpool/CreateShippingPoolModal";
 import OfficialPoolKanban from "@/components/shippingpool/OfficialPoolKanban.jsx";
 import { shippingPoolApi } from "@/lib/tenantApi";
+import { toast } from "sonner";
 
 const STATUS_FILTERS = [
   { v: "all",              l: "全部状态" },
@@ -147,7 +148,24 @@ export default function AdminShippingPool() {
 
   // Archive handler for pools
   const handleArchivePool = async (pool) => {
-    await base44.functions.invoke('mutateTenantEntity', { entity: 'ShippingPool', action: 'update', id: pool.id, data: { is_archived: true, archived_at: new Date().toISOString() } });
+    // await base44.functions.invoke('mutateTenantEntity', { entity: 'ShippingPool', action: 'update', id: pool.id, data: { is_archived: true, archived_at: new Date().toISOString() } });
+
+    const payload = {
+      pool_code: pool.pool_code
+    }
+
+    try {
+      const res = await shippingPoolApi.archived(pool.id, payload);
+     
+      toast.success(`[${pool.pool_code}] 已存档.`);
+    } catch (err) {
+      const errorMessage = err?.response?.data?.message;
+      console.error("操作失败:", err);
+      persistentToastError("操作失败：" + (errorMessage || "未知错误"));
+    } finally {
+      
+    }
+
     fetchPageData();
   };
 
@@ -675,7 +693,7 @@ export default function AdminShippingPool() {
           onClose={() => setShowCreate(false)}
           onSuccess={() => {
             setShowCreate(false);
-            fetchPools();
+            fetchPageData();
           }}
         />
       )}
@@ -698,7 +716,10 @@ export default function AdminShippingPool() {
           transitHandlingFeeSplit={transitHandlingFeeSplit}
           transitLocations={locations}
           transitShippingMethods={transitMethods}
-          onClose={() => setSelectedPool(null)}
+          onClose={() => {
+            setSelectedPool(null);
+            fetchPageData();
+          }}
           onUpdated={() => {
             setSelectedPool(null);
             fetchPageData();

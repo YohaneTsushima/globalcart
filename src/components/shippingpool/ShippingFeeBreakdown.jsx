@@ -42,9 +42,19 @@ export default function ShippingFeeBreakdown({ breakdowns, isConsolidation, curr
           })()}
           <div className="px-3 py-2 space-y-1.5">
             {b.items.map((item, idx) => (
-              <div key={idx} className={`flex justify-between items-start gap-2 text-xs ${item.is_shared ? "text-blue-700 bg-blue-50 -mx-3 px-3 py-1 rounded" : "text-gray-700"}`}>
-                <span className="flex-1">{item.label}</span>
-                <span className="font-medium flex-shrink-0">¥{Math.round(item.amount_jpy).toLocaleString()}</span>
+              <div key={idx} className={`${item.is_shared ? "text-blue-700 bg-blue-50 -mx-3 px-3 py-1 rounded" : "text-gray-700"}`}>
+                <div className={`flex justify-between items-start gap-2 text-xs ${item.has_custom ? "" : ""}`}>
+                  <span className="flex-1">{item.label}</span>
+                  <span className={`font-medium flex-shrink-0 ${item.has_custom ? "line-through text-gray-400" : ""}`}>
+                    ¥{Math.round(item.has_custom ? item.original_fee : item.amount_jpy).toLocaleString()}
+                  </span>
+                </div>
+                {item.has_custom && (
+                  <div className="flex justify-between items-center text-xs text-yellow-600 mt-0.5">
+                    <span>用户自定义</span>
+                    <span className="font-medium">¥{Math.round(item.amount_jpy).toLocaleString()}</span>
+                  </div>
+                )}
               </div>
             ))}
             {b.items.length === 0 && (

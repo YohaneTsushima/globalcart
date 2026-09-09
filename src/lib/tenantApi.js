@@ -185,6 +185,9 @@ export const shippingPoolApi = {
   proof:                    (id, data)  => mutate('ShippingPool', 'updateShipmentProof', { id, data }).then(r => r?.data || r || []),
   confiredmProof:           (id, data)  => mutate('ShippingPool', 'confirmShipmentProof', { id, data }).then(r => r),
   shipped:                  (id, data)  => mutate('ShippingPool', 'handleShip', { id, data }).then(r => r),
+  archived:                 (id, data)  => mutate('ShippingPool', 'archived', { id, data }).then(r => r),
+  adminCreate:              (id, data)  => mutate('ShippingPool', 'adminCreate', { id, data }).then(r => r),
+  handleAdminCreate:        (data)      => mutate('ShippingPool', 'handleAdminCreate', { data }).then(r => r),
 };
 
 // ─── ShippingPool Edit Request shortcuts ───────────────────────────────────────────────────

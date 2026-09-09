@@ -592,6 +592,7 @@ export default function UserNotifyShipmentModal({ order, orders, initialData, on
     const addrObj = !skipAddress ? getEffectiveAddr(addrSlot) : null;
     const resolvedAddress = addrObj ? {
       id: Date.now().toString(),
+      label: addrObj.label,
       recipient_name: addrObj.recipient_name || '',
       country: addrObj.country || '',
       addr1: addrObj.addr1 || '',
@@ -599,6 +600,8 @@ export default function UserNotifyShipmentModal({ order, orders, initialData, on
       addr3: addrObj.addr3 || '',
       state: addrObj.state || '',
       phone: addrObj.phone || '',
+      postal_code: addrObj.postal_code,
+      full_text: [addrObj.recipient_name, addrObj.address_line1, addrObj.address_line2, addrObj.city].filter(Boolean).join("\n"),
     } : null;
 
     // Build resolved addons
