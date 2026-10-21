@@ -522,7 +522,7 @@ export default function UserNotifyShipmentModal({ order, orders, initialData, on
   const filteredUsers = allUsers.filter(u => {
     if (!userSearchQuery) return true;
     const q = userSearchQuery.toLowerCase();
-    return (u.full_name || "").toLowerCase().includes(q) || (u.email || "").toLowerCase().includes(q);
+    return (u.display_name || "").toLowerCase().includes(q) || (u.user_email || "").toLowerCase().includes(q);
   });
 
   const toggleSharedUser = (email) => {
@@ -651,7 +651,15 @@ export default function UserNotifyShipmentModal({ order, orders, initialData, on
       join_existing_pool: effectiveJoinExisting,
       is_private: isPrivate,
       shared_with_emails: sharedWithEmails,
-      customs_declaration: hasCustoms ? customsData : null
+      customs_declaration: hasCustoms ? customsData : null,
+      ...(consolidation && !isJoiningPool ? {
+        consolidation_deadline: deadline || '',
+        consolidation_min_weight_g: parseFloat(minWeight) || 0,
+        consolidation_timeout_action: timeoutAction || 'ship_individually',
+        consolidation_shipping_method: consMethod === 'any' ? '' : (consMethod || ''),
+        consolidation_shipping_method_fallback: consMethodFallback || '',
+        consolidation_timeout_method: timeoutAction === 'ship_individually' ? (timeoutMethod || '') : '',
+      } : {}),
     };
 
     let payload = {
@@ -661,6 +669,7 @@ export default function UserNotifyShipmentModal({ order, orders, initialData, on
       new_address: saveNewAddress,
       pref_id: userPrefId
     }
+
     // Call unified engine
     try {
       await base44.functions.invoke('shipping/createShippingPool', {
@@ -1044,11 +1053,11 @@ export default function UserNotifyShipmentModal({ order, orders, initialData, on
                   ) : (
                     <div className="space-y-1 max-h-32 overflow-y-auto border border-gray-200 rounded-lg p-2 bg-white">
                       {filteredUsers.map(u => (
-                        <label key={u.email} className="flex items-center gap-2 cursor-pointer hover:bg-gray-50 rounded px-1 py-0.5">
-                          <Checkbox checked={sharedWithEmails.includes(u.email)} onCheckedChange={() => toggleSharedUser(u.email)} />
+                        <label key={u.user_email} className="flex items-center gap-2 cursor-pointer hover:bg-gray-50 rounded px-1 py-0.5">
+                          <Checkbox checked={sharedWithEmails.includes(u.user_email)} onCheckedChange={() => toggleSharedUser(u.user_email)} />
                           <div className="flex-1 min-w-0">
-                            <span className="text-xs font-medium text-gray-700">{u.full_name || u.email}</span>
-                            {u.full_name && <span className="text-xs text-gray-400 ml-1.5">{u.email}</span>}
+                            <span className="text-xs font-medium text-gray-700">{u.display_name || u.user_email}</span>
+                            {u.display_name && <span className="text-xs text-gray-400 ml-1.5">{u.user_email}</span>}
                           </div>
                         </label>
                       ))}

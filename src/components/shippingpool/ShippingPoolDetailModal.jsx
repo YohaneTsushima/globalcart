@@ -148,8 +148,8 @@ export default function ShippingPoolDetailModal({ pool: initialPool, isAdmin, cu
 
   const openConvertToOther = async () => {
 
-    toast.error('功能开发中......');
-    return;
+    // toast.error('功能开发中......');
+    // return;
 
     setShowConvertToOther(true);
     setConvertAddressMode("saved");

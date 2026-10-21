@@ -5,7 +5,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { base44 } from "@/api/base44Client";
-import { tenantEntity } from "@/lib/tenantApi";
+import { tenantEntity, transitLocationApi } from "@/lib/tenantApi";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { usePermissions } from "@/hooks/usePermissions";
 import {
@@ -19,6 +19,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import CountrySelect from "@/components/common/CountrySelect";
+import ConfirmDialog from "@/components/common/ConfirmDialog";
 import TransitPoolCard from "@/components/transit/TransitPoolCard";
 import { getCountry } from "@/lib/countries";
 
@@ -51,12 +52,19 @@ export default function AdminTransitWork() {
   // Collapsed state for each location (default: all collapsed)
   const [collapsedLocations, setCollapsedLocations] = useState({});
 
+  // Delete confirmation dialog target
+  const [deleteLocId, setDeleteLocId] = useState(null);
+
+  // Location management actions are only shown in the manage tab
+  const showLocationActions = activeTab === "manage";
+
   const fetchData = async () => {
     setLoading(true);
     try {
-      const r = await base44.functions.invoke('getAllTransitWorkData', {});
-      const data = r.data || {};
-      
+      // const r = await base44.functions.invoke('getAllTransitWorkData', {});
+      const r = await transitLocationApi.workData();
+      const data = r || {};
+
       setLocations(data.locations || []);
       setRequestsByLocation(data.requestsByLocation || data.poolsByLocation || {});
       setAllUsers(data.users || []);
@@ -105,8 +113,10 @@ export default function AdminTransitWork() {
   });
 
   const fetchLocations = async () => {
-    const data = await tenantEntity.list('TransitLocation');
-    setLocations(data);
+    // const data = await tenantEntity.list('TransitLocation');
+    const r = await transitLocationApi.workData();
+    setRequestsByLocation(r?.requestsByLocation || r?.poolsByLocation || {});
+    setLocations(r?.locations);
   };
 
   const lf = (k, v) => setLocForm(p => ({ ...p, [k]: v }));
@@ -119,14 +129,15 @@ export default function AdminTransitWork() {
       await Promise.all(others.map(l => tenantEntity.update('TransitLocation', l.id, { is_default_official_pool: false })));
     }
     if (editingLoc) {
-      await tenantEntity.update('TransitLocation', editingLoc.id, locForm);
+      await transitLocationApi.update(editingLoc.id, locForm);
     } else {
-      await tenantEntity.create('TransitLocation', locForm);
+      await transitLocationApi.create(locForm);
     }
     await fetchLocations();
     // Refresh requests data
-    const r = await base44.functions.invoke('getAllTransitWorkData', {});
-    setRequestsByLocation(r.data?.requestsByLocation || r.data?.poolsByLocation || {});
+    // const r = await base44.functions.invoke('getAllTransitWorkData', {});
+    // const r = await transitLocationApi.workData();
+    // setRequestsByLocation(r?.requestsByLocation || r?.poolsByLocation || {});
     setShowLocForm(false);
     setEditingLoc(null);
     setLocForm({ name: "", code_prefix: "", country: "", province: "", address: "", handling_fee: 0, handling_fee_currency: "JPY", manager_email: "", manager_contact: "", allow_storage: false, allow_pickup: false, description: "", is_active: true, is_default_official_pool: false, disabled_transit_method_ids: [], disabled_addon_ids: [] });
@@ -150,12 +161,17 @@ export default function AdminTransitWork() {
     setShowLocForm(true);
   };
 
-  const handleLocDelete = async (id) => {
-    if (!confirm("确认删除此中转地？")) return;
-    await tenantEntity.delete('TransitLocation', id);
+  const handleLocDelete = (id) => {
+    setDeleteLocId(id);
+  };
+
+  const confirmLocDelete = async () => {
+    if (!deleteLocId) return;
+    await tenantEntity.delete('TransitLocation', deleteLocId);
+    setDeleteLocId(null);
     await fetchLocations();
-    const r = await base44.functions.invoke('getAllTransitWorkData', {});
-    setRequestsByLocation(r.data?.requestsByLocation || r.data?.poolsByLocation || {});
+    // const r = await base44.functions.invoke('getAllTransitWorkData', {});
+    // setRequestsByLocation(r.data?.requestsByLocation || r.data?.poolsByLocation || {});
   };
 
   const handleLocToggle = async (loc) => {
@@ -282,24 +298,29 @@ export default function AdminTransitWork() {
                         >
                           <MapPin className="w-3.5 h-3.5" />
                         </button>
-                        <button 
-                          onClick={(e) => { e.stopPropagation(); handleLocEdit(loc); }} 
-                          className="p-1.5 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-700"
-                        >
-                          <Edit2 className="w-3.5 h-3.5" />
-                        </button>
-                        <button 
-                          onClick={(e) => { e.stopPropagation(); handleLocToggle(loc); }} 
-                          className="p-1.5 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-700"
-                        >
-                          {loc.is_active ? <X className="w-3.5 h-3.5" /> : <CheckCircle className="w-3.5 h-3.5" />}
-                        </button>
-                        <button 
-                          onClick={(e) => { e.stopPropagation(); handleLocDelete(loc.id); }} 
-                          className="p-1.5 rounded hover:bg-red-50 text-gray-400 hover:text-red-500"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
+                        {showLocationActions && (
+                          <>
+                            <button 
+                              onClick={(e) => { e.stopPropagation(); handleLocEdit(loc); }} 
+                              title="编辑" 
+                              className="p-1.5 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-700"
+                            >
+                              <Edit2 className="w-3.5 h-3.5" />
+                            </button>
+                            <button 
+                              onClick={(e) => { e.stopPropagation(); handleLocToggle(loc); }} 
+                              className="p-1.5 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-700"
+                            >
+                              {loc.is_active ? <X className="w-3.5 h-3.5" /> : <CheckCircle className="w-3.5 h-3.5" />}
+                            </button>
+                            <button 
+                              onClick={(e) => { e.stopPropagation(); handleLocDelete(loc.id); }} 
+                              className="p-1.5 rounded hover:bg-red-50 text-gray-400 hover:text-red-500"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </>
+                        )}
                       </div>
                     </div>
 
@@ -624,6 +645,16 @@ export default function AdminTransitWork() {
           )}
         </div>
       )}
+
+      <ConfirmDialog
+        open={!!deleteLocId}
+        onOpenChange={(open) => { if (!open) setDeleteLocId(null); }}
+        title="删除中转地"
+        description="确认删除此中转地？删除后无法恢复。"
+        confirmText="删除"
+        confirmClassName="bg-red-600 hover:bg-red-700"
+        onConfirm={confirmLocDelete}
+      />
     </div>
   );
 }

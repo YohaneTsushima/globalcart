@@ -186,8 +186,8 @@ export const shippingPoolApi = {
   confiredmProof:           (id, data)  => mutate('ShippingPool', 'confirmShipmentProof', { id, data }).then(r => r),
   shipped:                  (id, data)  => mutate('ShippingPool', 'handleShip', { id, data }).then(r => r),
   archived:                 (id, data)  => mutate('ShippingPool', 'archived', { id, data }).then(r => r),
-  poolCreate:              (id, data)  => mutate('ShippingPool', 'poolCreate', { id, data }).then(r => r),
-  handleCreate:        (data)      => mutate('ShippingPool', 'handleCreate', { data }).then(r => r),
+  poolCreate:               (id, data)  => mutate('ShippingPool', 'poolCreate', { id, data }).then(r => r),
+  handleCreate:             (data)      => mutate('ShippingPool', 'handleCreate', { data }).then(r => r),
 };
 
 // ─── ShippingPool Edit Request shortcuts ───────────────────────────────────────────────────
@@ -230,3 +230,11 @@ export async function fetchSubmitOrderPageData() {
   const res = {data: { addons: [], settings: {}, rates: null }}
   return res.data || { addons: [], settings: {}, rates: null };
 }
+
+// ─── TransitLocation shortcuts ─────────────────────────────────────────────────
+export const transitLocationApi = {
+  workData:     (id, data)            => mutate('TransitLocation', 'workData', {}).then(r => r),
+  create:       (data)        => mutate('TransitLocation', 'create', { data }).then(r => r.result || r.data?.result || r),
+  update:       (id, data)    => mutate('TransitLocation', 'update', { id, data }).then(r => r.result || r.data?.result || r),
+  delete:       (id)          => mutate('TransitLocation', 'delete', { id }),
+};

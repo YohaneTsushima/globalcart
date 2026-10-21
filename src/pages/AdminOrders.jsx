@@ -391,7 +391,7 @@ export default function AdminOrders() {
   };
 
   const handleQuickOrdered = async (order) => {
-    debugger
+    
     const payload = [order];
 
     handleBulkAction("正在标记已下单...", "order/info/handleMarkPurchased", "下单成功", payload);
