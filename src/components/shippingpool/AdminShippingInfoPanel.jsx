@@ -8,8 +8,7 @@
  * Shows full per-user fee breakdown using calcFeeBreakdownPerUser.
  */
 import { useState, useMemo, useEffect, useRef } from "react";
-import { base44 } from "@/api/base44Client";
-import { shippingPoolApi, tenantEntity } from "@/lib/tenantApi";
+import { shippingPoolApi } from "@/lib/tenantApi";
 import { toast } from "sonner";
 import { persistentToastError } from "@/lib/toastUtils.jsx";
 import { Button } from "@/components/ui/button";
@@ -18,10 +17,10 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { CreditCard, Truck, CheckCircle, ExternalLink, X, MapPin, Copy } from "lucide-react";
+import { CreditCard, Truck, CheckCircle, ExternalLink, X } from "lucide-react";
 import ConfirmDialog from "@/components/common/ConfirmDialog";
 import CustomsDeclarationDisplay from "@/components/shippingpool/CustomsDeclarationDisplay";
-import { getCountry, getCountryZone } from "@/lib/countries";
+import { getCountryZone } from "@/lib/countries";
 import { calcFeeBreakdownPerUser } from "@/lib/shippingFeeCalc";
 import ShippingFeeBreakdown from "@/components/shippingpool/ShippingFeeBreakdown";
 import MultiImageUploader from "@/components/common/MultiImageUploader";
@@ -157,6 +156,8 @@ export default function AdminShippingInfoPanel({
     const saved = initialPool.packing_fees_per_user || [];
     if (saved.length > 0 && saved[0].base_fee_jpy !== undefined) {
       setBasePackingFee(saved[0].base_fee_jpy);
+    } else if (initialPool.packing_fee_jpy) {
+      setBasePackingFee(parseFloat(initialPool.packing_fee_jpy) || 0);
     }
     // Re-init per-user packing fees from saved data
     if (saved.length > 0) {
@@ -175,9 +176,9 @@ export default function AdminShippingInfoPanel({
   }, [initialPool?.status]);
 
   // Sync packing fees when getShippingPoolDetail returns updated data (e.g. after handleSaveInfoOnly)
-  const packingFeesKeyRef = useRef(JSON.stringify(initialPool?.packing_fees_per_user));
+  const packingFeesKeyRef = useRef(JSON.stringify([initialPool?.packing_fees_per_user, initialPool?.packing_fee_jpy ?? null]));
   useEffect(() => {
-    const newKey = JSON.stringify(initialPool?.packing_fees_per_user);
+    const newKey = JSON.stringify([initialPool?.packing_fees_per_user, initialPool?.packing_fee_jpy ?? null]);
     if (newKey === packingFeesKeyRef.current) return;
     packingFeesKeyRef.current = newKey;
     const saved = initialPool?.packing_fees_per_user || [];
@@ -192,7 +193,7 @@ export default function AdminShippingInfoPanel({
         extra_fee_jpy: u.extra_fee_jpy ?? Math.max(0, (u.fee_jpy || 0) - (u.base_fee_jpy ?? defaultBaseFee)),
       })));
     }
-  }, [initialPool?.packing_fees_per_user, defaultBaseFee]);
+  }, [initialPool?.packing_fees_per_user, initialPool?.packing_fee_jpy, defaultBaseFee]);
 
   // Sync pool.order_ids when parent passes updated pool (e.g. after orders are moved in)
   useEffect(() => {

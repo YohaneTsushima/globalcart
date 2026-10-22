@@ -41,7 +41,7 @@ export function calcFeeBreakdownPerUser({
   transitHandlingFeeSplit = false,
 }) {
   const isConsolidation = pool.consolidation_type === "transit" || pool.consolidation_type === "other";
-  const totalWeightG = orders.reduce((s, o) => s + (o.weight_g || 0), 0);
+  const totalWeightG = orders.reduce((s, o) => s + (parseFloat(o.weight_g) || 0), 0);
 
   // Group orders by user
   const userOrderMap = {};
@@ -70,7 +70,7 @@ export function calcFeeBreakdownPerUser({
   const result = [];
 
   for (const [email, userOrders] of Object.entries(userOrderMap)) {
-    const userWeightG = userOrders.reduce((s, o) => s + (o.weight_g || 0), 0);
+    const userWeightG = userOrders.reduce((s, o) => s + (parseFloat(o.weight_g) || 0), 0);
     const packingEntry = expandedPackingFees.find(p => p.user_email === email);
     const packingFee = parseFloat(packingEntry?.fee_jpy) || 0;
 
@@ -176,7 +176,7 @@ export function calcFeeBreakdownPerUser({
       if (sharedJpy > 0) {
         const packingPart = parseFloat(globalPackingFeeJpy) || 0;
         const labelParts = [`运费¥${Math.round(shippingFeeJpy || 0)}`, `外箱¥${Math.round(boxPriceJpy || 0)}`];
-        if (packingPart > 0) labelParts.push(`手续费¥${Math.round(packingPart)}`);
+        if (packingPart > 0) labelParts.push(`捆包作业服务费¥${Math.round(packingPart)}`);
         if (sharedTransitFee > 0) labelParts.push(`中转手续费¥${Math.round(sharedTransitFee)}`);
         items.push({
           label: `平摊金额（${labelParts.join("+")} × ${userWeightG}g/${totalWeightG}g）`,
