@@ -639,12 +639,13 @@ export default function ShippingPoolDetailModal({ pool: initialPool, isAdmin, cu
     }
 
     const newMethod = {
-      payable_amount: amountToCharge,
+      // payable_amount: amountToCharge,
       method_name: method,
       payment_currency: selectedMethodMeta?.payment_currency,
       payment_currency_type: selectedMethodMeta?.payment_currency,
       prepayment_rate_jpy_cny: exchangeRates?.[`jpy_${payCurrency.toLowerCase()}`],
-      provider_key: method
+      provider_key: method,
+      payment_config_id: selectedMethodMeta.id
     };
 
     setGeneratingAlipay(true);

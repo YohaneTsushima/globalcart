@@ -379,6 +379,7 @@ export default function SubmitOrder() {
             credit_cycle: isCredit ? (paymentMode === "credit_weekly" ? "weekly" : "monthly") : null,
             order_status: isCredit ? "paid" : "payment_pending",
             payment_status: isCredit ? "paid" : "awaiting_payment",
+            payment_config_id: paymentMethod.id,
             user_note: form.user_note || "",
             payment_rate_jpy_cny: selectedCurrency === 'CNY' ? (rates?.jpy_cny || null) : null,
             notice_key: 'order_created',
