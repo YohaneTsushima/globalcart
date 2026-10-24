@@ -330,8 +330,8 @@ export default function AdminShippingInfoPanel({
   };
 
   // Resolve transit location and shipping method from pool
-  const transitLocation = transitLocations.find(l => l.id === pool.transit_location_id) || null;
-  const transitShippingMethod = transitShippingMethods.find(m => m.id === pool.transit_shipping_method_id) || null;
+  const transitLocation = transitLocations.find(l => l.id === parseInt(pool.transit_location_id)) || null;
+  const transitShippingMethod = transitShippingMethods.find(m => m.id === parseInt(pool.transit_shipping_method_id)) || null;
 
   // Live fee breakdown calculation (includes packing fees, transit fees with currency conversion)
   const feeBreakdowns = useMemo(() => {
@@ -396,14 +396,14 @@ export default function AdminShippingInfoPanel({
       tracking_number: trackingNumber,
       box_template_id: btId,
       box_template_name: btId ? (selectedBox?.name || "") : "",
-      box_price_jpy: btId ? boxPrice : 0,
+      // box_price_jpy: btId ? boxPrice : 0,
       final_weight_g: parseFloat(finalWeightG) || 0, //加上盒子的重量
       total_weight_g: parseFloat(totalWeightG) || 0, //单纯货物的重量
-      shipping_fee_jpy: parseFloat(shippingFeeJpy) || 0,
+      // shipping_fee_jpy: parseFloat(shippingFeeJpy) || 0,
       fee_currency: "JPY",
-      packing_fee_jpy: totalPackingFee,
-      packing_fees_per_user: effectivePackingFeesPerUser,
-      fee_breakdown_per_user: breakdowns,
+      // packing_fee_jpy: totalPackingFee,
+      // packing_fees_per_user: effectivePackingFeesPerUser,
+      // fee_breakdown_per_user: breakdowns,
       admin_note: adminNote,
       admin_packing_note: adminPackingNote,
       label_image_urls: labelImageUrls,
@@ -411,9 +411,9 @@ export default function AdminShippingInfoPanel({
       actual_international_shipping_cost_jpy: parseFloat(actualShippingCostJpy) || null,
       // Financial reporting snapshots (JPY): full income charged to users incl. balance due,
       // box charge and box actual cost — consumed by aggregateDailyReport / getReportData
-      shipping_stage_income_jpy: Math.round(breakdowns.reduce((s, b) => s + (b.total_jpy || 0), 0)) || null,
-      box_charge_jpy_snapshot: btId ? boxPrice : 0,
-      box_actual_cost_jpy_snapshot: btId ? (selectedBox?.cost_jpy ?? null) : 0,
+      // shipping_stage_income_jpy: Math.round(breakdowns.reduce((s, b) => s + (b.total_jpy || 0), 0)) || null,
+      // box_charge_jpy_snapshot: btId ? boxPrice : 0,
+      // box_actual_cost_jpy_snapshot: btId ? (selectedBox?.cost_jpy ?? null) : 0,
     };
   };
 

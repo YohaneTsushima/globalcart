@@ -247,9 +247,17 @@ function convertToJpy(amount, currency, exchangeRates) {
   if (!amount || amount === 0) return 0;
   if (!currency || currency === "JPY") return parseFloat(amount) || 0;
   if (!exchangeRates) return parseFloat(amount) || 0; // fallback: treat as JPY
-  const rateKey = `jpy_${currency.toLowerCase()}`;
-  const rate = exchangeRates[rateKey];
-  if (!rate || rate === 0) return parseFloat(amount) || 0;
+  const lower = currency.toLowerCase();
+  // Rates may be keyed either as "jpy_cny" (lib/exchangeRates.js shape) or "CNY"/"cny"
+  // (raw conversion_rates from getShippingPoolDetail). Both mean "1 JPY ≈ rate foreign".
+  const rate = exchangeRates[`jpy_${lower}`]
+    ?? exchangeRates[currency]
+    ?? exchangeRates[lower]
+    ?? exchangeRates[lower.toUpperCase()];
+  if (!rate || rate === 0) {
+    console.warn(`[shippingFeeCalc] no exchange rate for ${currency}, treating amount as JPY`);
+    return parseFloat(amount) || 0;
+  }
   // rate is jpy→foreign, so foreign→jpy = amount / rate
   return Math.round((parseFloat(amount) || 0) / rate);
 }

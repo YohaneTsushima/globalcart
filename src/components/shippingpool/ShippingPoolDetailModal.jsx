@@ -133,6 +133,7 @@ export default function ShippingPoolDetailModal({ pool: initialPool, isAdmin, cu
   const [convertSavedAddresses, setConvertSavedAddresses] = useState([]);
   const [convertSaveAddress, setConvertSaveAddress] = useState(false);
   const [submittingConvert, setSubmittingConvert] = useState(false);
+  const [tranLocations, setTransitLocations] = useState(false);
 
   const { user } = useCurrentUser();
   const onSuccessRef = useRef(null);
@@ -274,6 +275,7 @@ export default function ShippingPoolDetailModal({ pool: initialPool, isAdmin, cu
       const d = r?.data || {};
       if (d.pool) setPool(p => ({ ...p, ...d.pool }));
       if (d?.orders) setOrders(d.orders);
+      if (d?.transit_locations) setTransitLocations(d?.transit_locations);
       if (d.users && d.users.length > 0) {
         const emailUserMap = {};
         d.users.forEach(u => { emailUserMap[u.user_email] = u; });
@@ -2068,7 +2070,7 @@ export default function ShippingPoolDetailModal({ pool: initialPool, isAdmin, cu
             allowShipWithoutPaymentOfficialPool={allowShipWithoutPaymentOfficialPool}
             fullpayOnceToleranceJpy={fullpayOnceToleranceJpy}
             transitHandlingFeeSplit={transitHandlingFeeSplit}
-            transitLocations={transitLocations}
+            transitLocations={tranLocations}
             transitShippingMethods={transitShippingMethods}
             userProfileMap={tenantUserMap}
             exchangeRates={exchangeRates}
