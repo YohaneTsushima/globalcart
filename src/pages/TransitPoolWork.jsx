@@ -151,15 +151,17 @@ export default function TransitPoolWork() {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const res = await base44.functions.invoke('getTransitPoolWorkData', { request_id: pool_code });
-      if (!res.data?.request) { navigate('/Home'); return; }
-      setRequest(res.data.request);
-      setEntries(res.data.entries || []);
-      setLocation(res.data.location);
-      setTransitMethods(res.data.transitMethods || []);
+      debugger
+      // const res = await base44.functions.invoke('getTransitPoolWorkData', { request_id: pool_code });
+      const res = {};
+      // if (!res.data?.request) { navigate('/Home'); return; }
+      setRequest(res?.request || {});
+      setEntries(res?.entries || []);
+      setLocation(res?.location || {});
+      setTransitMethods(res?.transitMethods || []);
     } catch (error) {
       alert('加载失败：' + error.message);
-      navigate('/Home');
+      // navigate('/Home');
     } finally {
       setLoading(false);
     }

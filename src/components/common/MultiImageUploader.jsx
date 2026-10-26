@@ -6,7 +6,6 @@ import { useState } from "react";
 import { base44 } from "@/api/base44Client";
 import { toast } from "sonner";
 import { X, Plus, Loader2 } from "lucide-react";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ImageWithViewer } from "@/components/common/ImageViewer";
 
@@ -17,6 +16,7 @@ export default function MultiImageUploader({
   label,
   id = "multi-image-uploader",
   className = "",
+  readOnly = false,
 }) {
   const [uploading, setUploading] = useState(false);
   const [dragging, setDragging] = useState(false);
@@ -88,6 +88,7 @@ export default function MultiImageUploader({
                 type="button"
                 onClick={() => deleteImage(url)}
                 className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                style={{ display: readOnly ? "none" : undefined }}
               >
                 <X className="w-2.5 h-2.5" />
               </button>
@@ -95,51 +96,55 @@ export default function MultiImageUploader({
           ))}
         </div>
       )}
-      <label
-        className={`cursor-pointer flex flex-col items-center justify-center gap-1 px-2.5 py-3 border-2 border-dashed rounded-md text-xs transition-colors ${
-          dragging
-            ? "border-blue-400 bg-blue-50 text-blue-500"
-            : "border-gray-300 text-gray-400 hover:border-gray-400"
-        }`}
-        onDragOver={(e) => {
-          e.preventDefault();
-          setDragging(true);
-        }}
-        onDragLeave={() => setDragging(false)}
-        onDrop={handleDrop}
-      >
-        {uploading ? (
-          <Loader2 className="w-4 h-4 animate-spin" />
-        ) : (
-          <Plus className="w-4 h-4" />
-        )}
-        <span>{uploading ? "上传中..." : "点击或拖拽上传"}</span>
-        <input
-          type="file"
-          accept="image/*"
-          className="hidden"
-          disabled={uploading}
-          multiple
-          onChange={(e) => {
-            Array.from(e.target.files).forEach((f) => uploadFile(f));
-          }}
-        />
-      </label>
-      <input
-        type="text"
-        placeholder="粘贴图片URL或剪切板图片（Ctrl+V）"
-        className="mt-1.5 w-full h-7 rounded-md border border-input bg-transparent px-2 py-1 text-xs shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-        onPaste={handlePaste}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") {
-            const url = e.target.value.trim();
-            if (url) {
-              onChange?.([...(value || []), url]);
-              e.target.value = "";
-            }
-          }
-        }}
-      />
+      {!readOnly && (
+        <>
+          <label
+            className={`cursor-pointer flex flex-col items-center justify-center gap-1 px-2.5 py-3 border-2 border-dashed rounded-md text-xs transition-colors ${
+              dragging
+                ? "border-blue-400 bg-blue-50 text-blue-500"
+                : "border-gray-300 text-gray-400 hover:border-gray-400"
+            }`}
+            onDragOver={(e) => {
+              e.preventDefault();
+              setDragging(true);
+            }}
+            onDragLeave={() => setDragging(false)}
+            onDrop={handleDrop}
+          >
+            {uploading ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <Plus className="w-4 h-4" />
+            )}
+            <span>{uploading ? "上传中..." : "点击或拖拽上传"}</span>
+            <input
+              type="file"
+              accept="image/*"
+              className="hidden"
+              disabled={uploading}
+              multiple
+              onChange={(e) => {
+                Array.from(e.target.files).forEach((f) => uploadFile(f));
+              }}
+            />
+          </label>
+          <input
+            type="text"
+            placeholder="粘贴图片URL或剪切板图片（Ctrl+V）"
+            className="mt-1.5 w-full h-7 rounded-md border border-input bg-transparent px-2 py-1 text-xs shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            onPaste={handlePaste}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                const url = e.target.value.trim();
+                if (url) {
+                  onChange?.([...(value || []), url]);
+                  e.target.value = "";
+                }
+              }
+            }}
+          />
+        </>
+      )}
     </div>
   );
 }

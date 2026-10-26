@@ -36,6 +36,25 @@ const STATUS_CONFIG = {
   processing:                    { label: "处理中",    color: "bg-blue-100 text-blue-700" },
 };
 
+const PAYMENT_METHOD_LABELS = {
+  alipay: "支付宝",
+  wechatpay: "微信支付",
+  paypay: "PayPay",
+  paypal: "PayPal",
+  credit_card: "信用卡",
+  bank_transfer: "银行转账",
+  other: "其他",
+};
+
+// per_user_payments[].payment_method 历史上是字符串（如 "alipay"），后来改为整个 PaymentMethod 对象。
+// 这里统一取可读名称，兼容两种形态。
+function paymentMethodLabel(pm) {
+  if (!pm) return "";
+  if (typeof pm === "string") return PAYMENT_METHOD_LABELS[pm] || pm;
+  const key = pm.provider_key || pm.method_name;
+  return PAYMENT_METHOD_LABELS[key] || pm.method_name || pm.method_description || key || "";
+}
+
 function PaymentProofImage({ url }) {
   const [lightboxOpen, setLightboxOpen] = useState(false);
   return (
@@ -824,6 +843,9 @@ export default function AdminShippingInfoPanel({
           {/* Customs declaration (read-only, from orders) */}
           <CustomsDeclarationDisplay orders={orders} />
 
+          {/* 费用编辑区（外箱/重量/运费/捆包费/追加费/费用明细）— ready_to_ship 时隐藏，仅保留运单号、备注与图片 */}
+          {!isStep2 && (
+            <>
           {/* Box template */}
           <div>
             <Label className="text-xs text-gray-500">外箱选择</Label>
@@ -1014,6 +1036,8 @@ export default function AdminShippingInfoPanel({
               />
             </div>
           )}
+            </>
+          )}
 
           {/* Tracking number */}
           <div>
@@ -1048,6 +1072,7 @@ export default function AdminShippingInfoPanel({
               uploadPath="shippingLabel"
               label="发货面单图片"
               id="admin-label-image-input"
+              readOnly={isStep2}
             />
             <MultiImageUploader
               value={packingImageUrls}
@@ -1055,6 +1080,7 @@ export default function AdminShippingInfoPanel({
               uploadPath="shippingPacking"
               label="捆包状态图片"
               id="admin-packing-image-input"
+              readOnly={isStep2}
             />
           </div>
 
@@ -1081,9 +1107,12 @@ export default function AdminShippingInfoPanel({
 
             {isAwaitingPayment && (
               <>
-                <div className="bg-orange-50 border border-orange-100 rounded-lg px-3 py-2 text-sm text-orange-700">
-                  运费 <strong>¥{Math.round(grandTotalJpy).toLocaleString()} JPY</strong>，等待用户付款。
-                </div>
+                {!isConsolidation && (
+                  <div className="bg-orange-50 border border-orange-100 rounded-lg px-3 py-2 text-sm text-orange-700">
+                    运费 <strong>¥{Math.round(grandTotalJpy).toLocaleString()} JPY</strong>，等待用户付款。
+                  </div>
+                )}
+                {/* [已停用] 汇率变动导致的金额更新通知 UI — 暂时隐藏，保留以便恢复
                 {hasPerUserFeeChanged && (
                   <div className="bg-yellow-50 border border-yellow-200 rounded-lg px-3 py-2 text-xs text-yellow-700">
                     ⚠️ 金额已修改（原 ¥{savedGrandTotalJpy.toLocaleString()} → 新 ¥{Math.round(grandTotalJpy).toLocaleString()} JPY）
@@ -1094,6 +1123,7 @@ export default function AdminShippingInfoPanel({
                   <CreditCard className="w-3.5 h-3.5 mr-1.5" />
                   {saving ? "保存中..." : `通知用户金额更新（¥${Math.round(grandTotalJpy).toLocaleString()} JPY）`}
                 </Button>
+                */}
                 <Button size="sm" variant="outline" className="w-full text-xs"
                   onClick={handleSaveInfoOnly} disabled={saving}>
                   {saving ? "保存中..." : "仅保存（不通知用户）"}
@@ -1147,22 +1177,40 @@ export default function AdminShippingInfoPanel({
                                     </span>
                                   </div>
                                 </div>
-                                {up.payment_method && <p className="text-xs text-gray-400">支付方式：{up.payment_method}</p>}
+                                {(() => {
+                                  const methodLabel = paymentMethodLabel(up.payment_method);
+                                  return methodLabel ? <p className="text-xs text-gray-400">支付方式：{methodLabel}</p> : null;
+                                })()}
                                 {up.payment_proof_url && <PaymentProofImage url={up.payment_proof_url} />}
                                 {isPending && (
                                   <Button size="sm" className="bg-green-600 hover:bg-green-700 w-full h-7 text-xs"
                                     disabled={confirmingSaving}
                                     onClick={async () => {
                                       setConfirmingSaving(true);
-                                      const updatedPayments = (pool.per_user_payments || []).map(p =>
-                                        p.user_email === up.user_email ? { ...p, payment_status: "paid", confirmed_at: new Date().toISOString() } : p
-                                      );
-                                      const allPaid = updatedPayments.every(p => p.payment_status === "paid");
-                                      const payload = {
-                                        per_user_payments: updatedPayments,
-                                        ...(allPaid ? { payment_status: "paid", admin_confirmed_payment: true } : {}),
-                                      };
-                                      await updatePool(payload, { setLoading: setConfirmingSaving });
+                                      // [原实现] 前端拼 per_user_payments 整包 + 算 allPaid，用通用 update 全量回写
+                                      // const updatedPayments = (pool.per_user_payments || []).map(p =>
+                                      //   p.user_email === up.user_email ? { ...p, payment_status: "paid", confirmed_at: new Date().toISOString() } : p
+                                      // );
+                                      // const allPaid = updatedPayments.every(p => p.payment_status === "paid");
+                                      // const payload = {
+                                      //   per_user_payments: updatedPayments,
+                                      //   ...(allPaid ? { payment_status: "paid", admin_confirmed_payment: true } : {}),
+                                      // };
+                                      // await updatePool(payload, { setLoading: setConfirmingSaving });
+
+                                      // [新实现] 调用后端确认接口，只传定位信息，状态判断交后端
+                                      try {
+                                        await shippingPoolApi.confiredmProof(pool.id, {
+                                          pool_code: pool.pool_code,
+                                        }, { email: up.user_email});
+                                        toast.success(`[${pool.pool_code}] 已确认 ${displayName} 付款`);
+                                      } catch (err) {
+                                        const message = err?.response?.data?.message || err?.message || '确认失败';
+                                        persistentToastError(message);
+                                      } finally {
+                                        setConfirmingSaving(false);
+                                        onRefresh?.();
+                                      }
                                     }}>
                                     <CheckCircle className="w-3 h-3 mr-1" />确认此用户已付款
                                   </Button>
@@ -1240,6 +1288,7 @@ export default function AdminShippingInfoPanel({
                     );
                   })()}
                 </div>
+                {/* [已停用] 汇率变动导致的补差/退款 UI — 暂时隐藏，保留以便恢复
                 {hasPerUserFeeChanged && (() => {
                   const prevJpy = savedGrandTotalJpy;
                   const newJpy = Math.round(grandTotalJpy);
@@ -1277,6 +1326,7 @@ export default function AdminShippingInfoPanel({
                     </div>
                   );
                 })()}
+                */}
                 <Button size="sm" variant="outline" className="w-full text-xs"
                   onClick={handleSaveInfoOnly} disabled={saving}>
                   {saving ? "保存中..." : "保存信息修改"}
@@ -1316,6 +1366,7 @@ export default function AdminShippingInfoPanel({
                     </Button>
                   </div>
                 )}
+                {/* [已停用] 汇率变动导致的补差/退款 UI — 暂时隐藏，保留以便恢复
                 {hasPerUserFeeChanged && (() => {
                   const prevJpy = savedGrandTotalJpy;
                   const newJpy = Math.round(grandTotalJpy);
@@ -1351,6 +1402,7 @@ export default function AdminShippingInfoPanel({
                     </div>
                   );
                 })()}
+                */}
                 {trackingNumber && (
                   <div className="bg-orange-50 border border-orange-100 rounded-lg px-3 py-2 text-xs text-orange-700">
                     ⚠️ 确认发货后，所有关联订单将同步更新为"已发货"。

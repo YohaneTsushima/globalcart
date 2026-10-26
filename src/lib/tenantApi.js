@@ -169,25 +169,25 @@ export const tenantEntity = {
 // ─── ShippingPool shortcuts ───────────────────────────────────────────────────
 
 export const shippingPoolApi = {
-  list:                     (filter)    => tenantEntity.list('ShippingPool', filter),
-  page:                     (id, data)  => mutate('ShippingPool', 'page', { id, data }).then(r => r),
-  create:                   (data)      => tenantEntity.create('ShippingPool', data),
-  update:                   (id, d)     => tenantEntity.update('ShippingPool', id, d),
-  handleSaveInfoOnly:       (id, data)  => mutate('ShippingPool', 'handleSaveInfoOnly', { id, data }).then(r => r || r?.data || r?.data || r.data?.results || r || []),
-  handleSetAwaitingPayment: (id, data)  => mutate('ShippingPool', 'handleSetAwaitingPayment', { id, data }).then(r => r || r?.data || r?.data || r.data?.results || r || []),
-  delete:                   (id)        => tenantEntity.delete('ShippingPool', id),
-  one:                      (id)        => tenantEntity.one('ShippingPool', id),
-  other:                    (id)        => mutate('ShippingPool', 'other', { id }).then(r => r?.data || r || []),
-  moveOrder:                (id, data)  => mutate('ShippingPool', 'moveOrder', { id, data }).then(r => r?.data || r || []),
-  fees:                     (id)        => mutate('ShippingPool', 'fees', { id }).then(r => r),
-  returnOrder:              (id, data)  => mutate('ShippingPool', 'handleReturnOrder', { id, data }).then(r => r?.data || r || []),
-  addOrder:                 (id, data)  => mutate('ShippingPool', 'submitAddOrder', { id, data }).then(r => r?.data || r || []),
-  proof:                    (id, data)  => mutate('ShippingPool', 'updateShipmentProof', { id, data }).then(r => r?.data || r || []),
-  confiredmProof:           (id, data)  => mutate('ShippingPool', 'confirmShipmentProof', { id, data }).then(r => r),
-  shipped:                  (id, data)  => mutate('ShippingPool', 'handleShip', { id, data }).then(r => r),
-  archived:                 (id, data)  => mutate('ShippingPool', 'archived', { id, data }).then(r => r),
-  poolCreate:               (id, data)  => mutate('ShippingPool', 'poolCreate', { id, data }).then(r => r),
-  handleCreate:             (data)      => mutate('ShippingPool', 'handleCreate', { data }).then(r => r),
+  list:                     (filter)            => tenantEntity.list('ShippingPool', filter),
+  page:                     (id, data)          => mutate('ShippingPool', 'page', { id, data }).then(r => r),
+  create:                   (data)              => tenantEntity.create('ShippingPool', data),
+  update:                   (id, d)             => tenantEntity.update('ShippingPool', id, d),
+  handleSaveInfoOnly:       (id, data)          => mutate('ShippingPool', 'handleSaveInfoOnly', { id, data }).then(r => r || r?.data || r?.data || r.data?.results || r || []),
+  handleSetAwaitingPayment: (id, data)          => mutate('ShippingPool', 'handleSetAwaitingPayment', { id, data }).then(r => r || r?.data || r?.data || r.data?.results || r || []),
+  delete:                   (id)                => tenantEntity.delete('ShippingPool', id),
+  one:                      (id)                => tenantEntity.one('ShippingPool', id),
+  other:                    (id)                => mutate('ShippingPool', 'other', { id }).then(r => r?.data || r || []),
+  moveOrder:                (id, data)          => mutate('ShippingPool', 'moveOrder', { id, data }).then(r => r?.data || r || []),
+  fees:                     (id)                => mutate('ShippingPool', 'fees', { id }).then(r => r),
+  returnOrder:              (id, data)          => mutate('ShippingPool', 'handleReturnOrder', { id, data }).then(r => r?.data || r || []),
+  addOrder:                 (id, data)          => mutate('ShippingPool', 'submitAddOrder', { id, data }).then(r => r?.data || r || []),
+  proof:                    (id, data)          => mutate('ShippingPool', 'updateShipmentProof', { id, data }).then(r => r?.data || r || []),
+  confiredmProof:           (id, data, filter)  => mutate('ShippingPool', 'confirmShipmentProof', { id, data, filter }).then(r => r),
+  shipped:                  (id, data)          => mutate('ShippingPool', 'handleShip', { id, data }).then(r => r),
+  archived:                 (id, data)          => mutate('ShippingPool', 'archived', { id, data }).then(r => r),
+  poolCreate:               (id, data)          => mutate('ShippingPool', 'poolCreate', { id, data }).then(r => r),
+  handleCreate:             (data)              => mutate('ShippingPool', 'handleCreate', { data }).then(r => r),
 };
 
 // ─── ShippingPool Edit Request shortcuts ───────────────────────────────────────────────────
@@ -233,8 +233,9 @@ export async function fetchSubmitOrderPageData() {
 
 // ─── TransitLocation shortcuts ─────────────────────────────────────────────────
 export const transitLocationApi = {
-  workData:     (id, data)            => mutate('TransitLocation', 'workData', {}).then(r => r),
-  create:       (data)        => mutate('TransitLocation', 'create', { data }).then(r => r.result || r.data?.result || r),
-  update:       (id, data)    => mutate('TransitLocation', 'update', { id, data }).then(r => r.result || r.data?.result || r),
-  delete:       (id)          => mutate('TransitLocation', 'delete', { id }),
+  workData:     (id, data)          => mutate('TransitLocation', 'workData', {}).then(r => r),
+  workDataId:   (id, data)          => mutate('TransitLocation', 'getTransitLocationWorkPageData', { id }).then(r => r),
+  create:       (data)              => mutate('TransitLocation', 'create', { data }).then(r => r.result || r.data?.result || r),
+  update:       (id, data)          => mutate('TransitLocation', 'update', { id, data }).then(r => r.result || r.data?.result || r),
+  delete:       (id)                => mutate('TransitLocation', 'delete', { id }),
 };

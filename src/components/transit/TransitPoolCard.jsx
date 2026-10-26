@@ -15,10 +15,22 @@ const TRANSIT_STATUS_CONFIG = {
   forwarded: { label: "中转地已转发", color: "bg-gray-100 text-gray-700", icon: Package },
 };
 
+const POOL_STATUS_CONFIG = {
+  open: '招募中',
+  ready_to_ship: '准备发往中转站',
+  completed: '已完成'
+}
+
 export default function TransitPoolCard({ pool, transitStatus, isSelected, onToggleSelect, onClick }) {
   // Support both GroupBuyRequest and ShippingPool data structures
   const isRequest = !!pool.title; // GroupBuyRequest has title, ShippingPool has pool_code
-  const orderCount = isRequest ? (pool.entries?.length || pool.entry_count || 0) : (pool.order_ids || []).length;
+  const orderCount = isRequest ? (pool.entries?.length || pool.entry_count || pool.fee_breakdown_per_user.length || 0) : (pool.order_ids || []).length;
+  // 商品名来自 fee_breakdown_per_user[].user_orders[].product_name
+  const productNames = [...new Set(
+    (pool.fee_breakdown_per_user || [])
+      .flatMap(fb => (fb.user_orders || []).map(o => o.product_name))
+      .filter(Boolean)
+  )];
   const statusConfig = TRANSIT_STATUS_CONFIG[transitStatus || "in_transit"];
   const StatusIcon = statusConfig?.icon || Truck;
 
@@ -57,7 +69,7 @@ export default function TransitPoolCard({ pool, transitStatus, isSelected, onTog
             </span>
             {isRequest && pool.status && (
               <span className="text-gray-400 ml-1">
-                ({pool.status === 'open' ? '招募中' : pool.status === 'completed' ? '已完成' : pool.status})
+                ({POOL_STATUS_CONFIG[pool.status] || pool.status})
               </span>
             )}
           </div>
@@ -80,10 +92,10 @@ export default function TransitPoolCard({ pool, transitStatus, isSelected, onTog
           <Package className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
           <span className="truncate">
             {orderCount} {isRequest ? '人参团' : '件包裹'}
-            {isRequest && pool.entries && pool.entries.length > 0 && (
+            {isRequest && productNames.length > 0 && (
               <span className="text-gray-400">
-                ({pool.entries.slice(0, 2).map(e => e.product_name).join(", ")}
-                {pool.entries.length > 2 ? ` 等${pool.entries.length}个` : ""})
+                ({productNames.slice(0, 2).join(", ")}
+                {productNames.length > 2 ? ` 等${productNames.length}个` : ""})
               </span>
             )}
             {!isRequest && (pool.order_names || []).length > 0 && (

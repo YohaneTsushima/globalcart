@@ -99,11 +99,13 @@ export default function AdminTransitWork() {
     pending: pools.filter(p => 
       !p.transit_arrival_confirmed_at && 
       !p.transit_shipped_date && 
-      (p.status === "open" || p.status === "completed" || p.status === "pending" || p.status === "awaiting_payment")
+      (p.status === "open" || p.status === "completed" || p.status === "pending" || p.status === "awaiting_payment" || p.status === 'ready_to_ship')
     ),
     // In transit: completed requests/pools en route to transit location (Japan shipped but transit hasn't confirmed arrival)
     in_transit: pools.filter(p => 
-      (p.status === "completed" || p.status === "paid" || p.status === "ready_to_ship") && 
+      (p.status === "shipped" 
+        // || p.status === "paid" || p.status === "ready_to_ship"
+      ) && 
       !p.transit_arrival_confirmed_at
     ),
     // Arrived: transit location confirmed receipt but hasn't forwarded yet
@@ -255,7 +257,7 @@ export default function AdminTransitWork() {
           ) : (
             <div className="space-y-8">
               {activeLocations.map(loc => {
-                const pools = requestsByLocation[loc.id] || [];
+                const pools = requestsByLocation.filter(p => parseInt(p.transit_location_id) === loc.id) || [];
                 const byStatus = getPoolsByStatus(pools);
                 const pendingCount = byStatus.pending.length + byStatus.arrived.length + byStatus.in_transit.length;
                 const isCollapsed = collapsedLocations[loc.id] !== false; // default collapsed

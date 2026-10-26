@@ -19,6 +19,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { getCountry } from "@/lib/countries";
 import TransitPoolCard from "@/components/transit/TransitPoolCard";
+import { tenantEntity, transitLocationApi } from "@/lib/tenantApi";
 
 const TRANSIT_STATUS_TABS = [
   { key: "pending", label: "待处理", count: 0 },
@@ -38,7 +39,7 @@ export default function TransitLocationWork() {
   const [requests, setRequests] = useState([]);
   const [transitMethods, setTransitMethods] = useState([]);
   const [addonOptions, setAddonOptions] = useState([]);
-  const [activeTab, setActiveTab] = useState("arrived");
+  const [activeTab, setActiveTab] = useState("pending");
   const [showArrivalModal, setShowArrivalModal] = useState(false);
   const [selectedRequests, setSelectedRequests] = useState([]);
   const [uploading, setUploading] = useState(false);
@@ -50,22 +51,23 @@ export default function TransitLocationWork() {
     setLoading(true);
     const t = timePage('TransitLocationWork');
     try {
-      const payload = { transit_location_id: transit_location_id };
+      const payload = { id: transit_location_id };
       console.log('[TransitLocationWork] Calling getTransitLocationWorkPageData with payload:', payload);
-      const r = await base44.functions.invoke('getTransitLocationWorkPageData', payload);
-      console.log('[TransitLocationWork] Response status:', r.status);
-      console.log('[TransitLocationWork] Response data:', r.data);
+      // const r = await base44.functions.invoke('getTransitLocationWorkPageData', payload);
+      const r = await transitLocationApi.workDataId(transit_location_id);
+      console.log('[TransitLocationWork] Response status:', r?.status);
+      console.log('[TransitLocationWork] Response data:', r?.data);
       
-      if (!r.data || !r.data.location) {
-        console.warn('[TransitLocationWork] No location in response, navigating home');
-        navigate("/Home");
-        return;
-      }
+      // if (!r?.data || !r?.data?.location) {
+      //   console.warn('[TransitLocationWork] No location in response, navigating home');
+      //   navigate("/Home");
+      //   return;
+      // }
       
-      setLocation(r.data.location);
-      setRequests(r.data.requests || []);
-      setTransitMethods(r.data.transitMethods || []);
-      setAddonOptions(r.data.addonOptions || []);
+      setLocation(r?.locations[0] || []);
+      setRequests(r?.requestsByLocation || []); //Shipping Pools
+      setTransitMethods(r?.transitMethods || []);
+      setAddonOptions(r?.addonOptions || []);
       t.done('data ready');
     } catch (error) {
       console.error('[TransitLocationWork] Error fetching data:', error);
@@ -98,11 +100,11 @@ export default function TransitLocationWork() {
     pending: requests.filter(r => 
       !r.transit_arrival_confirmed_at && 
       !r.transit_shipped_date && 
-      (r.status === "open" || r.status === "completed")
+      (r.status === "open" || r.status === "completed" || r.status === 'ready_to_ship')
     ),
     // In transit: completed and shipped from Japan, but transit location hasn't confirmed arrival
     in_transit: requests.filter(r => 
-      r.status === "completed" && 
+      (r.status === "completed" || r.status === 'shipped')&& 
       !r.transit_arrival_confirmed_at
     ),
     // Arrived: transit location confirmed receipt
@@ -185,7 +187,7 @@ export default function TransitLocationWork() {
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div className="flex items-center gap-3">
-          <Button variant="ghost" size="sm" onClick={() => navigate("/ShippingPool")}>
+          <Button variant="ghost" size="sm" onClick={() => navigate("/AdminTransitWork")}>
             ← 返回
           </Button>
           <div>
@@ -211,10 +213,10 @@ export default function TransitLocationWork() {
       {/* Status Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <div className="flex items-center justify-between">
-          <TabsList className="grid grid-cols-3 w-full max-w-md">
+          <TabsList className="flex w-full max-w-xl">
             {tabsWithCounts.map(tab => (
-              <TabsTrigger key={tab.key} value={tab.key} className="relative">
-                {tab.label}
+              <TabsTrigger key={tab.key} value={tab.key} className="relative flex-1 min-w-0">
+                <span className="truncate">{tab.label}</span>
                 {tab.count > 0 && (
                   <span className="ml-1.5 text-xs bg-white/30 px-1.5 py-0.5 rounded-full">
                     {tab.count}

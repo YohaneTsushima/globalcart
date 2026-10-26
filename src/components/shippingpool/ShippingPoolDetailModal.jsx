@@ -2207,6 +2207,7 @@ export default function ShippingPoolDetailModal({ pool: initialPool, isAdmin, cu
                   const isMultiUserPool = (pool.consolidation_type && pool.consolidation_type !== "") && participantEmails.length > 1;
                   const myPayment = (pool.per_user_payments || []).find(p => p.user_email === currentUser?.email);
                   const iAlreadySubmitted = myPayment?.payment_status === "awaiting_confirmation" || myPayment?.payment_status === "paid";
+                  const pm = myPayment?.payment_method;
 
                   // For multi-user pool: show my submitted status + others' pending count
                   if (isMultiUserPool && iAlreadySubmitted) {
@@ -2222,15 +2223,21 @@ export default function ShippingPoolDetailModal({ pool: initialPool, isAdmin, cu
                         ) : (
                           <p className="text-xs text-blue-500">所有参与者均已提交付款，等待管理员确认。</p>
                         )}
-                        <p className="text-xs text-blue-500">你也可以，重新上传凭证</p>
-                        <ImageUploader
-                          value={proofUrl || pool.payment_proof_url || ''}
-                          onChange={handleProofChange}
-                          onDelete={handleDeleteProof}
-                          uploading={uploadingProof}
-                          label="重新上传付款凭证"
-                          id="pool-payment-proof-reupload-multi"
-                        />
+
+                        {pm?.provider_key !== 'alipay' ? (
+                          <>
+                            <p className="text-xs text-blue-500">你也可以，重新上传凭证</p>
+                            <ImageUploader
+                              value={proofUrl || pool.payment_proof_url || ''}
+                              onChange={handleProofChange}
+                              onDelete={handleDeleteProof}
+                              uploading={uploadingProof}
+                              label="重新上传付款凭证"
+                              id="pool-payment-proof-reupload-multi"
+                            />
+                          </>
+                        ) : null}
+                        
                       </div>
                     );
                   }
