@@ -233,9 +233,10 @@ export async function fetchSubmitOrderPageData() {
 
 // ─── TransitLocation shortcuts ─────────────────────────────────────────────────
 export const transitLocationApi = {
-  workData:     (id, data)          => mutate('TransitLocation', 'workData', {}).then(r => r),
-  workDataId:   (id, data)          => mutate('TransitLocation', 'getTransitLocationWorkPageData', { id }).then(r => r),
-  create:       (data)              => mutate('TransitLocation', 'create', { data }).then(r => r.result || r.data?.result || r),
-  update:       (id, data)          => mutate('TransitLocation', 'update', { id, data }).then(r => r.result || r.data?.result || r),
-  delete:       (id)                => mutate('TransitLocation', 'delete', { id }),
+  workData:           (id, data)          => mutate('TransitLocation', 'workData', {}).then(r => r),
+  workDataId:         (id, data)          => mutate('TransitLocation', 'getTransitLocationWorkPageData', { id }).then(r => r),
+  poolWork:           (poolCode)          => mutate('TransitLocation', `transitPoolWork/${poolCode}`).then(r => r),
+  create:             (data)              => mutate('TransitLocation', 'create', { data }).then(r => r.result || r.data?.result || r),
+  update:             (id, data)          => mutate('TransitLocation', 'update', { id, data }).then(r => r.result || r.data?.result || r),
+  delete:             (id)                => mutate('TransitLocation', 'delete', { id }),
 };

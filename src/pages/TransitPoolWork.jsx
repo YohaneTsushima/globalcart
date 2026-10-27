@@ -16,6 +16,8 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import PoolInfoPanel from "@/components/transit/PoolInfoPanel";
 import BatchDetailPanel from "@/components/transit/BatchDetailPanel";
+import { usePermissions } from "@/hooks/usePermissions";
+import { tenantEntity, transitLocationApi } from "@/lib/tenantApi";
 
 // ─── Normalize transit method id ─────────────────────────────────────────────
 const normalizeMethodId = (id) => {
@@ -24,13 +26,47 @@ const normalizeMethodId = (id) => {
   return id || '';
 };
 
+// ─── Normalize entry: order_details is an array of orders on the backend ─────
+// One entry can hold several orders; keep the full order list and aggregate
+// fields across all of them (first non-empty for scalars, sums for numbers).
+function normalizeEntry(entry) {
+  const raw = entry.order_details;
+  const orderList = Array.isArray(raw) ? raw : raw ? [raw] : [];
+  const firstNonEmpty = (key) => {
+    for (const order of orderList) {
+      if (order[key] != null && order[key] !== '') return order[key];
+    }
+    return undefined;
+  };
+  return {
+    ...entry,
+    order_id: entry.order_id || entry.order_ids?.[0] || entry.id,
+    order_details: orderList,
+    product_name: entry.product_name || firstNonEmpty('product_name'),
+    product_image_url: entry.product_image_url || firstNonEmpty('product_image_url'),
+    arrival_photo_url: entry.arrival_photo_url || firstNonEmpty('arrival_photo_url'),
+    weight_g: entry.weight_g != null ? entry.weight_g : orderList.reduce((s, o) => s + (Number(o.weight_g) || 0), 0),
+    estimated_jpy: entry.estimated_jpy != null ? entry.estimated_jpy : orderList.reduce((s, o) => s + (o.estimated_jpy || 0), 0),
+  };
+}
+
+// Addons are order-level: collected from each order's selected_addons.
+function collectAddons(entry) {
+  const byId = new Map();
+  (entry.order_details || []).forEach(order => {
+    (order.selected_addons || []).forEach(a => { if (a) byId.set(a.id ?? a.service_name, a); });
+  });
+  return [...byId.values()];
+}
+
 // ─── Build user group list from entries ──────────────────────────────────────
 function buildUserGroupList(entries, request) {
   const hasPerUserGroups = !request?.title && (request?.per_user_groups || []).length > 0;
 
   if (hasPerUserGroups) {
     const groups = {};
-    entries.forEach(entry => {
+    entries.forEach(rawEntry => {
+      const entry = normalizeEntry(rawEntry);
       const methodId = normalizeMethodId(entry.transit_shipping_method_id);
       const key = `${entry.user_email}__${methodId}__${entry.group_index ?? 0}`;
       if (!groups[key]) {
@@ -43,15 +79,16 @@ function buildUserGroupList(entries, request) {
           transit_shipping_method_id: methodId,
           transit_shipping_method: entry.transit_shipping_method,
           final_address: entry.group_final_address,
-          selected_addons: entry.selected_addons || [],
+          selected_addons: collectAddons(entry),
           selected_addon_ids: entry.selected_addon_ids || [],
           note: entry.note,
+          product_image_url: entry.product_image_url,
           entries: [],
           estimated_jpy: 0,
         };
       }
       groups[key].entries.push(entry);
-      groups[key].estimated_jpy += entry.estimated_jpy || 0;
+      groups[key].estimated_jpy += entry.order_details.reduce((s, o) => s + (o.estimated_jpy || 0), 0);
     });
     return Object.values(groups).sort((a, b) =>
       a.user_email.localeCompare(b.user_email) || a.group_index - b.group_index
@@ -59,7 +96,8 @@ function buildUserGroupList(entries, request) {
   } else {
     // Simple grouping by user
     const groups = {};
-    entries.forEach(entry => {
+    entries.forEach(rawEntry => {
+      const entry = normalizeEntry(rawEntry);
       const key = entry.user_email;
       if (!groups[key]) {
         groups[key] = {
@@ -70,13 +108,14 @@ function buildUserGroupList(entries, request) {
           final_address: entry.final_address,
           transit_shipping_method_id: normalizeMethodId(entry.transit_shipping_method_id),
           transit_shipping_method: entry.transit_shipping_method,
-          selected_addons: entry.selected_addons || [],
+          selected_addons: collectAddons(entry),
+          product_image_url: entry.product_image_url,
           entries: [],
           estimated_jpy: 0,
         };
       }
       groups[key].entries.push(entry);
-      groups[key].estimated_jpy += entry.estimated_jpy || 0;
+      groups[key].estimated_jpy += entry.order_details.reduce((s, o) => s + (o.estimated_jpy || 0), 0);
     });
     return Object.values(groups);
   }
@@ -145,15 +184,16 @@ export default function TransitPoolWork() {
   const [transitMethods, setTransitMethods] = useState([]);
   const [selectedBatchKey, setSelectedBatchKey] = useState(null);
 
-  const isAdmin = user?.role === 'admin' || user?.role === 'tenant_admin' || user?.role === 'platform_admin';
+  // const isAdmin = user?.role === 'admin' || user?.role === 'tenant_admin' || user?.role === 'platform_admin';
+  const isAdmin = usePermissions();
   const isManager = isAdmin || (location && location.manager_email === user?.email);
 
   const fetchData = async () => {
     setLoading(true);
     try {
-      debugger
+      
       // const res = await base44.functions.invoke('getTransitPoolWorkData', { request_id: pool_code });
-      const res = {};
+      const res = await transitLocationApi.poolWork(pool_code);
       // if (!res.data?.request) { navigate('/Home'); return; }
       setRequest(res?.request || {});
       setEntries(res?.entries || []);

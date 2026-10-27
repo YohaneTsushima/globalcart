@@ -39,7 +39,7 @@ function AddonsBlock({ addons }) {
     <div className="flex flex-wrap gap-1.5">
       {addons.map((a, i) => (
         <span key={i} className="inline-flex items-center gap-1 text-xs bg-yellow-50 border border-yellow-200 text-yellow-700 rounded px-2 py-0.5">
-          <Star className="w-2.5 h-2.5" />{a.name}{a.fee > 0 ? ` +${a.fee_currency || 'JPY'} ${a.fee}` : ''}
+          <Star className="w-2.5 h-2.5" />{a.service_name}{a.fee > 0 ? ` +${a.fee_currency || 'JPY'} ${a.fee}` : ''}
         </span>
       ))}
     </div>
@@ -432,7 +432,7 @@ export default function BatchDetailPanel({ batch, pool, transitMethods, isManage
           </p>
           <div className="space-y-1.5">
             {batch.entries.map((entry, i) => {
-              const order = entry.order_details || entry;
+              const order = entry;
               const canSeeDetail = !!order.product_name;
               return (
                 <div key={entry.order_id || entry.id || i} className="flex items-center gap-2 bg-gray-50 border border-gray-100 rounded-lg px-2.5 py-2">
