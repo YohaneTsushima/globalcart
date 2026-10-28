@@ -91,6 +91,7 @@ const STATUS_FILTERS = [
   { v: "transit_shipped", l: "中转地已发货" },
   { v: "notified_shipment", l: "已通知出货" },
   { v: "shipping_fee_pending", l: "待付运费" },
+  { v: "transited", l: "已向中转地发出" },
   { v: "shipped", l: "已发出" },
   { v: "delivered", l: "已收货" },
   { v: "cancelled", l: "已取消" },
@@ -891,8 +892,13 @@ export default function MyOrders() {
                       </div>
                     );
                   })()}
+                  {order.order_status === "transited" && (
+                    <span className="inline-flex items-center gap-1 text-xs bg-indigo-100 text-indigo-700 border border-indigo-200 px-1.5 py-0.5 rounded-full font-medium w-fit">
+                      <Truck className="w-2.5 h-2.5" />已向中转地发货
+                    </span>
+                  )}
                   {/* Pre-shipment badge / button: show for all orders not yet in warehouse and not cancelled */}
-                  {!["in_warehouse", "in_storage", "transit_shipped", "notified_shipment", "notified_shipment_fee_pending", "notified_shipment_fee_paid", "shipping_fee_pending", "ready_to_ship", "shipped", "delivered", "cancelled"].includes(order.order_status) && (
+                  {!["in_warehouse", "in_storage", "transited", "transit_shipped", "notified_shipment", "notified_shipment_fee_pending", "notified_shipment_fee_paid", "shipping_fee_pending", "ready_to_ship", "shipped", "delivered", "cancelled"].includes(order.order_status) && (
                     order.pre_shipment
                       ? <Button size="sm" variant="outline" className="h-6 text-xs px-2 text-purple-600 border-purple-200 hover:bg-purple-50"
                           onClick={() => navigate(`/PreShipmentForm?order_id=${order.id}`)}>

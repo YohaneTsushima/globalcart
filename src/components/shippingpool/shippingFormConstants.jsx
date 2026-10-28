@@ -28,6 +28,7 @@ export const STATUS_CONFIG = {
   "awaiting_payment": { label: "待支付", color: "bg-yellow-100 text-yellow-700" },
   "awaiting_payment_confirmation": { label: "待确认", color: "bg-blue-100 text-blue-700" },
   "ready_to_ship": { label: "待发货", color: "bg-blue-100 text-blue-700" },
+  "transited": { label: "已向中转地发出", color: "bg-indigo-100 text-indigo-700" },
   "shipped": { label: "已发货", color: "bg-green-100 text-green-700" },
   "delivered": { label: "已送达", color: "bg-green-100 text-green-700" },
   "cancelled": { label: "已取消", color: "bg-red-100 text-red-700" },

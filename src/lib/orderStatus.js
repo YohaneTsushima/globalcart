@@ -86,6 +86,12 @@ export const ORDER_STATUS_CONFIG = {
     adminColor: "bg-blue-100 text-blue-700",
     userColor: "bg-blue-100 text-blue-700",
   },
+  transited: {
+    admin: "已向中转地发货",
+    user: "已向中转地发货",
+    adminColor: "bg-indigo-100 text-indigo-700",
+    userColor: "bg-indigo-100 text-indigo-700",
+  },
   shipped: {
     admin: "已发出",
     user: "已发出",
@@ -139,7 +145,7 @@ export const ACTIVE_STATUSES = [
   "awaiting_payment_confirmation", "paid", "pending_purchase", "purchased", "in_warehouse",
   "in_storage",
   "notified_shipment", "notified_shipment_fee_pending", "notified_shipment_fee_paid",
-  "shipping_fee_pending", "ready_to_ship", "transit_shipped", "shipped"
+  "shipping_fee_pending", "ready_to_ship", "transited", "transit_shipped", "shipped"
 ];
 
 /**

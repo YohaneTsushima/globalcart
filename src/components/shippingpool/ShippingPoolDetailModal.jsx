@@ -1936,7 +1936,7 @@ export default function ShippingPoolDetailModal({ pool: initialPool, isAdmin, cu
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-1.5 flex-wrap">
-                          <span className="text-xs font-medium text-gray-700">{user.display_name}</span>
+                          <span className="text-xs font-medium text-gray-700">{req.user_email}</span>
                           <Badge className={`text-xs ${req.edit_type === 'cancel_shipment' ? 'bg-red-100 text-red-700' : req.edit_type === 'add_to_pool' ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'}`}>
                             {req.is_rewarehouse_request ? '申请再入库（待付运费）' : req.edit_type === 'cancel_shipment' ? '申请重新入库' : req.edit_type === 'add_to_pool' ? '申请加入此发货申请' : '申请移至其他发货申请'}
                           </Badge>

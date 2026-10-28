@@ -97,7 +97,9 @@ function TransitShippingPanel({ batch, pool, transitMethods, isManager, onSaved 
   const handleSave = async () => {
     setSaving(true);
     try {
-      const orderIds = batch.entries.map(e => e.order_id || e.id).filter(Boolean);
+      const orderIds = batch.entries.flatMap(e =>
+        Array.isArray(e.order_details) ? e.order_details.map(o => o.id) : [e.order_id || e.id]
+      ).filter(Boolean);
       await base44.functions.invoke('updateUserTransitShipping', {
         pool_id: pool.id,
         user_email: batch.user_email,
@@ -214,14 +216,18 @@ function StorageBatchPanel({ batch, pool, isManager, onSaved }) {
 
   // Check if this specific batch's orders are already in storage mode
   const storageConfirmed = batch.entries.every(e => {
-    const order = e.order_details;
-    return order?.order_status === 'in_storage' || order?.order_status === 'notified_shipment';
+    const orders = Array.isArray(e.order_details) ? e.order_details : [e.order_details || e];
+    return orders.every(order =>
+      order?.order_status === 'in_storage' || order?.order_status === 'notified_shipment'
+    );
   });
 
   const handleConfirmStorage = async () => {
     setSaving(true);
     try {
-      const orderIds = batch.entries.map(e => e.order_id || e.id).filter(Boolean);
+      const orderIds = batch.entries.flatMap(e =>
+        Array.isArray(e.order_details) ? e.order_details.map(o => o.id) : [e.order_id || e.id]
+      ).filter(Boolean);
       await base44.functions.invoke('updateTransitPoolShipment', {
         request_id: pool.id,
         action: 'confirm_storage_batch',
@@ -276,7 +282,9 @@ function PickupBatchPanel({ batch, pool, isManager, onSaved }) {
   const handleConfirmPickup = async () => {
     setSaving(true);
     try {
-      const orderIds = batch.entries.map(e => e.order_id || e.id).filter(Boolean);
+      const orderIds = batch.entries.flatMap(e =>
+        Array.isArray(e.order_details) ? e.order_details.map(o => o.id) : [e.order_id || e.id]
+      ).filter(Boolean);
       await base44.functions.invoke('updateTransitPoolShipment', {
         request_id: pool.id,
         action: 'confirm_pickup_batch',
@@ -428,48 +436,52 @@ export default function BatchDetailPanel({ batch, pool, transitMethods, isManage
         {/* Orders list */}
         <div>
           <p className="text-xs font-medium text-gray-500 mb-2 flex items-center gap-1">
-            <Package className="w-3.5 h-3.5" />批次订单（{batch.entries.length} 件）
+            <Package className="w-3.5 h-3.5" />批次订单（{batch.entries.reduce((n, e) => n + (e.order_details?.length || 0), 0)} 件）
           </p>
           <div className="space-y-1.5">
-            {batch.entries.map((entry, i) => {
-              const order = entry;
-              const canSeeDetail = !!order.product_name;
-              return (
-                <div key={entry.order_id || entry.id || i} className="flex items-center gap-2 bg-gray-50 border border-gray-100 rounded-lg px-2.5 py-2">
-                  {(order.product_image_url || order.arrival_photo_url) && (
-                    <img
-                      src={order.product_image_url || order.arrival_photo_url}
-                      className="w-9 h-9 object-cover rounded border flex-shrink-0"
-                      alt=""
-                    />
-                  )}
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm text-gray-800 truncate">{order.product_name || entry.product_name || '包裹'}</p>
-                    <div className="flex items-center gap-2 mt-0.5">
-                      {(order.estimated_jpy || entry.estimated_jpy) && (
-                        <span className="text-xs text-gray-500">¥{Math.round(order.estimated_jpy || entry.estimated_jpy).toLocaleString()}</span>
-                      )}
-                      {(order.weight_g || entry.weight_g) && (
-                        <span className="text-xs text-gray-400">{order.weight_g || entry.weight_g}g</span>
-                      )}
-                      {(order.selected_addons || []).length > 0 && (
-                        <span className="text-xs text-yellow-600 flex items-center gap-0.5">
-                          <Star className="w-2.5 h-2.5" />{(order.selected_addons || []).map(a => a.name).join('、')}
-                        </span>
-                      )}
+            {batch.entries.flatMap((entry, i) => {
+              const orders = Array.isArray(entry.order_details) && entry.order_details.length > 0
+                ? entry.order_details
+                : [entry];
+              return orders.map((order, j) => {
+                const canSeeDetail = !!order.product_name;
+                return (
+                  <div key={order.id || `${entry.id ?? i}_${j}`} className="flex items-center gap-2 bg-gray-50 border border-gray-100 rounded-lg px-2.5 py-2">
+                    {(order.product_image_url || order.arrival_photo_url) && (
+                      <img
+                        src={order.product_image_url || order.arrival_photo_url}
+                        className="w-9 h-9 object-cover rounded border flex-shrink-0"
+                        alt=""
+                      />
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm text-gray-800 truncate">{order.product_name || '包裹'}</p>
+                      <div className="flex items-center gap-2 mt-0.5">
+                        {order.estimated_jpy ? (
+                          <span className="text-xs text-gray-500">¥{Math.round(order.estimated_jpy).toLocaleString()}</span>
+                        ) : null}
+                        {order.weight_g ? (
+                          <span className="text-xs text-gray-400">{order.weight_g}g</span>
+                        ) : null}
+                        {(order.selected_addons || []).length > 0 && (
+                          <span className="text-xs text-yellow-600 flex items-center gap-0.5">
+                            <Star className="w-2.5 h-2.5" />{(order.selected_addons || []).map(a => a.service_name || a.name).join('、')}
+                          </span>
+                        )}
+                      </div>
                     </div>
+                    {canSeeDetail && order.product_name && (
+                      <button
+                        onClick={() => setOrderDetail(order)}
+                        className="flex-shrink-0 p-1 rounded hover:bg-gray-200 text-gray-400 hover:text-gray-700 transition-colors"
+                        title="查看详情"
+                      >
+                        <Eye className="w-3.5 h-3.5" />
+                      </button>
+                    )}
                   </div>
-                  {canSeeDetail && order.product_name && (
-                    <button
-                      onClick={() => setOrderDetail(order)}
-                      className="flex-shrink-0 p-1 rounded hover:bg-gray-200 text-gray-400 hover:text-gray-700 transition-colors"
-                      title="查看详情"
-                    >
-                      <Eye className="w-3.5 h-3.5" />
-                    </button>
-                  )}
-                </div>
-              );
+                );
+              });
             })}
           </div>
         </div>

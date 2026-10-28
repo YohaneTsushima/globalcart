@@ -21,6 +21,7 @@ const STATUS_CONFIG = {
   awaiting_payment:              { label: "待付款",    color: "bg-orange-100 text-orange-700" },
   awaiting_payment_confirmation: { label: "待确认付款", color: "bg-blue-100 text-blue-700" },
   ready_to_ship:                 { label: "待发货",    color: "bg-lime-100 text-lime-700" },
+  transited:                     { label: "已向中转地发出", color: "bg-indigo-100 text-indigo-700" },
   shipped:                       { label: "已发货",    color: "bg-green-100 text-green-700" },
   delivered:                     { label: "已签收",    color: "bg-emerald-100 text-emerald-700" },
   cancelled:                     { label: "已取消",    color: "bg-red-100 text-red-600" },
@@ -44,7 +45,7 @@ export default function PoolInfoPanel({ pool, location, userGroups, isAdmin, isM
   const [editing, setEditing] = useState(false);
   const [editData, setEditData] = useState({});
   const [saving, setSaving] = useState(false);
-
+  console.log(pool)
   const statusCfg = STATUS_CONFIG[pool.status] || { label: pool.status || '进行中', color: 'bg-gray-100 text-gray-700' };
   const isRequest = !!pool.title && !pool.pool_code; // GroupBuyRequest has title, ShippingPool has pool_code
   const totalWeight = (pool.total_weight_g || 0);

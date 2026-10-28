@@ -586,6 +586,7 @@ export default function UserNotifyShipmentModal({ order, orders, initialData, on
   const handleSubmit = async () => {
     if (isJoiningPool) {
       if (!selectedPoolId) return;
+      if (!isPickupStorageSelected && !isAddressSlotOk("final")) return;
     } else {
       if (!method) return;
       if (consType === "transit" && !selectedTransitId) return;
@@ -607,10 +608,39 @@ export default function UserNotifyShipmentModal({ order, orders, initialData, on
       }
     }
 
+    // Resolve effective address for each slot
+    const getEffectiveAddr = (slot) => {
+      const inNewMode = !!addressInputMode[slot] || savedAddresses.length === 0;
+      if (inNewMode) {
+        if (!isAddressFormValid(newAddress)) return null;
+        return { id: `new_${Date.now()}`, label: newAddress.label || "新地址", full_text: serializeAddressToText(newAddress), ...newAddress };
+      }
+      const addrId = slot === "final" ? finalAddressId : selectedAddress;
+      return savedAddresses.find(a => a.id === addrId) || null;
+    };
+
     // Joining an existing pool only appends the orders to that pool.
+    const addrSlot = consType === "transit" ? "final" : (consType === "other" ? "other" : "direct");
+    const skipAddress = isPickupStorageSelected;
+    const addrObj = !skipAddress ? getEffectiveAddr(addrSlot) : null;
+    
     if (isJoiningPool) {
       setSubmitting(true);
-      
+
+      const joinAddrObj = !isPickupStorageSelected ? getEffectiveAddr("final") : null;
+      const finalAddress = joinAddrObj ? {
+        id: joinAddrObj.id,
+        recipient_name: joinAddrObj.recipient_name || '',
+        phone: joinAddrObj.phone || '',
+        country: joinAddrObj.country || '',
+        state: joinAddrObj.state || '',
+        addr1: joinAddrObj.addr1 || '',
+        addr2: joinAddrObj.addr2 || '',
+        addr3: joinAddrObj.addr3 || '',
+        postal_code: joinAddrObj.postal_code || '',
+        label: joinAddrObj.label || '',
+      } : null;
+
       try {
         await base44.functions.invoke('shipping/joinShippingPool', {
           id: selectedPoolId,
@@ -619,6 +649,7 @@ export default function UserNotifyShipmentModal({ order, orders, initialData, on
             order_number: order.order_number,
             pool_code: selectedPool.pool_code,
             target_pool_id: selectedPoolId,
+            address_id: finalAddress.id,
           }
           
         });
@@ -638,16 +669,6 @@ export default function UserNotifyShipmentModal({ order, orders, initialData, on
     const u = currentUser || resolveAuthUser(await base44.auth.me());
     const orderIds = targetOrders.map(o => o.id);
 
-    // Resolve effective address for each slot
-    const getEffectiveAddr = (slot) => {
-      const inNewMode = !!addressInputMode[slot] || savedAddresses.length === 0;
-      if (inNewMode) {
-        if (!isAddressFormValid(newAddress)) return null;
-        return { id: `new_${Date.now()}`, label: newAddress.label || "新地址", full_text: serializeAddressToText(newAddress), ...newAddress };
-      }
-      const addrId = slot === "final" ? finalAddressId : selectedAddress;
-      return savedAddresses.find(a => a.id === addrId) || null;
-    };
 
     // Save new address to UserPreference if requested
     const isInNewAddressMode = Object.values(addressInputMode).some(v => v) || savedAddresses.length === 0;
@@ -669,11 +690,10 @@ export default function UserNotifyShipmentModal({ order, orders, initialData, on
     // }
 
     // Build resolved address object
-    const skipAddress = isPickupStorageSelected;
-    const addrSlot = consType === "transit" ? "final" : (consType === "other" ? "other" : "direct");
-    const addrObj = !skipAddress ? getEffectiveAddr(addrSlot) : null;
+  
     const resolvedAddress = addrObj ? {
-      id: Date.now().toString(),
+      // id: Date.now().toString(),
+      id: addrObj.id,
       label: addrObj.label,
       recipient_name: addrObj.recipient_name || '',
       country: addrObj.country || '',
@@ -1010,7 +1030,7 @@ export default function UserNotifyShipmentModal({ order, orders, initialData, on
                 </div>
               )}
               {!isJoiningPool && (
-                <div className={!joinExistingPool && isPickupStorageSelected ? "opacity-50 pointer-events-none grayscale" : ""}>
+                <div className={isPickupStorageSelected ? "opacity-50 pointer-events-none grayscale" : ""}>
                   <AddressBlock
                     slot="final"
                     label="最终收货地址"
@@ -1158,6 +1178,22 @@ export default function UserNotifyShipmentModal({ order, orders, initialData, on
           {/* Joining existing pool: read-only pool config and address */}
           {isJoiningPool && (
             <div className="space-y-3">
+              {/* 当前用户的最终收货地址 */}
+              <div className={isPickupStorageSelected ? "opacity-50 pointer-events-none grayscale" : ""}>
+                <AddressBlock
+                  slot="final"
+                  label="最终收货地址"
+                  savedAddresses={savedAddresses}
+                  selectedId={finalAddressId}
+                  isNewMode={!!addressInputMode["final"]}
+                  newAddress={newAddress}
+                  saveNewAddress={saveNewAddress}
+                  onSelect={(v) => handleAddressSelect(v, "final")}
+                  onNewAddressChange={setNewAddress}
+                  onSaveToggle={setSaveNewAddress}
+                  error={!isPickupStorageSelected && !isAddressSlotOk("final")}
+                />
+              </div>
               <div className="bg-purple-50 border border-purple-100 rounded-xl p-4 space-y-2">
                 <p className="text-xs text-purple-600 font-medium uppercase tracking-wide">
                   🔒 {selectedPool?.pool_code} · 加入后配置不可修改
@@ -1204,6 +1240,7 @@ export default function UserNotifyShipmentModal({ order, orders, initialData, on
                 )}
               </div>
 
+              {/* 收货地址（来自拼邮需求）——已停用，改用上方当前用户的最终收货地址
               <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 space-y-1">
                 <p className="text-xs text-gray-500 font-medium uppercase tracking-wide">收货地址（来自拼邮需求）</p>
                 <p className="text-sm font-medium text-gray-800">{selectedPool?.recipient_name || "未填写"}</p>
@@ -1218,6 +1255,7 @@ export default function UserNotifyShipmentModal({ order, orders, initialData, on
                 )}
                 <p className="text-sm text-gray-700">{getCountry(selectedPool?.country)?.name || selectedPool?.country || ""}</p>
               </div>
+              */}
             </div>
           )}
 
@@ -1291,6 +1329,19 @@ export default function UserNotifyShipmentModal({ order, orders, initialData, on
           const missing = [];
           const isPickupStorageSelected = selectedTransitMethodId === '__pickup__' || selectedTransitMethodId === '__storage__';
           if (!method && !joinDirectPool && !joinExistingPool) missing.push("发货方式");
+          if (joinExistingPool && isJoiningPool && !isPickupStorageSelected && !isAddressSlotOk("final")) {
+            const inNew = !!addressInputMode["final"] || savedAddresses.length === 0;
+            if (inNew) {
+              if (!newAddress.recipient_name?.trim()) missing.push("最终收货地址：受取人お名前");
+              if (!newAddress.country?.trim()) missing.push("最终收货地址：受取人国名");
+              if (!newAddress.addr2?.trim()) missing.push("最终收货地址：住所2");
+              if (!newAddress.addr1?.trim()) missing.push("最终收货地址：住所1");
+              if (!newAddress.state?.trim()) missing.push("最终收货地址：州名など");
+              if (!newAddress.phone?.trim()) missing.push("最终收货地址：連絡先電話番号");
+            } else {
+              missing.push("最终收货地址");
+            }
+          }
           if (!joinExistingPool && consType === "transit" && !selectedTransitId) missing.push("中转地");
           if (!joinExistingPool && consType === "transit" && !selectedTransitMethodId) missing.push("中转段运输方式");
           if (!joinExistingPool && consType === "transit" && !isPickupStorageSelected && !isAddressSlotOk("final")) {

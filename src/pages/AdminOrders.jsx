@@ -44,6 +44,7 @@ const ALL_STATUSES = [
   { v: "shipping_fee_pending", l: "待付运费" },
   { v: "ready_to_ship", l: "准备发货" },
   { v: "shipped", l: "已发出" },
+  { v: "transit_shipped", l: "中转地已发出" },
   { v: "delivered", l: "已收货" },
   { v: "cancelled", l: "已取消" },
 ];
@@ -830,9 +831,9 @@ export default function AdminOrders() {
                           if (!["notified_shipment", "ready_to_ship", "notified_shipment_fee_paid", "notified_shipment_fee_pending", "shipped"].includes(order.order_status)) return null;
                           const isConsolidation = pool.consolidation_type && pool.consolidation_type !== "";
                           const isOfficialPool = pool.is_admin_created === true;
+                          const poolHasPendingEdit = pendingEditRequests.some(r => String(r.target_pool_id) === String(pool.id));
                           return (
                             <>
-                            
                             <Button size="sm" variant="outline"
                               className={`h-6 text-xs px-2 ${isOfficialPool ? "text-blue-600 border-blue-200 hover:bg-blue-50" : isConsolidation ? "text-purple-600 border-purple-200 hover:bg-purple-50" : "text-teal-600 border-teal-200 hover:bg-teal-50"}`}
                               onClick={() => handleOpenPool(pool)}>
@@ -848,6 +849,12 @@ export default function AdminOrders() {
                                 onClick={() => setSelectedPool(pool)}>
                                 <Send className="w-3 h-3 mr-1" />查看发货申请
                               </Button>
+                            )}
+                            {poolHasPendingEdit && (
+                              <span className="inline-flex items-center gap-1 text-xs bg-orange-100 text-orange-700 border border-orange-300 px-1.5 py-0.5 rounded-full font-medium">
+                                <AlertCircle className="w-3 h-3" />
+                                有待审批发货申请
+                              </span>
                             )}
                             </>
                           );

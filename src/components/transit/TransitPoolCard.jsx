@@ -17,7 +17,9 @@ const TRANSIT_STATUS_CONFIG = {
 
 const POOL_STATUS_CONFIG = {
   open: '招募中',
+  pending: '准备中',
   ready_to_ship: '准备发往中转站',
+  transited: '已向中转地发出',
   completed: '已完成'
 }
 
