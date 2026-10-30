@@ -14,6 +14,7 @@ import {
   Tag, Weight, DollarSign, Image as ImageIcon, Layers, Users, User, CreditCard
 } from "lucide-react";
 import { base44 } from "@/api/base44Client";
+import { toast } from "sonner";
 
 const STATUS_CONFIG = {
   pending:                       { label: "待处理",    color: "bg-amber-100 text-amber-700" },
@@ -45,7 +46,6 @@ export default function PoolInfoPanel({ pool, location, userGroups, isAdmin, isM
   const [editing, setEditing] = useState(false);
   const [editData, setEditData] = useState({});
   const [saving, setSaving] = useState(false);
-  console.log(pool)
   const statusCfg = STATUS_CONFIG[pool.status] || { label: pool.status || '进行中', color: 'bg-gray-100 text-gray-700' };
   const isRequest = !!pool.title && !pool.pool_code; // GroupBuyRequest has title, ShippingPool has pool_code
   const totalWeight = (pool.total_weight_g || 0);

@@ -34,7 +34,7 @@ export default function AdminTransitWork() {
   const { can, isAdmin } = usePermissions();
   const canViewTransitPanel = isAdmin || can("shipping:view_transit_panel");
   const canManageTransitLocations = isAdmin || can("shipping:manage_transit_locations");
-
+console.log(isAdmin)
   const [activeTab, setActiveTab] = useState("work");
   const [loading, setLoading] = useState(true);
   const [locations, setLocations] = useState([]);

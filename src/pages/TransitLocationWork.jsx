@@ -7,6 +7,7 @@ import { useState, useEffect } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { base44 } from "@/api/base44Client";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
+import { usePermissions } from "@/hooks/usePermissions";
 import { timePage } from "@/lib/timing";
 import { 
   Package, CheckCircle, Clock, Truck, Calendar, 
@@ -23,7 +24,7 @@ import { tenantEntity, transitLocationApi } from "@/lib/tenantApi";
 
 const TRANSIT_STATUS_TABS = [
   { key: "pending", label: "待处理", count: 0 },
-  { key: "in_transit", label: "日本已发往中转地", count: 0 },
+  { key: "in_transit", label: "已发往中转地", count: 0 },
   { key: "arrived", label: "中转地已收货", count: 0 },
   { key: "forwarded", label: "中转地已发货", count: 0 },
 ];
@@ -33,6 +34,7 @@ export default function TransitLocationWork() {
   const navigate = useNavigate();
   const locationState = useLocation();
   const { user } = useCurrentUser();
+  const { isAdmin } = usePermissions();
   
   const [loading, setLoading] = useState(true);
   const [location, setLocation] = useState(null);
@@ -104,7 +106,7 @@ export default function TransitLocationWork() {
     ),
     // In transit: completed and shipped from Japan, but transit location hasn't confirmed arrival
     in_transit: requests.filter(r => 
-      (r.status === "completed" || r.status === 'shipped')&& 
+      (r.status === "completed" || r.status === 'transited')&& 
       !r.transit_arrival_confirmed_at
     ),
     // Arrived: transit location confirmed receipt
@@ -187,9 +189,11 @@ export default function TransitLocationWork() {
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div className="flex items-center gap-3">
-          <Button variant="ghost" size="sm" onClick={() => navigate("/AdminTransitWork")}>
-            ← 返回
-          </Button>
+          {isAdmin && (
+            <Button variant="ghost" size="sm" onClick={() => navigate("/AdminTransitWork")}>
+              ← 返回
+            </Button>
+          )}
           <div>
             <h1 className="text-xl font-bold text-gray-900">
               {location.name} - 中转地工作面板
@@ -213,7 +217,7 @@ export default function TransitLocationWork() {
       {/* Status Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <div className="flex items-center justify-between">
-          <TabsList className="flex w-full max-w-xl">
+          <TabsList className="flex w-full max-w-2xl">
             {tabsWithCounts.map(tab => (
               <TabsTrigger key={tab.key} value={tab.key} className="relative flex-1 min-w-0">
                 <span className="truncate">{tab.label}</span>

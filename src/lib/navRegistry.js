@@ -64,7 +64,7 @@ export const DEFAULT_NAV_TREES = {
     { key: "UserTodo" },
     { key: "SubmitOrder", children: [{ key: "SubmitOrderPlain" }, { key: "SubmitTicketOrder" }, { key: "GroupBuy" }] },
     { key: "MyOrders", children: [{ key: "MyOrdersTicket" }] },
-    { key: "ShippingPool" },
+    { key: "ShippingPool", children: [{key: ''}] },
     { key: "Profile", children: [{ key: "MemberTiers" }] },
     { key: "HelpCenter", hidden: true, children: [{ key: "HelpCenterFaq" }] },
   ],

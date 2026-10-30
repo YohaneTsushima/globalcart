@@ -13,6 +13,7 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { base44 } from "@/api/base44Client";
 import { getCountry } from "@/lib/countries";
 import AdminOrderEditModal from "@/components/admin/AdminOrderEditModal";
+import { toast } from "sonner";
 
 function AddressBlock({ address }) {
   if (!address || !address.recipient_name) return (
@@ -49,20 +50,25 @@ function AddonsBlock({ addons }) {
 // ─── 普通运输面板 ───────────────────────────────────────────────────────────────
 function TransitShippingPanel({ batch, pool, transitMethods, isManager, onSaved }) {
   // Get default method from batch's pre-shipment config (user's selected transit method)
-  const defaultMethod = batch.transit_shipping_method_name || 
-                        transitMethods.find(m => m.id === batch.transit_shipping_method_id)?.name || 
-                        '';
+  const defaultMethod = transitMethods.find(m => m.id === batch.transit_shipping_method_id)?.name ||
+    batch.transit_shipping_method || '';
+
+  // 池级收货状态：由 TransitLocationWork「确认收货」写入，决定按钮形态
+  const poolArrived = !!pool?.transit_arrival_confirmed_at;
+
   const [formData, setFormData] = useState({
     transit_shipping_method: defaultMethod,
     transit_tracking_number: '',
     transit_fee_jpy: '',
     transit_note: '',
     transit_image_urls: [],
+    transit_shipped_date: '',
   });
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [shipping, setShipping] = useState(false);
 
-  // Load existing saved shipping info
+  // Load existing saved shipping info (transit_shipping record for this user+order group)
   useEffect(() => {
     if (!pool?.transit_shipping_info_per_user) return;
     const userInfo = pool.transit_shipping_info_per_user.find(i => i.user_email === batch.user_email);
@@ -78,9 +84,20 @@ function TransitShippingPanel({ batch, pool, transitMethods, isManager, onSaved 
         transit_fee_jpy: existing.transit_fee_jpy || '',
         transit_note: existing.transit_note || '',
         transit_image_urls: existing.transit_image_urls || [],
+        transit_shipped_date: existing.transit_shipped_date || '',
       });
     }
   }, [pool?.id, batch.user_email]);
+
+  // 该批次（用户+订单组）的 transit_shipping 记录是否已发货
+  const existingRecord = (() => {
+    if (!pool?.transit_shipping_info_per_user) return null;
+    const userInfo = pool.transit_shipping_info_per_user.find(i => i.user_email === batch.user_email);
+    if (!userInfo?.address_groups) return null;
+    const myOrderIds = batch.entries.map(e => e.order_id || e.id).filter(Boolean).sort();
+    return userInfo.address_groups.find(ag => JSON.stringify((ag.order_ids || []).sort()) === JSON.stringify(myOrderIds)) || null;
+  })();
+  const recordShipped = !!existingRecord?.transit_shipped_date;
 
   const handleImageUpload = async (e) => {
     const file = e.target.files?.[0];
@@ -94,26 +111,55 @@ function TransitShippingPanel({ batch, pool, transitMethods, isManager, onSaved 
     }
   };
 
+  // 组装该批次的订单 id 列表（用户+订单组 粒度，对应 transit_shipping.order_ids）
+  const buildOrderIds = () => batch.entries.flatMap(e =>
+    Array.isArray(e.order_details) ? e.order_details.map(o => o.id) : [e.order_id || e.id]
+  ).filter(Boolean);
+
+  const buildShippingData = () => ({
+    ...formData,
+    transit_fee_jpy: formData.transit_fee_jpy ? Number(formData.transit_fee_jpy) : 0,
+  });
+
+  // 保存发货信息到 transit_shipping 表（用户+订单组 粒度），不产生费用
   const handleSave = async () => {
     setSaving(true);
     try {
-      const orderIds = batch.entries.flatMap(e =>
-        Array.isArray(e.order_details) ? e.order_details.map(o => o.id) : [e.order_id || e.id]
-      ).filter(Boolean);
       await base44.functions.invoke('updateUserTransitShipping', {
         pool_id: pool.id,
         user_email: batch.user_email,
-        order_ids: orderIds,
-        shipping_data: {
-          ...formData,
-          transit_fee_jpy: formData.transit_fee_jpy ? Number(formData.transit_fee_jpy) : 0,
-        },
+        order_ids: buildOrderIds(),
+        shipping_data: buildShippingData(),
       });
+      toast.success('发货信息已保存');
       onSaved?.();
     } catch (err) {
       alert('保存失败：' + err.message);
     } finally {
       setSaving(false);
+    }
+  };
+
+  // 确认中转地发货：保存当前信息并标记该 transit_shipping 记录为已发货（国内发货，不产生费用）
+  const handleShip = async () => {
+    setShipping(true);
+    try {
+      await base44.functions.invoke('updateUserTransitShipping', {
+        pool_id: pool.id,
+        user_email: batch.user_email,
+        order_ids: buildOrderIds(),
+        shipping_data: {
+          ...buildShippingData(),
+          transit_shipped_date: formData.transit_shipped_date || new Date().toISOString().split('T')[0],
+        },
+        action: 'confirm_ship',
+      });
+      toast.success('已确认中转地发货');
+      onSaved?.();
+    } catch (err) {
+      alert('发货失败：' + err.message);
+    } finally {
+      setShipping(false);
     }
   };
 
@@ -199,11 +245,25 @@ function TransitShippingPanel({ batch, pool, transitMethods, isManager, onSaved 
           )}
         </div>
 
-        {isManager && (
+        {recordShipped ? (
+          <div className="flex items-center gap-2 text-xs text-green-700 bg-green-50 border border-green-200 rounded-lg px-3 py-2">
+            <CheckCircle className="w-4 h-4" />
+            已确认中转地发货{formData.transit_shipped_date ? `（${formData.transit_shipped_date}）` : ''}
+          </div>
+        ) : isManager && poolArrived ? (
+          <div className="flex gap-2">
+            <Button variant="outline" className="flex-1" onClick={handleSave} disabled={saving}>
+              <Save className="w-4 h-4 mr-2" />{saving ? '保存中...' : '保存'}
+            </Button>
+            <Button className="flex-1 bg-indigo-600 hover:bg-indigo-700" onClick={handleShip} disabled={shipping}>
+              <Truck className="w-4 h-4 mr-2" />{shipping ? '发货中...' : '确认中转地发货'}
+            </Button>
+          </div>
+        ) : isManager ? (
           <Button className="w-full bg-indigo-600 hover:bg-indigo-700" onClick={handleSave} disabled={saving}>
             <Save className="w-4 h-4 mr-2" />{saving ? '保存中...' : '保存发货信息'}
           </Button>
-        )}
+        ) : null}
       </div>
     </div>
   );
