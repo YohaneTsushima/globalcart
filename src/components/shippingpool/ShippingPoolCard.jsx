@@ -43,7 +43,7 @@ const METHOD_LABELS = {
   surface: "海运", small_packet_air: "小包空运", other: "其他"
 };
 
-export default function ShippingPoolCard({ pool, onClick, pendingEditCount = 0, isAdmin = false, userProfileMap = {}, onArchive = null, onUnarchive = null, onDelete = null, selectMode = false, isSelected = false, onSelect = null }) {
+export default function ShippingPoolCard({ pool, onClick, onManage = null, pendingEditCount = 0, isAdmin = false, userProfileMap = {}, onArchive = null, onUnarchive = null, onDelete = null, selectMode = false, isSelected = false, onSelect = null }) {
   const status = STATUS_CONFIG[pool.status] || STATUS_CONFIG.pending;
   const isConsolidation = pool.consolidation_type && pool.consolidation_type !== "";
 
@@ -260,6 +260,13 @@ export default function ShippingPoolCard({ pool, onClick, pendingEditCount = 0, 
               className="inline-flex items-center gap-0.5 text-xs text-gray-400 hover:text-gray-700 px-1.5 py-0.5 rounded hover:bg-gray-100 transition-colors">
               查看详情 <ChevronRight className="w-3 h-3" />
             </button>
+            {onManage && (
+              <button
+                onClick={e => { e.stopPropagation(); onManage(pool); }}
+                className="inline-flex items-center gap-0.5 text-xs text-blue-500 hover:text-blue-700 px-1.5 py-0.5 rounded hover:bg-blue-50 transition-colors">
+                中转地管理 <ChevronRight className="w-3 h-3" />
+              </button>
+            )}
           </div>
         </div>
       </div>

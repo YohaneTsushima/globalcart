@@ -388,14 +388,11 @@ export default function ShippingPool() {
                     key={pool.id}
                     pool={pool}
                     isAdmin={isAdmin}
-                    onClick={(p) => {
+                    onClick={setSelectedPool}
+                    onManage={pool.transit_location_id && locations && locations.length > 0 ? (p) => {
                       const target = p || pool;
-                      if (target.transit_location_id) {
-                        window.open(`${window.location.origin}/TransitLocationWork/${target.transit_location_id}`, '_blank');
-                      } else {
-                        setSelectedPool(target);
-                      }
-                    }}
+                      window.open(`${window.location.origin}/TransitLocationWork/${target.transit_location_id}`, '_blank');
+                    } : null}
                     pendingEditCount={pendingEditRequests.filter(r => r.pool_id === pool.id).length}
                     userProfileMap={userProfileMap}
                     onArchive={!pool.is_archived && pool.status === "delivered" ? () => handleArchivePool(pool) : null}
