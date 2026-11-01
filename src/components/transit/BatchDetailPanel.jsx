@@ -3,7 +3,7 @@
  * 根据批次类型（普通运输 / 暂存 / 自取）显示不同内容
  */
 import { useState, useEffect } from "react";
-import { X, MapPin, Truck, Star, Package, Upload, Save, Image as ImageIcon, CheckCircle, Calendar, Info, Eye } from "lucide-react";
+import { X, MapPin, Truck, Star, Package, Save, Image as ImageIcon, CheckCircle, Calendar, Info, Eye, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -13,7 +13,9 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { base44 } from "@/api/base44Client";
 import { getCountry } from "@/lib/countries";
 import AdminOrderEditModal from "@/components/admin/AdminOrderEditModal";
+import MultiImageUploader from "@/components/common/MultiImageUploader";
 import { toast } from "sonner";
+import { transitLocationApi } from "@/lib/tenantApi";
 
 function AddressBlock({ address }) {
   if (!address || !address.recipient_name) return (
@@ -48,7 +50,7 @@ function AddonsBlock({ addons }) {
 }
 
 // ─── 普通运输面板 ───────────────────────────────────────────────────────────────
-function TransitShippingPanel({ batch, pool, transitMethods, isManager, onSaved }) {
+function TransitShippingPanel({ batch, pool, transitMethods, isManager, onSaved, detail }) {
   // Get default method from batch's pre-shipment config (user's selected transit method)
   const defaultMethod = transitMethods.find(m => m.id === batch.transit_shipping_method_id)?.name ||
     batch.transit_shipping_method || '';
@@ -58,58 +60,84 @@ function TransitShippingPanel({ batch, pool, transitMethods, isManager, onSaved 
 
   const [formData, setFormData] = useState({
     transit_shipping_method: defaultMethod,
+    transit_shipping_method_id: batch.transit_shipping_method_id,
     transit_tracking_number: '',
     transit_fee_jpy: '',
     transit_note: '',
     transit_image_urls: [],
     transit_shipped_date: '',
   });
-  const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [shipping, setShipping] = useState(false);
 
-  // Load existing saved shipping info (transit_shipping record for this user+order group)
+  // Load existing saved shipping info
   useEffect(() => {
-    if (!pool?.transit_shipping_info_per_user) return;
-    const userInfo = pool.transit_shipping_info_per_user.find(i => i.user_email === batch.user_email);
-    if (!userInfo?.address_groups) return;
-    const myOrderIds = batch.entries.map(e => e.order_id || e.id).filter(Boolean).sort();
-    const existing = userInfo.address_groups.find(ag => {
-      return JSON.stringify((ag.order_ids || []).sort()) === JSON.stringify(myOrderIds);
-    });
-    if (existing) {
+    // Priority 1: use findOne detail record (fresh, complete)
+    if (detail) {
       setFormData({
-        transit_shipping_method: existing.transit_shipping_method || defaultMethod,
-        transit_tracking_number: existing.transit_tracking_number || '',
-        transit_fee_jpy: existing.transit_fee_jpy || '',
-        transit_note: existing.transit_note || '',
-        transit_image_urls: existing.transit_image_urls || [],
-        transit_shipped_date: existing.transit_shipped_date || '',
+        transit_shipping_method: detail.transit_shipping_method || defaultMethod,
+        transit_shipping_method_id: batch.transit_shipping_method_id,
+        transit_tracking_number: detail.transit_tracking_number ?? '',
+        transit_fee_jpy: detail.transit_fee_jpy ?? '',
+        transit_note: detail.transit_note ?? '',
+        transit_image_urls: detail.transit_image_urls || [],
+        transit_shipped_date: detail.transit_shipped_date ?? '',
       });
+      return;
     }
-  }, [pool?.id, batch.user_email]);
+
+    // Priority 2: legacy pool.transit_shipping_info_per_user format
+    const myOrderIds = batch.entries.map(e => e.order_id || e.id).filter(Boolean).sort();
+    if (pool?.transit_shipping_info_per_user) {
+      const userInfo = pool.transit_shipping_info_per_user.find(i => i.user_email === batch.user_email);
+      const existing = userInfo?.address_groups?.find(ag =>
+        JSON.stringify((ag.order_ids || []).sort()) === JSON.stringify(myOrderIds)
+      );
+      if (existing) {
+        setFormData({
+          transit_shipping_method: existing.transit_shipping_method || defaultMethod,
+          transit_shipping_method_id: batch.transit_shipping_method_id,
+          transit_tracking_number: existing.transit_tracking_number || '',
+          transit_fee_jpy: existing.transit_fee_jpy || '',
+          transit_note: existing.transit_note || '',
+          transit_image_urls: existing.transit_image_urls || [],
+          transit_shipped_date: existing.transit_shipped_date || '',
+        });
+        return;
+      }
+    }
+
+    // Priority 3: fallback to batch.entries[0] fields
+    const firstEntry = batch.entries[0];
+    if (firstEntry) {
+      setFormData(p => ({
+        ...p,
+        transit_shipping_method: firstEntry.transit_shipping_method || p.transit_shipping_method,
+        transit_tracking_number: firstEntry.transit_tracking_number ?? p.transit_tracking_number,
+        transit_fee_jpy: firstEntry.transit_fee_jpy ?? p.transit_fee_jpy,
+        transit_note: firstEntry.transit_note ?? p.transit_note,
+        transit_image_urls: firstEntry.transit_image_urls || p.transit_image_urls,
+        transit_shipped_date: firstEntry.transit_shipped_date ?? p.transit_shipped_date,
+      }));
+    }
+  }, [detail, pool?.id, batch.user_email, batch.entries.length]);
 
   // 该批次（用户+订单组）的 transit_shipping 记录是否已发货
   const existingRecord = (() => {
-    if (!pool?.transit_shipping_info_per_user) return null;
-    const userInfo = pool.transit_shipping_info_per_user.find(i => i.user_email === batch.user_email);
-    if (!userInfo?.address_groups) return null;
-    const myOrderIds = batch.entries.map(e => e.order_id || e.id).filter(Boolean).sort();
-    return userInfo.address_groups.find(ag => JSON.stringify((ag.order_ids || []).sort()) === JSON.stringify(myOrderIds)) || null;
+    // Priority 1: findOne detail record
+    if (detail) return detail;
+    // Priority 2: legacy pool.transit_shipping_info_per_user
+    if (pool?.transit_shipping_info_per_user) {
+      const userInfo = pool.transit_shipping_info_per_user.find(i => i.user_email === batch.user_email);
+      if (userInfo?.address_groups) {
+        const myOrderIds = batch.entries.map(e => e.order_id || e.id).filter(Boolean).sort();
+        return userInfo.address_groups.find(ag => JSON.stringify((ag.order_ids || []).sort()) === JSON.stringify(myOrderIds)) || null;
+      }
+    }
+    // Priority 3: fallback to batch.entries[0]
+    return batch.entries[0] || null;
   })();
   const recordShipped = !!existingRecord?.transit_shipped_date;
-
-  const handleImageUpload = async (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setUploading(true);
-    try {
-      const { file_url } = await base44.integrations.Core.UploadFile({ file });
-      if (file_url) setFormData(p => ({ ...p, transit_image_urls: [...p.transit_image_urls, file_url] }));
-    } finally {
-      setUploading(false);
-    }
-  };
 
   // 组装该批次的订单 id 列表（用户+订单组 粒度，对应 transit_shipping.order_ids）
   const buildOrderIds = () => batch.entries.flatMap(e =>
@@ -124,17 +152,37 @@ function TransitShippingPanel({ batch, pool, transitMethods, isManager, onSaved 
   // 保存发货信息到 transit_shipping 表（用户+订单组 粒度），不产生费用
   const handleSave = async () => {
     setSaving(true);
-    try {
-      await base44.functions.invoke('updateUserTransitShipping', {
-        pool_id: pool.id,
+
+    let payload =  {
+      id: pool.id,
+      pool_code: pool.pool_code,
+      data: {...buildShippingData(),
+        id: batch?.entries[0]?.id, //为后端TransitShippingRecord的主键
         user_email: batch.user_email,
         order_ids: buildOrderIds(),
-        shipping_data: buildShippingData(),
-      });
+        order_details: (batch.entries[0]?.order_details || []).map(d => ({
+          id: d.id,
+          order_number: d.order_number
+        }))
+      }
+    }
+
+    try {
+      // await base44.functions.invoke('updateUserTransitShipping', {
+      //   pool_id: pool.id,
+      //   user_email: batch.user_email,
+      //   order_ids: buildOrderIds(),
+      //   shipping_data: buildShippingData(),
+      // });
+
+      await transitLocationApi.saveInfo(payload.id, payload.data);
+
       toast.success('发货信息已保存');
       onSaved?.();
     } catch (err) {
-      alert('保存失败：' + err.message);
+      const message = err?.response?.data?.message;
+      console.error('[BatchDetailPanel] handleSave failed:', message);
+      toast.error(message || '加入失败，请稍后重试');
     } finally {
       setSaving(false);
     }
@@ -223,26 +271,13 @@ function TransitShippingPanel({ batch, pool, transitMethods, isManager, onSaved 
         </div>
 
         <div>
-          <Label className="text-xs text-gray-500 mb-1.5 block">中转地发货图片</Label>
-          <label className="cursor-pointer">
-            <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} disabled={uploading} />
-            <div className="flex items-center gap-2 text-xs text-indigo-600 hover:text-indigo-800 border border-dashed border-indigo-200 rounded-lg px-3 py-2 hover:border-indigo-400 transition-colors">
-              <Upload className="w-3.5 h-3.5" />{uploading ? '上传中...' : '上传图片'}
-            </div>
-          </label>
-          {formData.transit_image_urls.length > 0 && (
-            <div className="grid grid-cols-3 gap-1.5 mt-2">
-              {formData.transit_image_urls.map((url, i) => (
-                <div key={i} className="relative group">
-                  <img src={url} alt={`发货图${i+1}`} className="w-full h-16 object-cover rounded border" />
-                  <button
-                    onClick={() => setFormData(p => ({ ...p, transit_image_urls: p.transit_image_urls.filter((_, j) => j !== i) }))}
-                    className="absolute top-0.5 right-0.5 bg-red-500 text-white rounded-full w-4 h-4 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-xs"
-                  >×</button>
-                </div>
-              ))}
-            </div>
-          )}
+          <MultiImageUploader
+            value={formData.transit_image_urls}
+            onChange={(urls) => setFormData(p => ({ ...p, transit_image_urls: urls }))}
+            uploadPath="transit"
+            label="中转地发货图片"
+            id="transit-image-uploader"
+          />
         </div>
 
         {recordShipped ? (
@@ -444,7 +479,7 @@ function OrderDetailModal({ order, onClose, onSaved }) {
 }
 
 // ─── Main Export ──────────────────────────────────────────────────────────────
-export default function BatchDetailPanel({ batch, pool, transitMethods, isManager, onClose, onSaved }) {
+export default function BatchDetailPanel({ batch, pool, transitMethods, isManager, onClose, onSaved, detail, loading }) {
   const [orderDetail, setOrderDetail] = useState(null);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
 
@@ -452,6 +487,15 @@ export default function BatchDetailPanel({ batch, pool, transitMethods, isManage
     setRefreshTrigger(prev => prev + 1);
     onSaved?.();
   };
+
+  if (loading && !batch) {
+    return (
+      <div className="flex-1 flex items-center justify-center py-20">
+        <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
+        <span className="ml-2 text-sm text-gray-500">加载中...</span>
+      </div>
+    );
+  }
 
   if (!batch) {
     return (
@@ -492,7 +536,14 @@ export default function BatchDetailPanel({ batch, pool, transitMethods, isManage
       </div>
 
       {/* Scrollable content */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+      <div className="relative flex-1 overflow-y-auto p-4 space-y-4">
+        {loading && (
+          <div className="absolute inset-0 z-10 bg-white/70 backdrop-blur-sm flex items-center justify-center">
+            <div className="flex items-center gap-2 text-sm text-gray-500">
+              <Loader2 className="w-4 h-4 animate-spin" />加载中...
+            </div>
+          </div>
+        )}
         {/* Orders list */}
         <div>
           <p className="text-xs font-medium text-gray-500 mb-2 flex items-center gap-1">
@@ -552,7 +603,7 @@ export default function BatchDetailPanel({ batch, pool, transitMethods, isManage
         ) : isPickup ? (
           <PickupBatchPanel batch={batch} pool={pool} isManager={isManager} onSaved={onSaved} />
         ) : (
-          <TransitShippingPanel batch={batch} pool={pool} transitMethods={transitMethods} isManager={isManager} onSaved={onSaved} />
+          <TransitShippingPanel batch={batch} pool={pool} transitMethods={transitMethods} isManager={isManager} onSaved={onSaved} detail={detail} />
         )}
       </div>
 

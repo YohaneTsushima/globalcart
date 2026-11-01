@@ -72,6 +72,7 @@ function buildUserGroupList(entries, request) {
       if (!groups[key]) {
         groups[key] = {
           key,
+          id: entry.id,
           user_email: entry.user_email,
           user_name: entry.user_name,
           group_label: entry.group_label,
@@ -102,6 +103,7 @@ function buildUserGroupList(entries, request) {
       if (!groups[key]) {
         groups[key] = {
           key,
+          id: entry.id,
           user_email: entry.user_email,
           user_name: entry.user_name,
           group_label: entry.user_name || entry.user_email,
@@ -183,15 +185,17 @@ export default function TransitPoolWork() {
   const [location, setLocation] = useState(null);
   const [transitMethods, setTransitMethods] = useState([]);
   const [selectedBatchKey, setSelectedBatchKey] = useState(null);
+  const [selectedBatchDetail, setSelectedBatchDetail] = useState(null);
+  const [batchDetailLoading, setBatchDetailLoading] = useState(false);
 
   // const isAdmin = user?.role === 'admin' || user?.role === 'tenant_admin' || user?.role === 'platform_admin';
   const isAdmin = usePermissions();
   const isManager = isAdmin || (location && location.manager_email === user?.email);
 
-  const fetchData = async () => {
-    setLoading(true);
+  const fetchData = async ({ silent = false } = {}) => {
+    if (!silent) setLoading(true);
     try {
-      
+
       // const res = await base44.functions.invoke('getTransitPoolWorkData', { request_id: pool_code });
       const res = await transitLocationApi.poolWork(pool_code);
       // if (!res.data?.request) { navigate('/Home'); return; }
@@ -200,10 +204,10 @@ export default function TransitPoolWork() {
       setLocation(res?.location || {});
       setTransitMethods(res?.transitMethods || []);
     } catch (error) {
-      alert('加载失败：' + error.message);
+      if (!silent) alert('加载失败：' + error.message);
       // navigate('/Home');
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
@@ -211,6 +215,43 @@ export default function TransitPoolWork() {
     if (!user || !pool_code) return;
     fetchData();
   }, [user, pool_code]);
+
+  // Silent refresh: called from PoolInfoPanel via onUpdate — doesn't unmount the layout
+  const silentFetch = () => fetchData({ silent: true });
+
+  const loadBatchDetail = async (batchId) => {
+    setBatchDetailLoading(true);
+    try {
+      const res = await transitLocationApi.findOne(batchId);
+      setSelectedBatchDetail(res?.data || res || null);
+    } catch (err) {
+      console.error('[TransitPoolWork] findOne failed:', err);
+      setSelectedBatchDetail(null);
+    } finally {
+      setBatchDetailLoading(false);
+    }
+  };
+
+  // Re-fetch findOne for the currently selected batch after save/ship
+  const refreshSelectedDetail = async () => {
+    const selectedId = selectedBatch?.id;
+    if (selectedId) {
+      await loadBatchDetail(selectedId);
+    }
+  };
+
+  const handleBatchClick = async (batch) => {
+    if (selectedBatchKey === batch.key) {
+      setSelectedBatchKey(null);
+      setSelectedBatchDetail(null);
+      setBatchDetailLoading(false);
+      return;
+    }
+    setSelectedBatchKey(batch.key);
+    setSelectedBatchDetail(null);
+    if (!batch.id) return; // no detail id available, fall back to list data
+    await loadBatchDetail(batch.id);
+  };
 
   const activeEntries = useMemo(() => entries.filter(e => e.status !== 'cancelled'), [entries]);
   const userGroups = useMemo(() => buildUserGroupList(activeEntries, request), [activeEntries, request]);
@@ -257,7 +298,7 @@ export default function TransitPoolWork() {
             userGroups={userGroups}
             isAdmin={isAdmin}
             isManager={isManager}
-            onUpdate={fetchData}
+            onUpdate={silentFetch}
           />
 
           {/* Batch list */}
@@ -276,7 +317,7 @@ export default function TransitPoolWork() {
                     key={batch.key}
                     batch={batch}
                     selected={selectedBatchKey === batch.key}
-                    onClick={() => setSelectedBatchKey(batch.key === selectedBatchKey ? null : batch.key)}
+                    onClick={() => handleBatchClick(batch)}
                   />
                 ))
               )}
@@ -289,12 +330,13 @@ export default function TransitPoolWork() {
           <div className="bg-white border border-gray-200 rounded-xl overflow-hidden min-h-[400px]">
             <BatchDetailPanel
               batch={selectedBatch}
+              detail={selectedBatchDetail}
+              detailLoading={batchDetailLoading}
+              loading={batchDetailLoading}
               pool={request}
               transitMethods={transitMethods}
               isManager={isManager}
-              onSaved={() => {
-                fetchData();
-              }}
+              onSaved={refreshSelectedDetail}
             />
           </div>
         </div>

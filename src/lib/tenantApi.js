@@ -239,4 +239,6 @@ export const transitLocationApi = {
   create:             (data)              => mutate('TransitLocation', 'create', { data }).then(r => r.result || r.data?.result || r),
   update:             (id, data)          => mutate('TransitLocation', 'update', { id, data }).then(r => r.result || r.data?.result || r),
   delete:             (id)                => mutate('TransitLocation', 'delete', { id }),
+  findOne:            (id)                => mutate('TransitShipping', 'findOne', { id }),
+  saveInfo:           (id, data)          => mutate('TransitShipping', 'save', { id, data }),
 };
