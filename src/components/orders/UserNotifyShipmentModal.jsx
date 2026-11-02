@@ -103,7 +103,7 @@ function TransitMethodSection({ consType, selectedTransitId, transitLocations, t
   if (consType !== "transit") return null;
   const selectedLoc = transitLocations.find(l => l.id === selectedTransitId);
   const disabledMethodIds = selectedLoc?.disabled_transit_method_ids || [];
-  const visibleMethods = transitMethods.filter(m => !disabledMethodIds.includes(m.id));
+  const visibleMethods = transitMethods.filter(m => !disabledMethodIds.some(id => String(id) === String(m.id)));
   const allowPickup = selectedLoc?.allow_pickup;
   const allowStorage = selectedLoc?.allow_storage;
   if (visibleMethods.length === 0 && !allowPickup && !allowStorage) return null;
@@ -157,7 +157,7 @@ function TransitAddonSection({ consType, selectedTransitId, transitLocations, sh
   const disabledAddonIds = consType === "transit"
     ? (transitLocations.find(l => l.id === selectedTransitId)?.disabled_addon_ids || [])
     : [];
-  const visibleAddons = shippingAddons.filter(a => !disabledAddonIds.includes(a.id));
+  const visibleAddons = shippingAddons.filter(a => !disabledAddonIds.some(id => String(id) === String(a.id)));
   // Show addons for all shipping types (not just transit)
   if (visibleAddons.length === 0) return null;
 

@@ -36,6 +36,8 @@ const STATUS_CONFIG = {
   delivered:                     { label: "已签收",    color: "bg-emerald-100 text-emerald-700" },
   cancelled:                     { label: "已取消",    color: "bg-red-100 text-red-600" },
   processing:                    { label: "处理中",    color: "bg-blue-100 text-blue-700" },
+  transit_forwarded:             { label: "中转地已发货",    color: "bg-blue-100 text-blue-700" },
+  transit_arrived:               { label: "中转地已收货",    color: "bg-blue-100 text-blue-700" },
 };
 
 const METHOD_LABELS = {

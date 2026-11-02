@@ -86,6 +86,18 @@ export const ORDER_STATUS_CONFIG = {
     adminColor: "bg-blue-100 text-blue-700",
     userColor: "bg-blue-100 text-blue-700",
   },
+  transit_forwarded: {
+    admin: "中转地已发货",
+    user: "中转地已发货",
+    adminColor: "bg-teal-100 text-teal-700",
+    userColor: "bg-teal-100 text-teal-700",
+  },
+  transit_arrived: {
+    admin: "中转地已收货",
+    user: "中转地已收货",
+    adminColor: "bg-green-100 text-green-700",
+    userColor: "bg-green-100 text-green-700",
+  },
   transited: {
     admin: "已向中转地发货",
     user: "已向中转地发货",

@@ -4,7 +4,7 @@
  * 左侧：发货申请详情 + 批次列表
  * 右侧：选中批次的详细操作（普通发货 / 暂存 / 自取）
  */
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { base44 } from "@/api/base44Client";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
@@ -219,7 +219,7 @@ export default function TransitPoolWork() {
   // Silent refresh: called from PoolInfoPanel via onUpdate — doesn't unmount the layout
   const silentFetch = () => fetchData({ silent: true });
 
-  const loadBatchDetail = async (batchId) => {
+  const loadBatchDetail = useCallback(async (batchId) => {
     setBatchDetailLoading(true);
     try {
       const res = await transitLocationApi.findOne(batchId);
@@ -230,15 +230,15 @@ export default function TransitPoolWork() {
     } finally {
       setBatchDetailLoading(false);
     }
-  };
+  }, []);
 
   // Re-fetch findOne for the currently selected batch after save/ship
-  const refreshSelectedDetail = async () => {
-    const selectedId = selectedBatch?.id;
+  const refreshSelectedDetail = useCallback(async () => {
+    const selectedId = selectedBatchIdRef.current;
     if (selectedId) {
       await loadBatchDetail(selectedId);
     }
-  };
+  }, [loadBatchDetail]);
 
   const handleBatchClick = async (batch) => {
     if (selectedBatchKey === batch.key) {
@@ -256,6 +256,11 @@ export default function TransitPoolWork() {
   const activeEntries = useMemo(() => entries.filter(e => e.status !== 'cancelled'), [entries]);
   const userGroups = useMemo(() => buildUserGroupList(activeEntries, request), [activeEntries, request]);
   const selectedBatch = userGroups.find(g => g.key === selectedBatchKey) || null;
+
+  const selectedBatchIdRef = useRef(selectedBatch?.id);
+  useEffect(() => {
+    selectedBatchIdRef.current = selectedBatch?.id;
+  }, [selectedBatch?.id]);
 
   if (loading) {
     return (

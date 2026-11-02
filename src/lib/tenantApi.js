@@ -130,6 +130,12 @@ async function mutate(entity, action, opts = {}) {
   return res.data;
 }
 
+async function mutates(entity, action, opts = []) {
+  const res = await base44.functions.invoke(`mutateTenantEntity/${entity}/${action}`, opts);
+  if (res.data?.error) throw new Error(res.data.error?.[0] || JSON.stringify(res.data.error));
+  return res.data;
+}
+
 async function manage(entity, action, opts = {}) {
   const res = await base44.functions.invoke(`mutateTenantManage/${entity}/${action}`, { entity, action, ...opts });
   if (res.data?.error) throw new Error(res.data.error?.[0] || JSON.stringify(res.data.error));
@@ -241,4 +247,6 @@ export const transitLocationApi = {
   delete:             (id)                => mutate('TransitLocation', 'delete', { id }),
   findOne:            (id)                => mutate('TransitShipping', 'findOne', { id }),
   saveInfo:           (id, data)          => mutate('TransitShipping', 'save', { id, data }),
+  handleArrived:      (data)              => mutates('TransitShipping', 'handleArrived', data),
+  handleShipped:      (id, data)          => mutate('TransitShipping', 'handleShipped', { id, data }),
 };

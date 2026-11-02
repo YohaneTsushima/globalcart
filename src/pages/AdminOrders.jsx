@@ -45,6 +45,8 @@ const ALL_STATUSES = [
   { v: "ready_to_ship", l: "准备发货" },
   { v: "shipped", l: "已发出" },
   { v: "transit_shipped", l: "中转地已发出" },
+  { v: "transit_forwarded", l: "中转地已发货" },
+  { v: "transit_arrived", l: "中转地已收货" },
   { v: "delivered", l: "已收货" },
   { v: "cancelled", l: "已取消" },
 ];

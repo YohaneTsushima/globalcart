@@ -2,7 +2,7 @@
  * BatchDetailPanel - 右侧 Master-Detail 面板
  * 根据批次类型（普通运输 / 暂存 / 自取）显示不同内容
  */
-import { useState, useEffect } from "react";
+import { useState, useEffect, memo } from "react";
 import { X, MapPin, Truck, Star, Package, Save, Image as ImageIcon, CheckCircle, Calendar, Info, Eye, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -56,7 +56,7 @@ function TransitShippingPanel({ batch, pool, transitMethods, isManager, onSaved,
     batch.transit_shipping_method || '';
 
   // 池级收货状态：由 TransitLocationWork「确认收货」写入，决定按钮形态
-  const poolArrived = !!pool?.transit_arrival_confirmed_at;
+  const poolArrived = !!pool?.transit_arrival_confirmed_at || !!detail?.transit_arrived_date;
 
   const [formData, setFormData] = useState({
     transit_shipping_method: defaultMethod,
@@ -65,7 +65,7 @@ function TransitShippingPanel({ batch, pool, transitMethods, isManager, onSaved,
     transit_fee_jpy: '',
     transit_note: '',
     transit_image_urls: [],
-    transit_shipped_date: '',
+    transit_shipped_date: ''
   });
   const [saving, setSaving] = useState(false);
   const [shipping, setShipping] = useState(false);
@@ -137,7 +137,7 @@ function TransitShippingPanel({ batch, pool, transitMethods, isManager, onSaved,
     // Priority 3: fallback to batch.entries[0]
     return batch.entries[0] || null;
   })();
-  const recordShipped = !!existingRecord?.transit_shipped_date;
+  const recordShipped = !!existingRecord?.transit_shipped_date || !!existingRecord.transit_forwarded_date;
 
   // 组装该批次的订单 id 列表（用户+订单组 粒度，对应 transit_shipping.order_ids）
   const buildOrderIds = () => batch.entries.flatMap(e =>
@@ -182,7 +182,7 @@ function TransitShippingPanel({ batch, pool, transitMethods, isManager, onSaved,
     } catch (err) {
       const message = err?.response?.data?.message;
       console.error('[BatchDetailPanel] handleSave failed:', message);
-      toast.error(message || '加入失败，请稍后重试');
+      toast.error(message || '保存失败，请稍后重试');
     } finally {
       setSaving(false);
     }
@@ -191,17 +191,35 @@ function TransitShippingPanel({ batch, pool, transitMethods, isManager, onSaved,
   // 确认中转地发货：保存当前信息并标记该 transit_shipping 记录为已发货（国内发货，不产生费用）
   const handleShip = async () => {
     setShipping(true);
-    try {
-      await base44.functions.invoke('updateUserTransitShipping', {
-        pool_id: pool.id,
+
+    let payload =  {
+      id: pool.id,
+      pool_code: pool.pool_code,
+      data: {...buildShippingData(),
+        id: batch?.entries[0]?.id, //为后端TransitShippingRecord的主键
         user_email: batch.user_email,
         order_ids: buildOrderIds(),
-        shipping_data: {
-          ...buildShippingData(),
-          transit_shipped_date: formData.transit_shipped_date || new Date().toISOString().split('T')[0],
-        },
-        action: 'confirm_ship',
-      });
+        order_details: (batch.entries[0]?.order_details || []).map(d => ({
+          id: d.id,
+          order_number: d.order_number
+        }))
+      }
+    }
+
+    try {
+
+      await transitLocationApi.handleShipped(payload.id, payload.data);
+
+      // await base44.functions.invoke('updateUserTransitShipping', {
+      //   pool_id: pool.id,
+      //   user_email: batch.user_email,
+      //   order_ids: buildOrderIds(),
+      //   shipping_data: {
+      //     ...buildShippingData(),
+      //     transit_shipped_date: formData.transit_shipped_date || new Date().toISOString().split('T')[0],
+      //   },
+      //   action: 'confirm_ship',
+      // });
       toast.success('已确认中转地发货');
       onSaved?.();
     } catch (err) {
@@ -233,8 +251,9 @@ function TransitShippingPanel({ batch, pool, transitMethods, isManager, onSaved,
           <Label className="text-xs text-gray-500">发货方式</Label>
           {transitMethods.length > 0 ? (
             <select
-              className="mt-1 w-full border rounded-lg px-2 py-1.5 text-sm bg-white"
+              className="mt-1 w-full border rounded-lg px-2 py-1.5 text-sm bg-white disabled:opacity-60 disabled:cursor-not-allowed"
               value={formData.transit_shipping_method}
+              disabled={recordShipped}
               onChange={e => setFormData(p => ({ ...p, transit_shipping_method: e.target.value }))}
             >
               <option value="">请选择</option>
@@ -244,28 +263,35 @@ function TransitShippingPanel({ batch, pool, transitMethods, isManager, onSaved,
             </select>
           ) : (
             <Input className="mt-1 text-sm" value={formData.transit_shipping_method}
+              disabled={recordShipped}
               onChange={e => setFormData(p => ({ ...p, transit_shipping_method: e.target.value }))}
               placeholder="填写中转发货方式" />
           )}
         </div>
 
         <div>
-          <Label className="text-xs text-gray-500">运输单号</Label>
+          <Label className="text-xs text-gray-500">
+            运输单号 <span className="text-red-500">*</span>
+          </Label>
           <Input className="mt-1 text-sm font-mono" value={formData.transit_tracking_number}
+            disabled={recordShipped}
             onChange={e => setFormData(p => ({ ...p, transit_tracking_number: e.target.value }))}
             placeholder="填写运单号" />
         </div>
 
+        {/* 隐藏：运费已在 ShippingPoolDetailModal 支付，此处不再显示
         <div>
           <Label className="text-xs text-gray-500">中转运费 (JPY)</Label>
           <Input className="mt-1 text-sm" type="number" value={formData.transit_fee_jpy}
             onChange={e => setFormData(p => ({ ...p, transit_fee_jpy: e.target.value }))}
             placeholder="0" />
         </div>
+        */}
 
         <div>
           <Label className="text-xs text-gray-500">中转人备注</Label>
           <Textarea className="mt-1 text-sm" rows={2} value={formData.transit_note}
+            disabled={recordShipped}
             onChange={e => setFormData(p => ({ ...p, transit_note: e.target.value }))}
             placeholder="填写备注" />
         </div>
@@ -274,9 +300,10 @@ function TransitShippingPanel({ batch, pool, transitMethods, isManager, onSaved,
           <MultiImageUploader
             value={formData.transit_image_urls}
             onChange={(urls) => setFormData(p => ({ ...p, transit_image_urls: urls }))}
-            uploadPath="transit"
+            uploadPath="transit_ship"
             label="中转地发货图片"
             id="transit-image-uploader"
+            readOnly={recordShipped}
           />
         </div>
 
@@ -290,7 +317,7 @@ function TransitShippingPanel({ batch, pool, transitMethods, isManager, onSaved,
             <Button variant="outline" className="flex-1" onClick={handleSave} disabled={saving}>
               <Save className="w-4 h-4 mr-2" />{saving ? '保存中...' : '保存'}
             </Button>
-            <Button className="flex-1 bg-indigo-600 hover:bg-indigo-700" onClick={handleShip} disabled={shipping}>
+            <Button className="flex-1 bg-indigo-600 hover:bg-indigo-700" onClick={handleShip} disabled={shipping || !formData.transit_tracking_number?.trim()}>
               <Truck className="w-4 h-4 mr-2" />{shipping ? '发货中...' : '确认中转地发货'}
             </Button>
           </div>
@@ -303,6 +330,8 @@ function TransitShippingPanel({ batch, pool, transitMethods, isManager, onSaved,
     </div>
   );
 }
+
+const MemoizedTransitShippingPanel = memo(TransitShippingPanel);
 
 // ─── 暂存面板 ────────────────────────────────────────────────────────────────
 function StorageBatchPanel({ batch, pool, isManager, onSaved }) {
@@ -603,7 +632,7 @@ export default function BatchDetailPanel({ batch, pool, transitMethods, isManage
         ) : isPickup ? (
           <PickupBatchPanel batch={batch} pool={pool} isManager={isManager} onSaved={onSaved} />
         ) : (
-          <TransitShippingPanel batch={batch} pool={pool} transitMethods={transitMethods} isManager={isManager} onSaved={onSaved} detail={detail} />
+          <MemoizedTransitShippingPanel batch={batch} pool={pool} transitMethods={transitMethods} isManager={isManager} onSaved={onSaved} detail={detail} />
         )}
       </div>
 

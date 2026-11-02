@@ -155,8 +155,8 @@ console.log(isAdmin)
       manager_email: loc.manager_email || "", manager_contact: loc.manager_contact || "",
       allow_storage: loc.allow_storage || false,
       allow_pickup: loc.allow_pickup || false,
-      disabled_transit_method_ids: loc.disabled_transit_method_ids || [],
-      disabled_addon_ids: loc.disabled_addon_ids || [],
+      disabled_transit_method_ids: (loc.disabled_transit_method_ids || []).map(String),
+      disabled_addon_ids: (loc.disabled_addon_ids || []).map(String),
       description: loc.description || "", is_active: loc.is_active !== false,
       is_default_official_pool: loc.is_default_official_pool || false,
     });
@@ -500,13 +500,13 @@ console.log(isAdmin)
                   <Label className="text-xs text-gray-500">禁用的中转运输方式（勾选 = 在此中转地隐藏）</Label>
                   <div className="mt-1.5 space-y-1 border border-gray-200 rounded-lg p-2 bg-white max-h-36 overflow-y-auto">
                     {transitMethods.map(m => {
-                      const disabled = (locForm.disabled_transit_method_ids || []).includes(m.id);
+                      const disabled = (locForm.disabled_transit_method_ids || []).some(id => String(id) === String(m.id));
                       return (
                         <label key={m.id} className="flex items-center gap-2 cursor-pointer hover:bg-gray-50 rounded px-1 py-0.5">
                           <input type="checkbox" checked={disabled}
                             onChange={() => lf("disabled_transit_method_ids", disabled
-                              ? (locForm.disabled_transit_method_ids || []).filter(id => id !== m.id)
-                              : [...(locForm.disabled_transit_method_ids || []), m.id]
+                              ? (locForm.disabled_transit_method_ids || []).filter(id => String(id) !== String(m.id))
+                              : [...(locForm.disabled_transit_method_ids || []), String(m.id)]
                             )}
                             className="accent-red-600" />
                           <span className="text-xs text-gray-700">{m.name}</span>
@@ -524,13 +524,13 @@ console.log(isAdmin)
                   <Label className="text-xs text-gray-500">禁用的发货增值服务（勾选 = 在此中转地隐藏）</Label>
                   <div className="mt-1.5 space-y-1 border border-gray-200 rounded-lg p-2 bg-white max-h-36 overflow-y-auto">
                     {addonOptions.map(a => {
-                      const disabled = (locForm.disabled_addon_ids || []).includes(a.id);
+                      const disabled = (locForm.disabled_addon_ids || []).some(id => String(id) === String(a.id));
                       return (
                         <label key={a.id} className="flex items-center gap-2 cursor-pointer hover:bg-gray-50 rounded px-1 py-0.5">
                           <input type="checkbox" checked={disabled}
                             onChange={() => lf("disabled_addon_ids", disabled
-                              ? (locForm.disabled_addon_ids || []).filter(id => id !== a.id)
-                              : [...(locForm.disabled_addon_ids || []), a.id]
+                              ? (locForm.disabled_addon_ids || []).filter(id => String(id) !== String(a.id))
+                              : [...(locForm.disabled_addon_ids || []), String(a.id)]
                             )}
                             className="accent-red-600" />
                           <span className="text-xs text-gray-700">{a.name}</span>

@@ -12,14 +12,18 @@ import { timePage } from "@/lib/timing";
 import { 
   Package, CheckCircle, Clock, Truck, Calendar, 
   MapPin, Scale, Image as ImageIcon, AlertCircle,
-  Upload, Loader2, ChevronRight, X
+  Loader2, ChevronRight, X
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { getCountry } from "@/lib/countries";
+import { toast } from "sonner";
+import { persistentToastError } from "@/lib/toastUtils.jsx";
+import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogAction } from "@/components/ui/alert-dialog";
 import TransitPoolCard from "@/components/transit/TransitPoolCard";
+import MultiImageUploader from "@/components/common/MultiImageUploader";
 import { tenantEntity, transitLocationApi } from "@/lib/tenantApi";
 
 const TRANSIT_STATUS_TABS = [
@@ -44,10 +48,27 @@ export default function TransitLocationWork() {
   const [activeTab, setActiveTab] = useState("pending");
   const [showArrivalModal, setShowArrivalModal] = useState(false);
   const [selectedRequests, setSelectedRequests] = useState([]);
-  const [uploading, setUploading] = useState(false);
-  const [arrivalImages, setArrivalImages] = useState([]);
-  const [arrivalNote, setArrivalNote] = useState("");
+  const [arrivalData, setArrivalData] = useState({});
   const [saving, setSaving] = useState(false);
+  const [bulkErrors, setBulkErrors] = useState([]);
+  const [showBulkErrors, setShowBulkErrors] = useState(false);
+  const [forwardedRequests, setForwardedRequests] = useState([]);
+
+  const getArrival = (poolId) => arrivalData[poolId] || { images: [], note: '' };
+
+  const updateArrivalImages = (poolId, images) => {
+    setArrivalData(prev => ({
+      ...prev,
+      [poolId]: { ...(prev[poolId] || {}), images }
+    }));
+  };
+
+  const updateArrivalNote = (poolId, note) => {
+    setArrivalData(prev => ({
+      ...prev,
+      [poolId]: { ...(prev[poolId] || {}), note }
+    }));
+  };
 
   const fetchData = async () => {
     setLoading(true);
@@ -68,6 +89,7 @@ export default function TransitLocationWork() {
       
       setLocation(r?.locations[0] || []);
       setRequests(r?.requestsByLocation || []); //Shipping Pools
+      setForwardedRequests(r?.transit_forwarded || []); //中转地已发货的单
       setTransitMethods(r?.transitMethods || []);
       setAddonOptions(r?.addonOptions || []);
       t.done('data ready');
@@ -99,20 +121,20 @@ export default function TransitLocationWork() {
   // regardless of their GroupBuyRequest status (open, completed, cancelled, expired)
   const requestsByStatus = {
     // Pending: not yet arrived at transit location (includes open, completed, and even cancelled/expired)
-    pending: requests.filter(r => 
-      !r.transit_arrival_confirmed_at && 
-      !r.transit_shipped_date && 
+    pending: requests.filter(r =>
+      !r.transit_arrival_confirmed_at &&
+      !r.transit_shipped_date &&
       (r.status === "open" || r.status === "completed" || r.status === 'ready_to_ship')
     ),
     // In transit: completed and shipped from Japan, but transit location hasn't confirmed arrival
-    in_transit: requests.filter(r => 
-      (r.status === "completed" || r.status === 'transited')&& 
+    in_transit: requests.filter(r =>
+      (r.status === "completed" || r.status === 'transited')&&
       !r.transit_arrival_confirmed_at
     ),
     // Arrived: transit location confirmed receipt
-    arrived: requests.filter(r => r.transit_arrival_confirmed_at && !r.transit_shipped_date),
-    // Forwarded: transit location has shipped to final destination
-    forwarded: requests.filter(r => r.transit_shipped_date),
+    arrived: requests.filter(r => r.status === 'transit_arrived' || (r.transit_arrival_confirmed_at && !r.transit_shipped_date)),
+    // Forwarded: transit location has shipped to final destination (from backend transit_forwarded)
+    forwarded: forwardedRequests,
   };
 
   // Update tab counts - show real-time counts for all status tabs
@@ -133,40 +155,57 @@ export default function TransitLocationWork() {
     console.log('[TransitLocationWork] All requests:', requests);
   }, [requests]);
 
+  const closeArrivalModal = () => {
+    setShowArrivalModal(false);
+    setArrivalData({});
+  };
+
   const handleBulkArrivalConfirm = async () => {
     if (selectedRequests.length === 0) return;
-    
+
     setSaving(true);
     try {
-      // Upload images first
-      let imageUrls = [];
-      if (arrivalImages.length > 0) {
-        setUploading(true);
-        const uploadPromises = arrivalImages.map(file => 
-          base44.integrations.Core.UploadFile({ file })
-            .then(r => r.file_url)
-        );
-        imageUrls = await Promise.all(uploadPromises);
-        setUploading(false);
+      let payload = selectedRequests.map(id => {
+        const arrival = getArrival(id);
+        const request = requests.find(r => r.id === id);
+        return {
+          id: id,
+          action: "confirm_arrival",
+          data: {
+            pool_code: request?.pool_code,
+            transit_arrival_image_urls: arrival.images,
+            transit_arrival_note: arrival.note
+          }
+        };
+      });
+
+      const res = await transitLocationApi.handleArrived(payload);
+      const innerCode = res?.code;
+      const total = payload.length;
+      const errors = res?.errorInfo?.errors || [];
+
+      if (innerCode === 200) {
+        toast.success(`${total} 个拼单已确认收货`);
+      } else if (errors.length === 0) {
+        persistentToastError(res?.message || "全部失败：收货失败，请稍后重试");
+      } else {
+        setBulkErrors(errors.map(e => e.errorMessage));
+        setShowBulkErrors(true);
+        if (errors.length < total) {
+          toast.warning(`部分成功：${total - errors.length}/${total} 个拼单已确认收货，${errors.length} 个失败`);
+        } else {
+          persistentToastError(`全部失败：${errors.length} 个拼单收货失败`);
+        }
       }
 
-      // Update all selected requests using request_ids parameter
-      await base44.functions.invoke('updateTransitLocationPool', {
-        request_ids: selectedRequests,
-        transit_arrival_image_urls: imageUrls,
-        transit_arrival_note: arrivalNote,
-        action: "confirm_arrival"
-      });
-      
       // Refresh data
       fetchData();
-      setShowArrivalModal(false);
+      closeArrivalModal();
       setSelectedRequests([]);
-      setArrivalImages([]);
-      setArrivalNote("");
     } catch (error) {
       console.error('Failed to confirm arrival:', error);
-      alert('确认收货失败：' + error.message);
+      const message = error?.response?.data?.message || error?.message;
+      toast.error(message || '收货失败，请稍后重试');
     } finally {
       setSaving(false);
     }
@@ -328,18 +367,55 @@ export default function TransitLocationWork() {
           {requestsByStatus.forwarded.length === 0 ? (
             <div className="flex flex-col items-center py-20 text-gray-400">
               <Package className="w-12 h-12 mb-3 opacity-20" />
-              <p className="text-sm">暂无已转发包裹</p>
+              <p className="text-sm">暂无已发货包裹</p>
             </div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
-              {requestsByStatus.forwarded.map(request => (
-                <TransitPoolCard 
-                  key={request.id} 
-                  pool={request} 
-                  transitStatus="forwarded"
-                  onClick={() => {}}
-                />
-              ))}
+              {requestsByStatus.forwarded.map(record => {
+                const pool = requests.find(r => r.id === record.consolidate_pool_id);
+                return (
+                  <div
+                    key={record.id}
+                    className="bg-white border border-gray-200 rounded-xl p-4 space-y-3 hover:shadow-md transition-shadow cursor-pointer"
+                    onClick={() => navigate(`/Trworkon/${record.consolidate_pool_id || record.id}`)}
+                  >
+                    {/* 用户名 + 状态 + 池号 */}
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <Badge className="text-xs bg-teal-100 text-teal-700">中转地已发货</Badge>
+                      {pool?.pool_code && (
+                        <Badge variant="outline" className="text-xs font-mono">{pool.pool_code}</Badge>
+                      )}
+                    </div>
+                    <p className="text-sm font-semibold text-gray-900 truncate">
+                      {record.user_name || record.user_email}
+                    </p>
+
+                    {/* 发货方式 + 运输单号 */}
+                    <div className="space-y-1 text-xs text-gray-600">
+                      {record.transit_shipping_method && (
+                        <div className="flex items-center gap-1.5">
+                          <Truck className="w-3 h-3" />
+                          <span>{record.transit_shipping_method}</span>
+                        </div>
+                      )}
+                      {record.transit_tracking_number && (
+                        <div className="flex items-center gap-1.5">
+                          <Package className="w-3 h-3" />
+                          <span className="font-mono">{record.transit_tracking_number}</span>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* 日期信息 */}
+                    <div className="text-xs text-gray-400 space-y-0.5">
+                      {record.transit_forwarded_date && (
+                        <div>已发货 {new Date(record.transit_forwarded_date).toLocaleDateString("zh-CN")}</div>
+                      )}
+                      <div>创建 {new Date(record.created_at).toLocaleDateString("zh-CN")}</div>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           )}
         </TabsContent>
@@ -354,8 +430,8 @@ export default function TransitLocationWork() {
                 <h2 className="text-lg font-semibold">
                   确认收货 ({selectedRequests.length} 个拼单)
                 </h2>
-                <button 
-                  onClick={() => setShowArrivalModal(false)}
+                <button
+                  onClick={closeArrivalModal}
                   className="p-1 hover:bg-gray-100 rounded"
                 >
                   <X className="w-5 h-5" />
@@ -363,104 +439,60 @@ export default function TransitLocationWork() {
               </div>
             </div>
             
-            <div className="p-5 space-y-4">
-              {/* Image Upload */}
-              <div>
-                <label className="text-sm font-medium text-gray-700">
-                  到货照片（可选）
-                </label>
-                <div className="mt-2">
-                  {uploading ? (
-                    <div className="flex items-center gap-2 text-sm text-blue-600">
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      上传中...
+            <div className="p-5 space-y-3 overflow-y-auto max-h-[60vh]">
+              {selectedRequests.map(requestId => {
+                const request = requests.find(r => r.id === requestId);
+                const arrival = getArrival(requestId);
+                return (
+                  <div key={requestId} className="border rounded-lg p-3 space-y-3 bg-white">
+                    <div className="flex items-center gap-2">
+                      <CheckCircle className="w-4 h-4 text-green-500 shrink-0" />
+                      <span className="text-sm font-medium text-gray-800 truncate">
+                        {request?.title || requestId.slice(-6)}
+                      </span>
+                      {request?.pool_code && (
+                        <Badge className="bg-blue-100 text-blue-600 text-xs shrink-0">
+                          {request.pool_code}
+                        </Badge>
+                      )}
                     </div>
-                  ) : (
-                    <label className="cursor-pointer block">
-                      <div className="border-2 border-dashed rounded-lg p-6 text-center hover:border-blue-300 transition-colors">
-                        <Upload className="w-8 h-8 mx-auto text-gray-400 mb-2" />
-                        <p className="text-sm text-gray-500">点击选择图片或拖拽到此处</p>
-                      </div>
-                      <input 
-                        type="file" 
-                        accept="image/*" 
-                        multiple 
-                        className="hidden"
-                        onChange={(e) => {
-                          const files = Array.from(e.target.files || []);
-                          setArrivalImages(prev => [...prev, ...files]);
-                        }}
+
+                    <MultiImageUploader
+                      value={arrival.images}
+                      onChange={(urls) => updateArrivalImages(requestId, urls)}
+                      uploadPath="transit_arrive"
+                      label="到货照片（可选）"
+                      id={`transit-arrive-images-${requestId}`}
+                    />
+
+                    <div>
+                      <label className="text-xs font-medium text-gray-700">
+                        到货备注（可选）
+                      </label>
+                      <textarea
+                        value={arrival.note}
+                        onChange={(e) => updateArrivalNote(requestId, e.target.value)}
+                        placeholder="描述货物状态、包装情况等..."
+                        rows={2}
+                        className="mt-1 w-full border rounded-lg p-2 text-sm"
                       />
-                    </label>
-                  )}
-                  
-                  {/* Preview uploaded images */}
-                  {arrivalImages.length > 0 && (
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      {arrivalImages.map((file, idx) => (
-                        <div key={idx} className="relative">
-                          <img 
-                            src={URL.createObjectURL(file)} 
-                            alt={`Preview ${idx}`}
-                            className="w-20 h-20 object-cover rounded border"
-                          />
-                          <button
-                            onClick={() => setArrivalImages(prev => prev.filter((_, i) => i !== idx))}
-                            className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full p-0.5"
-                          >
-                            <X className="w-3 h-3" />
-                          </button>
-                        </div>
-                      ))}
                     </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Note */}
-              <div>
-                <label className="text-sm font-medium text-gray-700">
-                  到货备注（可选）
-                </label>
-                <textarea
-                  value={arrivalNote}
-                  onChange={(e) => setArrivalNote(e.target.value)}
-                  placeholder="描述货物状态、包装情况等..."
-                  rows={3}
-                  className="mt-1 w-full border rounded-lg p-2 text-sm"
-                />
-              </div>
-
-              {/* Selected pools summary */}
-              <div className="bg-gray-50 rounded-lg p-3">
-                <p className="text-sm font-medium text-gray-700 mb-2">
-                  将确认以下拼单已到达中转地：
-                </p>
-                <div className="max-h-32 overflow-y-auto space-y-1">
-                  {selectedRequests.map(requestId => {
-                    const request = requests.find(r => r.id === requestId);
-                    return request ? (
-                      <div key={requestId} className="text-xs text-gray-600 flex items-center gap-1">
-                        <CheckCircle className="w-3 h-3 text-green-500" />
-                        <span className="truncate">{request.title || request.id.slice(-6)}</span>
-                      </div>
-                    ) : null;
-                  })}
-                </div>
-              </div>
+                  </div>
+                );
+              })}
             </div>
 
             <div className="p-5 border-t flex justify-end gap-2">
-              <Button 
-                variant="outline" 
-                onClick={() => setShowArrivalModal(false)}
+              <Button
+                variant="outline"
+                onClick={closeArrivalModal}
               >
                 取消
               </Button>
-              <Button 
+              <Button
                 className="bg-red-600 hover:bg-red-700"
                 onClick={handleBulkArrivalConfirm}
-                disabled={saving || uploading}
+                disabled={saving}
               >
                 {saving ? (
                   <>
@@ -478,6 +510,26 @@ export default function TransitLocationWork() {
           </div>
         </div>
       )}
+
+      <AlertDialog open={showBulkErrors} onOpenChange={setShowBulkErrors}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>收货结果明细</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-1 max-h-60 overflow-y-auto">
+                {bulkErrors.map((msg, i) => (
+                  <div key={i} className="text-sm text-red-600">· {msg}</div>
+                ))}
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogAction onClick={() => { setShowBulkErrors(false); setBulkErrors([]); }}>
+              知道了
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

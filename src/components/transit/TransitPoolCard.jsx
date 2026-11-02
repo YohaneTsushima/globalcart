@@ -12,7 +12,7 @@ const TRANSIT_STATUS_CONFIG = {
   pending: { label: "待处理", color: "bg-orange-100 text-orange-700", icon: Clock },
   in_transit: { label: "日本已发货", color: "bg-blue-100 text-blue-700", icon: Truck },
   arrived: { label: "中转地已收货", color: "bg-green-100 text-green-700", icon: CheckCircle },
-  forwarded: { label: "中转地已转发", color: "bg-gray-100 text-gray-700", icon: Package },
+  forwarded: { label: "中转地已发货", color: "bg-teal-100 text-teal-700", icon: Package },
 };
 
 const POOL_STATUS_CONFIG = {
@@ -26,7 +26,7 @@ const POOL_STATUS_CONFIG = {
 export default function TransitPoolCard({ pool, transitStatus, isSelected, onToggleSelect, onClick }) {
   // Support both GroupBuyRequest and ShippingPool data structures
   const isRequest = !!pool.title; // GroupBuyRequest has title, ShippingPool has pool_code
-  const orderCount = isRequest ? (pool.entries?.length || pool.entry_count || pool.fee_breakdown_per_user.length || 0) : (pool.order_ids || []).length;
+  const orderCount = isRequest ? (pool.entries?.length || pool.entry_count || pool.fee_breakdown_per_user?.length || 0) : (pool.order_ids || []).length;
   // 商品名来自 fee_breakdown_per_user[].user_orders[].product_name
   const productNames = [...new Set(
     (pool.fee_breakdown_per_user || [])
@@ -58,9 +58,9 @@ export default function TransitPoolCard({ pool, transitStatus, isSelected, onTog
                 {pool.pool_code}
               </Badge>
             )}
-            {pool.title && (
+            {(pool.title || pool.user_name) && (
               <Badge variant="outline" className="text-xs">
-                {pool.title}
+                {pool.title || pool.user_name}
               </Badge>
             )}
           </div>
@@ -182,7 +182,7 @@ export default function TransitPoolCard({ pool, transitStatus, isSelected, onTog
             <div className="flex items-center gap-1.5 text-xs text-gray-600">
               <CheckCircle className="w-3 h-3" />
               <span>
-                已转发 {pool.transit_shipped_date ? new Date(pool.transit_shipped_date).toLocaleDateString("zh-CN") : ''}
+                已发货 {pool.transit_shipped_date ? new Date(pool.transit_shipped_date).toLocaleDateString("zh-CN") : ''}
               </span>
             </div>
           </div>

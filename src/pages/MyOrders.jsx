@@ -92,6 +92,8 @@ const STATUS_FILTERS = [
   { v: "notified_shipment", l: "已通知出货" },
   { v: "shipping_fee_pending", l: "待付运费" },
   { v: "transited", l: "已向中转地发出" },
+  { v: "transit_forwarded", l: "中转地已发货" },
+  { v: "transit_arrived", l: "中转地已收货" },
   { v: "shipped", l: "已发出" },
   { v: "delivered", l: "已收货" },
   { v: "cancelled", l: "已取消" },
@@ -528,8 +530,9 @@ export default function MyOrders() {
   const selectedDelivered = canArchiveOrder ? filtered.filter(o => selectedIds.includes(o.id) && o.order_status === "delivered" && !o.is_archived) : [];
 
   // Orders eligible for bulk confirm delivery
-  const shippedOrders = filtered.filter(o => o.order_status === "shipped");
-  const selectedShipped = filtered.filter(o => selectedIds.includes(o.id) && o.order_status === "shipped");
+  const bulkDeliverStatuses = ["shipped", "transit_shipped", "transit_forwarded"];
+  const shippedOrders = filtered.filter(o => bulkDeliverStatuses.includes(o.order_status));
+  const selectedShipped = filtered.filter(o => selectedIds.includes(o.id) && bulkDeliverStatuses.includes(o.order_status));
 
   const toggleSelect = (id) => {
     setSelectedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
@@ -749,7 +752,7 @@ export default function MyOrders() {
               <tr key={order.id} className={`hover:bg-gray-50 cursor-pointer ${selectedIds.includes(order.id) ? "bg-teal-50/50" : ""}`}
                 onClick={() => setSelectedOrder(order)}>
                 <td className="px-3 py-3" onClick={e => e.stopPropagation()}>
-                  {!showArchived && (order.order_status === "in_warehouse" || order.order_status === "shipped" || (order.order_status === "payment_pending" && order.payment_status !== "awaiting_confirmation") || (order.order_status === "delivered" && !order.is_archived)) && (
+                  {!showArchived && (order.order_status === "in_warehouse" || bulkDeliverStatuses.includes(order.order_status) || (order.order_status === "payment_pending" && order.payment_status !== "awaiting_confirmation") || (order.order_status === "delivered" && !order.is_archived)) && (
                    <Checkbox
                      checked={selectedIds.includes(order.id)}
                      onCheckedChange={() => toggleSelect(order.id)}
@@ -836,7 +839,7 @@ export default function MyOrders() {
                     </div>
                   )}
                   {/* 中转地-还没做 */}
-                  {order.order_status === "transit_shipped" && (() => {
+                  {(order.order_status === "transit_shipped" || order.order_status === "transit_forwarded") && (() => {
                     const orderId = String(order.id);
                     // const pool = shippingPools.find(p => (p.order_ids || []).some(id => String(id) === orderId));
                     const pool = order.pool;
