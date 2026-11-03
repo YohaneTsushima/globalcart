@@ -31,6 +31,8 @@ const STATUS_CONFIG = {
   awaiting_payment_confirmation: { label: "待确认付款", color: "bg-blue-100 text-blue-700" },
   ready_to_ship:                 { label: "待发货",    color: "bg-lime-100 text-lime-700" },
   transited:                     { label: "已向中转地发出", color: "bg-indigo-100 text-indigo-700" },
+  transit_arrived:               { label: "中转地已收货", color: "bg-green-100 text-green-700" },
+  transit_forwarded:             { label: "中转地已发货", color: "bg-teal-100 text-teal-700" },
   shipped:                       { label: "已发货",    color: "bg-green-100 text-green-700" },
   delivered:                     { label: "已签收",    color: "bg-emerald-100 text-emerald-700" },
   cancelled:                     { label: "已取消",    color: "bg-red-100 text-red-600" },
@@ -136,6 +138,23 @@ export default function AdminShippingInfoPanel({
     (isUserPool && allowShipWithoutPaymentUserPool) ||
     (isOfficialPool && allowShipWithoutPaymentOfficialPool)
   );
+
+  // A per-user payment record counts as paid only when BOTH the entry-level payment_status
+  // and the nested payment_method.payment_status are "paid".
+  const isPaymentRecordPaid = (p) =>
+    p?.payment_status === "paid" && p?.payment_method?.payment_status === "paid";
+
+  // All participants paid = every user in fee_breakdown_per_user has a per_user_payments
+  // record that is fully paid. Users missing a record (or not yet paid) block the gate.
+  const allParticipantsPaid = () => {
+    const breakdowns = pool.fee_breakdown_per_user || [];
+    const payments = pool.per_user_payments || [];
+    if (breakdowns.length === 0) return false;
+    return breakdowns.every(b => {
+      const rec = payments.find(p => p.user_email === b.user_email);
+      return !!rec && isPaymentRecordPaid(rec);
+    });
+  };
   
   // Derive unique users from orders
   const uniqueUsers = [...new Map(
@@ -365,10 +384,11 @@ export default function AdminShippingInfoPanel({
       packingFeesPerUser: effectivePackingFeesPerUser,
       transitLocation,
       transitShippingMethod,
+      transitShippingMethods,
       exchangeRates,
       transitHandlingFeeSplit,
     });
-  }, [orders, shippingFeeJpy, boxPrice, basePackingFee, effectivePackingFeesPerUser, pool.selected_addons, pool.transit_location_id, pool.transit_shipping_method_id, exchangeRates, transitHandlingFeeSplit]);
+  }, [orders, shippingFeeJpy, boxPrice, basePackingFee, effectivePackingFeesPerUser, pool.selected_addons, pool.transit_location_id, pool.transit_shipping_method_id, pool.transit_shipping, transitShippingMethods, exchangeRates, transitHandlingFeeSplit]);
 
   // Grand total = sum of all users' total_jpy from the live breakdown
   const grandTotalJpy = feeBreakdowns.reduce((s, b) => s + (b.total_jpy || 0), 0);
@@ -409,6 +429,7 @@ export default function AdminShippingInfoPanel({
       packingFeesPerUser: effectivePackingFeesPerUser,
       transitLocation,
       transitShippingMethod,
+      transitShippingMethods,
       exchangeRates,
       transitHandlingFeeSplit,
     });
@@ -1219,8 +1240,8 @@ export default function AdminShippingInfoPanel({
                               </div>
                             );
                           })}
-                          {/* Show confirm all only when all per-user payments confirmed */}
-                          {perUserPayments.length > 0 && perUserPayments.every(p => p.payment_status === "paid") && (
+                          {/* Show confirm all only when all fee_breakdown users are fully paid */}
+                          {allParticipantsPaid() && (
                             <p className="text-xs text-green-600 font-medium text-center">✅ 所有用户已付款确认，可进入待发货</p>
                           )}
                         </div>
@@ -1234,11 +1255,7 @@ export default function AdminShippingInfoPanel({
                     );
                   })()}
                   {(() => {
-                    const perUserPayments = pool.per_user_payments || [];
-                    const isMultiUser = perUserPayments.length > 0;
-                    const allPaid = isMultiUser
-                      ? perUserPayments.every(p => p.payment_status === "paid") || pool.payment_status === "paid"
-                      : pool.payment_status === "awaiting_confirmation" || pool.payment_status === "paid";
+                    const allPaid = allParticipantsPaid();
                     const paymentOk = canDirectShipWithoutPayment || allPaid;
                     const canShipDirectly = paymentOk && !!trackingNumber;
                     return (

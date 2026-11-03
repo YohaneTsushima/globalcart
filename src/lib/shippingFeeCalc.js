@@ -37,10 +37,12 @@ export function calcFeeBreakdownPerUser({
   packingFeesPerUser = [],
   transitLocation = null,
   transitShippingMethod = null,
+  transitShippingMethods = [],
   exchangeRates = null,
   transitHandlingFeeSplit = false,
 }) {
   const isConsolidation = pool.consolidation_type === "transit" || pool.consolidation_type === "other";
+  const isTransit = pool.consolidation_type === "transit";
   const totalWeightG = orders.reduce((s, o) => s + (parseFloat(o.weight_g) || 0), 0);
 
   // Group orders by user
@@ -66,6 +68,25 @@ export function calcFeeBreakdownPerUser({
 
   // Transit shipping method fee — convert to JPY based on its fee_currency
   const transitShippingFee = calcTransitShippingFeeJpy(transitShippingMethod, exchangeRates);
+
+  // Per-user transit shipping (consType === "transit"): each member's transit_shipping record
+  // carries their own transit method + fee, so we charge each user individually instead of
+  // the pool-wide method. Non-transit flows keep using the pool-wide transitShippingMethod above.
+  const transitRecords = isTransit ? (pool.transit_shipping || []) : [];
+  // Normalize pickup/storage sentinel — historical values: method_id 0 / "pickup" / "__pickup__".
+  // The sentinel may live in either the id or the name field (e.g. method_id 0 + name "__pickup__").
+  const isPickupStorageMethod = (rid, rname) => {
+    const id = normalizeTransitMethodId(rid);
+    const name = normalizeTransitMethodId(rname);
+    return id === "__pickup__" || id === "__storage__"
+      || name === "__pickup__" || name === "__storage__";
+  };
+  // Map user_email -> transit_shipping record (first match wins; one record per user per group)
+  const transitRecordByEmail = {};
+  for (const r of transitRecords) {
+    const email = r.user_email;
+    if (email && !(email in transitRecordByEmail)) transitRecordByEmail[email] = r;
+  }
 
   const result = [];
 
@@ -139,7 +160,7 @@ export function calcFeeBreakdownPerUser({
     if (isConsolidation && !transitHandlingFeeSplit) {
       // Personal: transit handling fee charged per user
       if (transitHandlingFee > 0) {
-        items.push({ label: `中转地手续费（${transitLocation?.service_name || "中转地"}）`, amount_jpy: transitHandlingFee });
+        items.push({ label: `中转地手续费（${transitLocation?.name || "中转地"}）`, amount_jpy: transitHandlingFee });
       }
     }
 
@@ -160,7 +181,27 @@ export function calcFeeBreakdownPerUser({
       });
     }
 
-    if (transitShippingFee > 0) {
+    if (isTransit) {
+      // Per-user: charge this member's own transit method (from pool.transit_shipping).
+      // Pickup/storage means no transit forwarding fee; unknown/missing record falls back to pool method.
+      const rec = transitRecordByEmail[email];
+      const rid = normalizeTransitMethodId(rec?.transit_shipping_method_id);
+      const rname = rec?.transit_shipping_method || "";
+      if (isPickupStorageMethod(rec?.transit_shipping_method_id, rname)) {
+        // 自取/暂存 — no transit shipping fee, but show a line so the method is visible in the breakdown
+        const isStorage = normalizeTransitMethodId(rec?.transit_shipping_method_id) === "__storage__"
+          || normalizeTransitMethodId(rname) === "__storage__";
+        items.push({ label: `中转运输费（${isStorage ? "暂存" : "自取"}）`, amount_jpy: 0, is_pickup_storage: true });
+      } else if (rec && (rid || rname)) {
+        const method = transitShippingMethods.find(m => String(m.id) === String(rid)) || null;
+        const fee = calcTransitShippingFeeJpy(method, exchangeRates);
+        const labelName = method?.name || rname || "";
+        if (fee > 0) items.push({ label: `中转运输费（${labelName}）`, amount_jpy: fee });
+      } else if (transitShippingFee > 0) {
+        // No per-user record — fall back to pool-wide method (legacy behavior)
+        items.push({ label: `中转运输费（${transitShippingMethod?.name || ""}）`, amount_jpy: transitShippingFee });
+      }
+    } else if (transitShippingFee > 0) {
       items.push({ label: `中转运输费（${transitShippingMethod?.name || ""}）`, amount_jpy: transitShippingFee });
     }
 
@@ -285,4 +326,16 @@ function calcTransitShippingFeeJpy(method, exchangeRates) {
   }
   const currency = method.fee_currency || "JPY";
   return convertToJpy(rawFee, currency, exchangeRates);
+}
+
+/**
+ * Normalize transit method id to a canonical form. Historical/legacy values:
+ *   "pickup" / "__pickup__" → "__pickup__"   (自取, no transit forwarding fee)
+ *   "storage" / "__storage__" → "__storage__" (暂存, no transit forwarding fee)
+ *   anything else (numeric id, other string) → returned as-is (string)
+ */
+function normalizeTransitMethodId(id) {
+  if (id === "pickup" || id === "__pickup__") return "__pickup__";
+  if (id === "storage" || id === "__storage__") return "__storage__";
+  return id == null ? "" : String(id);
 }

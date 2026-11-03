@@ -19,6 +19,8 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import CountrySelect from "@/components/common/CountrySelect";
+import ManagerMultiSelect from "@/components/common/ManagerMultiSelect";
+import { normalizeManagerEmails, hasManager } from "@/lib/managerUtils";
 import ConfirmDialog from "@/components/common/ConfirmDialog";
 import TransitPoolCard from "@/components/transit/TransitPoolCard";
 import { getCountry } from "@/lib/countries";
@@ -46,7 +48,7 @@ console.log(isAdmin)
   // Location form state
   const [showLocForm, setShowLocForm] = useState(false);
   const [editingLoc, setEditingLoc] = useState(null);
-  const [locForm, setLocForm] = useState({ name: "", code_prefix: "", country: "", province: "", address: "", handling_fee: 0, handling_fee_currency: "JPY", manager_email: "", manager_contact: "", allow_storage: false, allow_pickup: false, description: "", is_active: true, is_default_official_pool: false, disabled_transit_method_ids: [], disabled_addon_ids: [] });
+  const [locForm, setLocForm] = useState({ name: "", code_prefix: "", country: "", province: "", address: "", handling_fee: 0, handling_fee_currency: "JPY", manager_email: [], manager_contact: "", allow_storage: false, allow_pickup: false, description: "", is_active: true, is_default_official_pool: false, disabled_transit_method_ids: [], disabled_addon_ids: [] });
   const [savingLoc, setSavingLoc] = useState(false);
   
   // Collapsed state for each location (default: all collapsed)
@@ -142,7 +144,7 @@ console.log(isAdmin)
     // setRequestsByLocation(r?.requestsByLocation || r?.poolsByLocation || {});
     setShowLocForm(false);
     setEditingLoc(null);
-    setLocForm({ name: "", code_prefix: "", country: "", province: "", address: "", handling_fee: 0, handling_fee_currency: "JPY", manager_email: "", manager_contact: "", allow_storage: false, allow_pickup: false, description: "", is_active: true, is_default_official_pool: false, disabled_transit_method_ids: [], disabled_addon_ids: [] });
+    setLocForm({ name: "", code_prefix: "", country: "", province: "", address: "", handling_fee: 0, handling_fee_currency: "JPY", manager_email: [], manager_contact: "", allow_storage: false, allow_pickup: false, description: "", is_active: true, is_default_official_pool: false, disabled_transit_method_ids: [], disabled_addon_ids: [] });
     setSavingLoc(false);
   };
 
@@ -152,7 +154,7 @@ console.log(isAdmin)
       name: loc.name, code_prefix: loc.code_prefix || "", country: loc.country || "", province: loc.province || "",
       address: loc.address || "", handling_fee: loc.handling_fee || 0,
       handling_fee_currency: loc.handling_fee_currency || "JPY",
-      manager_email: loc.manager_email || "", manager_contact: loc.manager_contact || "",
+      manager_email: normalizeManagerEmails(loc.manager_email), manager_contact: loc.manager_contact || "",
       allow_storage: loc.allow_storage || false,
       allow_pickup: loc.allow_pickup || false,
       disabled_transit_method_ids: (loc.disabled_transit_method_ids || []).map(String),
@@ -227,7 +229,7 @@ console.log(isAdmin)
             刷新数据
           </Button>
           {activeTab === "manage" && canManageTransitLocations && (
-            <Button size="sm" className="bg-red-600 hover:bg-red-700" onClick={() => { setEditingLoc(null); setLocForm({ name: "", code_prefix: "", country: "", province: "", address: "", handling_fee: 0, handling_fee_currency: "JPY", manager_email: "", manager_contact: "", allow_storage: false, allow_pickup: false, description: "", is_active: true, disabled_transit_method_ids: [], disabled_addon_ids: [] }); setShowLocForm(true); }}>
+            <Button size="sm" className="bg-red-600 hover:bg-red-700" onClick={() => { setEditingLoc(null); setLocForm({ name: "", code_prefix: "", country: "", province: "", address: "", handling_fee: 0, handling_fee_currency: "JPY", manager_email: [], manager_contact: "", allow_storage: false, allow_pickup: false, description: "", is_active: true, disabled_transit_method_ids: [], disabled_addon_ids: [] }); setShowLocForm(true); }}>
               <Plus className="w-3.5 h-3.5 mr-1.5" />添加中转地
             </Button>
           )}
@@ -274,10 +276,12 @@ console.log(isAdmin)
                         {loc.code_prefix && (
                           <Badge className="text-xs bg-purple-100 text-purple-700 font-mono">{loc.code_prefix}</Badge>
                         )}
-                        {loc.manager_email && (
-                          <span className="text-xs text-gray-400">负责人：{loc.manager_email}</span>
+                        {hasManager(loc) && (
+                          <span className="text-xs text-gray-400">
+                            负责人：{normalizeManagerEmails(loc.manager_email).map(e => allUsers.find(u => u.email === e)?.full_name || e).join("、")}
+                          </span>
                         )}
-                        {!loc.manager_email && (
+                        {!hasManager(loc) && (
                           <Badge className="text-xs bg-orange-100 text-orange-700">
                             <AlertCircle className="w-2.5 h-2.5 mr-1 inline" />未分配负责人
                           </Badge>
@@ -418,17 +422,13 @@ console.log(isAdmin)
                 </div>
               </div>
               <div>
-                  <Label className="text-xs text-gray-500">负责人（可选择任何用户）</Label>
-                  <Select value={locForm.manager_email} onValueChange={v => lf("manager_email", v)}>
-                    <SelectTrigger className="mt-1 h-8 text-sm"><SelectValue placeholder="选择用户..." /></SelectTrigger>
-                    <SelectContent>
-                      {allUsers.map(u => (
-                        <SelectItem key={u.id} value={u.email}>
-                          {u.full_name ? `${u.full_name} (${u.email})` : u.email}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <Label className="text-xs text-gray-500">负责人（可多选）</Label>
+                  <ManagerMultiSelect
+                    users={allUsers}
+                    value={locForm.manager_email}
+                    onChange={v => lf("manager_email", v)}
+                    placeholder="选择用户..."
+                  />
               </div>
               <div>
                 <Label className="text-xs text-gray-500">负责人联系方式（微信/Line/WhatsApp 等）</Label>
@@ -559,8 +559,8 @@ console.log(isAdmin)
           ) : (
             <div className="space-y-2">
               {[...locations].sort((a, b) => {
-                const aHasManager = !!a.manager_email;
-                const bHasManager = !!b.manager_email;
+                const aHasManager = hasManager(a);
+                const bHasManager = hasManager(b);
                 if (aHasManager === bHasManager) return 0;
                 return aHasManager ? 1 : -1;
               }).map(loc => (
@@ -585,7 +585,7 @@ console.log(isAdmin)
                       <Badge className={`text-xs ${loc.is_active ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500"}`}>
                         {loc.is_active ? "启用" : "停用"}
                       </Badge>
-                      {!loc.manager_email && (
+                      {!hasManager(loc) && (
                         <Badge className="text-xs bg-orange-100 text-orange-700 border-orange-200">
                           <AlertCircle className="w-2.5 h-2.5 mr-1 inline" />
                           未分配负责人
@@ -595,7 +595,7 @@ console.log(isAdmin)
                     <div className="flex flex-wrap gap-x-3 mt-0.5">
                       {loc.address && <p className="text-xs text-gray-500">{loc.address}</p>}
                       {loc.handling_fee > 0 && <p className="text-xs text-orange-500">手续费 {loc.handling_fee_currency || "JPY"} {loc.handling_fee}</p>}
-                      {loc.manager_email && <p className="text-xs text-gray-400">负责人：{allUsers.find(u => u.email === loc.manager_email)?.full_name || loc.manager_email}{loc.manager_contact ? ` · ${loc.manager_contact}` : ""}</p>}
+                      {hasManager(loc) && <p className="text-xs text-gray-400">负责人：{normalizeManagerEmails(loc.manager_email).map(e => allUsers.find(u => u.email === e)?.full_name || e).join("、")}{loc.manager_contact ? ` · ${loc.manager_contact}` : ""}</p>}
                     </div>
                     {loc.description && <p className="text-xs text-gray-400 mt-0.5">{loc.description}</p>}
                   </div>

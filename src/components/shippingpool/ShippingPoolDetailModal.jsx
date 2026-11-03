@@ -274,6 +274,8 @@ export default function ShippingPoolDetailModal({ pool: initialPool, isAdmin, cu
       const r = await base44.functions.invoke('shipping/getShippingPoolDetail', { id });
       const d = r?.data || {};
       if (d.pool) setPool(p => ({ ...p, ...d.pool }));
+      // transit_shipping is a sibling of pool in the response — attach it so fee calc can read pool.transit_shipping
+      if (d.transit_shipping) setPool(p => ({ ...p, transit_shipping: d.transit_shipping }));
       if (d?.orders) setOrders(d.orders);
       if (d?.transit_locations) setTransitLocations(d?.transit_locations);
       if (d.users && d.users.length > 0) {
@@ -985,6 +987,11 @@ export default function ShippingPoolDetailModal({ pool: initialPool, isAdmin, cu
       params.target_shipping_pool = { id: req.target_pool_id, pool_code: pool?.pool_code };
     }
 
+    if (action === 'reject') {
+      params.source_shipping_pool = { id: pool.id, pool_code: pool?.pool_code };
+      params.target_shipping_pool = null;
+    }
+
     await processEditRequest(action, action === 'approve' ? 'approveAddToPool' : 'rejectAddToPool', req, params);
   };
 
@@ -1048,9 +1055,13 @@ export default function ShippingPoolDetailModal({ pool: initialPool, isAdmin, cu
       const message = err?.response?.data?.message;
       console.error('[ShippingPoolDetailModal] Edit Request failed:', message);
       persistentToastError(message || "提交失败，请稍后重试");
+
+      return;
+    } finally {
+      setProcessingEditId(null);
     }
+
     setPendingEdits((prev) => prev.filter((r) => r.id !== req.id));
-    setProcessingEditId(null);
     await refreshPool();
   }
 
@@ -1230,9 +1241,22 @@ export default function ShippingPoolDetailModal({ pool: initialPool, isAdmin, cu
   const status = STATUS_CONFIG[pool.status] || STATUS_CONFIG.pending;
 
   // 发货后补付：池子已进入发货流程但运费未确认收款，用户仍可付款（付款只更新付款状态，不影响发货状态）
+  // 一个用户的付款记录算已付，需外层 payment_status 与 payment_method.payment_status 都为 "paid"
+  const isPaymentRecordPaid = (p) =>
+    p?.payment_status === "paid" && p?.payment_method?.payment_status === "paid";
+  // 全员已付清 = fee_breakdown_per_user 里每个用户都有 per_user_payments 记录且都已付（与管理端判定一致）
+  const allParticipantsPaid = () => {
+    const breakdowns = pool.fee_breakdown_per_user || [];
+    const payments = pool.per_user_payments || [];
+    if (breakdowns.length === 0) return false;
+    return breakdowns.every(b => {
+      const rec = payments.find(p => p.user_email === b.user_email);
+      return !!rec && isPaymentRecordPaid(rec);
+    });
+  };
   const feeNotified = (pool.fee_breakdown_per_user || []).length > 0 || (parseFloat(pool.shipping_fee_jpy) || 0) > 0;
   const postShipmentUnpaid = !isAdmin && ["ready_to_ship", "shipped", "delivered"].includes(pool.status) &&
-    pool.payment_status !== "paid" && feeNotified;
+    !allParticipantsPaid() && feeNotified;
 
   const formatDateOnly = (dateString) => {
     if (!dateString) return '';
@@ -2085,6 +2109,7 @@ export default function ShippingPoolDetailModal({ pool: initialPool, isAdmin, cu
           }
 
           {!isAdmin && <TransitShippedPanel orders={orders} currentUser={currentUser} onUpdated={onUpdated} />}
+          {/* 包裹已发货：展示运单号/查物流；确认收货按钮中转地发货（transit）时收货走 TransitShippedPanel，这里隐藏 */}
           {!isAdmin && pool.status === "shipped" && (
             <div className="border border-green-200 rounded-xl overflow-hidden">
               <div className="bg-green-50 px-4 py-2.5 border-b border-green-200 flex items-center gap-2">
@@ -2117,13 +2142,15 @@ export default function ShippingPoolDetailModal({ pool: initialPool, isAdmin, cu
                 ) : (
                   <p className="text-xs text-gray-400">运单号待管理员填写</p>
                 )}
-                <Button
-                  className="w-full bg-emerald-600 hover:bg-emerald-700"
-                  onClick={() => setShowConfirmDeliveryDialog(true)}
-                  disabled={confirmingDelivery}>
-                  <CheckCircle className="w-4 h-4 mr-2" />
-                  {confirmingDelivery ? "确认中..." : "确认收货"}
-                </Button>
+                {pool.consolidation_type !== "transit" && (
+                  <Button
+                    className="w-full bg-emerald-600 hover:bg-emerald-700"
+                    onClick={() => setShowConfirmDeliveryDialog(true)}
+                    disabled={confirmingDelivery}>
+                    <CheckCircle className="w-4 h-4 mr-2" />
+                    {confirmingDelivery ? "确认中..." : "确认收货"}
+                  </Button>
+                )}
               </div>
             </div>
           )}

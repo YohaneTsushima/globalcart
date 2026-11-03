@@ -101,7 +101,8 @@ function DeadlineToken({ value, onChange }) {
 
 function TransitMethodSection({ consType, selectedTransitId, transitLocations, transitMethods, selectedTransitMethodId, setSelectedTransitMethodId }) {
   if (consType !== "transit") return null;
-  const selectedLoc = transitLocations.find(l => l.id === selectedTransitId);
+  // id may be string or number depending on source (user click vs pool data) — compare loosely
+  const selectedLoc = transitLocations.find(l => String(l.id) === String(selectedTransitId));
   const disabledMethodIds = selectedLoc?.disabled_transit_method_ids || [];
   const visibleMethods = transitMethods.filter(m => !disabledMethodIds.some(id => String(id) === String(m.id)));
   const allowPickup = selectedLoc?.allow_pickup;
@@ -155,7 +156,7 @@ function TransitAddonSection({ consType, selectedTransitId, transitLocations, sh
   const [open, setOpen] = useState(false);
   // When consType is "transit", filter out addons disabled by the selected transit location
   const disabledAddonIds = consType === "transit"
-    ? (transitLocations.find(l => l.id === selectedTransitId)?.disabled_addon_ids || [])
+    ? (transitLocations.find(l => String(l.id) === String(selectedTransitId))?.disabled_addon_ids || [])
     : [];
   const visibleAddons = shippingAddons.filter(a => !disabledAddonIds.some(id => String(id) === String(a.id)));
   // Show addons for all shipping types (not just transit)
@@ -529,14 +530,19 @@ export default function UserNotifyShipmentModal({ order, orders, initialData, on
 
   // Read-only values derived from the target pool (joining must never use the user's own form state)
   const joinDeadline = selectedPool?.consolidation_deadline || selectedPool?.scheduled_ship_date || "";
-  const joinTransitMethodId = selectedPool?.transit_shipping_method_id || "";
+  const joinTransitMethodId = normalizeId(selectedPool?.transit_shipping_method_id) || "";
   const joinTransitMethodName =
     selectedPool?.transit_shipping_method_name ||
     METHOD_LABELS[joinTransitMethodId] ||
     transitMethods.find(m => m.id === joinTransitMethodId)?.name || "";
+
+  // Pickup/storage is now decided by the user's own transit method choice (selectable
+  // even when joining a pool), so the final-address requirement follows the user, not the pool.
+  const effectiveIsPickupStorage = isPickupStorageSelected;
+
   const joinTransitLocationName =
     selectedPool?.transit_location_name ||
-    transitLocations.find(l => l.id === selectedPool?.transit_location_id)?.name || "";
+    transitLocations.find(l => String(l.id) === String(selectedPool?.transit_location_id))?.name || "";
   const joinShippingMethodName =
     shippingMethods.find(m => m.code === selectedPool?.shipping_method)?.name ||
     selectedPool?.shipping_method || "";
@@ -565,6 +571,14 @@ export default function UserNotifyShipmentModal({ order, orders, initialData, on
     service_name: a.service_name || shippingAddons.find(x => String(x.id) === String(a.id))?.service_name || "",
   }));
 
+  // When joining a pool, default the transit method to the pool's creator-chosen method
+  // (the user can still change it to their own preference). Reset when switching pools.
+  useEffect(() => {
+    if (isJoiningPool && joinTransitMethodId) {
+      setSelectedTransitMethodId(prev => (prev ? prev : joinTransitMethodId));
+    }
+  }, [isJoiningPool, joinTransitMethodId]);
+
   const filteredPools = existingPools.filter(p => {
     if (!poolSearchQuery) return true;
     const q = poolSearchQuery.toLowerCase();
@@ -586,7 +600,8 @@ export default function UserNotifyShipmentModal({ order, orders, initialData, on
   const handleSubmit = async () => {
     if (isJoiningPool) {
       if (!selectedPoolId) return;
-      if (!isPickupStorageSelected && !isAddressSlotOk("final")) return;
+      if (selectedPool?.consolidation_type === "transit" && !selectedTransitMethodId) return;
+      if (!effectiveIsPickupStorage && !isAddressSlotOk("final")) return;
     } else {
       if (!method) return;
       if (consType === "transit" && !selectedTransitId) return;
@@ -627,7 +642,7 @@ export default function UserNotifyShipmentModal({ order, orders, initialData, on
     if (isJoiningPool) {
       setSubmitting(true);
 
-      const joinAddrObj = !isPickupStorageSelected ? getEffectiveAddr("final") : null;
+      const joinAddrObj = !effectiveIsPickupStorage ? getEffectiveAddr("final") : null;
       const finalAddress = joinAddrObj ? {
         id: joinAddrObj.id,
         recipient_name: joinAddrObj.recipient_name || '',
@@ -641,6 +656,12 @@ export default function UserNotifyShipmentModal({ order, orders, initialData, on
         label: joinAddrObj.label || '',
       } : null;
 
+      // The joining user's own transit method choice — written to the order-level
+      // consolidation_transit_shipping_id field so each member can differ from the creator.
+      const userTransitMethodName =
+        METHOD_LABELS[normalizedTransitMethodId] ||
+        transitMethods.find(m => m.id === selectedTransitMethodId)?.name || '';
+
       try {
         await base44.functions.invoke('shipping/joinShippingPool', {
           id: selectedPoolId,
@@ -649,15 +670,19 @@ export default function UserNotifyShipmentModal({ order, orders, initialData, on
             order_number: order.order_number,
             pool_code: selectedPool.pool_code,
             target_pool_id: selectedPoolId,
-            address_id: finalAddress.id,
+            address_id: finalAddress?.id ?? null,
+            transit_shipping_method_id: normalizedTransitMethodId,
+            transit_shipping_method_name: userTransitMethodName,
+            consolidation_transit_shipping_id: normalizedTransitMethodId,
+            consolidation_transit_shipping_name: userTransitMethodName,
           }
-          
+
         });
         toast.success('已加入拼邮需求');
         onSuccess?.();
       } catch (err) {
-        const message = err?.response?.data?.message;
-        console.error('[UserNotifyShipmentModal] joinShippingPool failed:', message);
+        const message = err?.response?.data?.message || err?.message;
+        console.error('[UserNotifyShipmentModal] joinShippingPool failed:', err);
         toast.error(message || '加入失败，请稍后重试');
         setSubmitting(false);
       }
@@ -729,7 +754,7 @@ export default function UserNotifyShipmentModal({ order, orders, initialData, on
     const effectiveJoinExisting = isJoiningPool || (joinDirectPool && !!selectedDirectPoolId);
 
     // Resolve transit location name + country for new pool creation
-    const transitLoc = transitLocations.find(l => l.id === selectedTransitId);
+    const transitLoc = transitLocations.find(l => String(l.id) === String(selectedTransitId));
     const selectedShippingMethod = shippingMethods.find(m => m.code === method);
 
     // Build the standard shipment payload
@@ -914,7 +939,7 @@ export default function UserNotifyShipmentModal({ order, orders, initialData, on
                   </div>
                   {isJoiningPool && (
                     <p className="text-xs text-blue-600 bg-blue-50 border border-blue-100 rounded-lg px-3 py-2">
-                      ℹ️ 加入后，发货期限、运输方式、中转方式、增值服务、拼邮策略均以该拼邮需求为准，不可修改。
+                      ℹ️ 加入后，发货期限、运输方式、增值服务、拼邮策略均以该拼邮需求为准，不可修改；中转段运输方式与最终收货地址可自行选择。
                     </p>
                   )}
                 </div>
@@ -1013,8 +1038,8 @@ export default function UserNotifyShipmentModal({ order, orders, initialData, on
                   {transitLocations.length === 0 ? (
                     <p className="text-xs text-gray-400">暂无可用中转地，请联系管理员</p>
                   ) : transitLocations.map(l => (
-                    <label key={l.id} className={`flex items-start gap-3 p-2.5 rounded-lg border cursor-pointer transition-colors ${selectedTransitId === l.id ? "border-blue-400 bg-blue-50" : "border-gray-200 bg-white hover:bg-gray-50"} ${joinExistingPool ? "opacity-50 pointer-events-none" : ""}`}>
-                      <input type="radio" checked={selectedTransitId === l.id} onChange={() => { setSelectedTransitId(l.id); setSelectedTransitMethodId(""); setSelectedAddonIds([]); }} className="mt-0.5 accent-blue-600" disabled={joinExistingPool} />
+                    <label key={l.id} className={`flex items-start gap-3 p-2.5 rounded-lg border cursor-pointer transition-colors ${String(selectedTransitId) === String(l.id) ? "border-blue-400 bg-blue-50" : "border-gray-200 bg-white hover:bg-gray-50"} ${joinExistingPool ? "opacity-50 pointer-events-none" : ""}`}>
+                      <input type="radio" checked={String(selectedTransitId) === String(l.id)} onChange={() => { setSelectedTransitId(l.id); setSelectedTransitMethodId(""); setSelectedAddonIds([]); }} className="mt-0.5 accent-blue-600" disabled={joinExistingPool} />
                       <div className="flex-1">
                         <p className="text-sm font-medium text-gray-800">{l.name}</p>
                         <p className="text-xs text-gray-400">
@@ -1175,11 +1200,11 @@ export default function UserNotifyShipmentModal({ order, orders, initialData, on
             </div>
           )}
 
-          {/* Joining existing pool: read-only pool config and address */}
+          {/* Joining existing pool: read-only pool config and user's own address */}
           {isJoiningPool && (
             <div className="space-y-3">
-              {/* 当前用户的最终收货地址 */}
-              <div className={isPickupStorageSelected ? "opacity-50 pointer-events-none grayscale" : ""}>
+              {/* 当前用户的最终收货地址 —— 加入者选择自己的地址（自取/暂存不需要） */}
+              <div className={effectiveIsPickupStorage ? "opacity-50 pointer-events-none grayscale" : ""}>
                 <AddressBlock
                   slot="final"
                   label="最终收货地址"
@@ -1191,21 +1216,18 @@ export default function UserNotifyShipmentModal({ order, orders, initialData, on
                   onSelect={(v) => handleAddressSelect(v, "final")}
                   onNewAddressChange={setNewAddress}
                   onSaveToggle={setSaveNewAddress}
-                  error={!isPickupStorageSelected && !isAddressSlotOk("final")}
+                  error={!effectiveIsPickupStorage && !isAddressSlotOk("final")}
                 />
               </div>
               <div className="bg-purple-50 border border-purple-100 rounded-xl p-4 space-y-2">
                 <p className="text-xs text-purple-600 font-medium uppercase tracking-wide">
-                  🔒 {selectedPool?.pool_code} · 加入后配置不可修改
+                  🔒 {selectedPool?.pool_code} · 以下配置以拼邮需求为准
                 </p>
                 <div className="text-sm text-gray-700 space-y-1">
                   <p>发货期限：<span className="font-medium">{joinDeadline || "任何时候"}</span></p>
                   <p>运输方式：<span className="font-medium">{joinShippingMethodName || "未指定"}</span></p>
                   {selectedPool?.consolidation_type === "transit" && (
-                    <>
-                      <p>中转地：<span className="font-medium">{joinTransitLocationName || "未指定"}</span></p>
-                      <p>中转段：<span className="font-medium">{joinTransitMethodName || "未指定"}</span></p>
-                    </>
+                    <p>中转地：<span className="font-medium">{joinTransitLocationName || "未指定"}</span></p>
                   )}
                 </div>
               </div>
@@ -1276,10 +1298,10 @@ export default function UserNotifyShipmentModal({ order, orders, initialData, on
             />
           )}
 
-          {consType === "transit" && !joinExistingPool && (
+          {consType === "transit" && (
             <TransitMethodSection
               consType="transit"
-              selectedTransitId={selectedTransitId}
+              selectedTransitId={isJoiningPool ? (selectedPool?.transit_location_id || selectedTransitId) : selectedTransitId}
               transitLocations={transitLocations}
               transitMethods={transitMethods}
               selectedTransitMethodId={selectedTransitMethodId}
@@ -1329,7 +1351,8 @@ export default function UserNotifyShipmentModal({ order, orders, initialData, on
           const missing = [];
           const isPickupStorageSelected = selectedTransitMethodId === '__pickup__' || selectedTransitMethodId === '__storage__';
           if (!method && !joinDirectPool && !joinExistingPool) missing.push("发货方式");
-          if (joinExistingPool && isJoiningPool && !isPickupStorageSelected && !isAddressSlotOk("final")) {
+          if (joinExistingPool && isJoiningPool && selectedPool?.consolidation_type === "transit" && !selectedTransitMethodId) missing.push("中转段运输方式");
+          if (joinExistingPool && isJoiningPool && !effectiveIsPickupStorage && !isAddressSlotOk("final")) {
             const inNew = !!addressInputMode["final"] || savedAddresses.length === 0;
             if (inNew) {
               if (!newAddress.recipient_name?.trim()) missing.push("最终收货地址：受取人お名前");
@@ -1414,6 +1437,8 @@ export default function UserNotifyShipmentModal({ order, orders, initialData, on
                 (!joinExistingPool && consType === "" && !joinDirectPool && !isAddressSlotOk("direct")) ||
                 (!joinExistingPool && consType === "other" && !isAddressSlotOk("other")) ||
                (joinExistingPool && !selectedPoolId) ||
+               (isJoiningPool && selectedPool?.consolidation_type === "transit" && !selectedTransitMethodId) ||
+               (isJoiningPool && !effectiveIsPickupStorage && !isAddressSlotOk("final")) ||
                (joinDirectPool && !selectedDirectPoolId)
              }
            >
@@ -1428,7 +1453,7 @@ export default function UserNotifyShipmentModal({ order, orders, initialData, on
       onOpenChange={setShowConfirm}
       title={isJoiningPool ? "确认加入拼邮需求" : "确认通知发货"}
       description={isJoiningPool
-        ? `加入后，发货期限、运输方式、中转方式、增值服务、拼邮策略均以 ${selectedPool?.pool_code || "该拼邮需求"} 为准，确定继续吗？`
+        ? `加入后，发货期限、运输方式、增值服务、拼邮策略均以 ${selectedPool?.pool_code || "该拼邮需求"} 为准，不可修改；中转段运输方式与最终收货地址可自行选择。确定继续吗？`
         : "确定要通知发货吗？提交后将通知仓库处理您的订单。"}
       confirmText={isJoiningPool ? "确认加入" : "确认通知"}
       cancelText="取消"
