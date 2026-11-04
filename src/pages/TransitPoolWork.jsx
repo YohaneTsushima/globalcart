@@ -125,10 +125,11 @@ function buildUserGroupList(entries, request) {
 
 // ─── Batch list item ──────────────────────────────────────────────────────────
 function BatchListItem({ batch, selected, onClick }) {
-  const methodId = normalizeMethodId(batch.transit_shipping_method_id);
-  const isStorage = methodId === '__storage__';
-  const isPickup = methodId === '__pickup__';
-  const methodName = isStorage ? '暂存' : isPickup ? '自取' : (batch.transit_shipping_method || '中转发货');
+  // 后端 transit_shipping_method 字段值是 "__pickup__" / "__storage__" / 具体快递名（如"顺丰速运"）
+  const methodStr = batch.transit_shipping_method || '';
+  const isStorage = methodStr === '__storage__';
+  const isPickup = methodStr === '__pickup__';
+  const methodName = isStorage ? '暂存' : isPickup ? '自取' : (methodStr || '中转发货');
 
   return (
     <button

@@ -805,7 +805,8 @@ export default function AdminOrders() {
                                 已下单
                               </Button>
                         )}
-                        {order.order_status === "purchased" && order.pre_shipment && (
+                        {/* [隐藏预出货] 暂时用 false && 短路隐藏，未删除，恢复时去掉 false && 即可 */}
+                        {false && order.order_status === "purchased" && order.pre_shipment && (
                           <PreShipmentBadge preShipment={order.pre_shipment} />
                         )}
                         {order.order_status === "purchased" && canWarehouseIn && (
@@ -830,7 +831,7 @@ export default function AdminOrders() {
                           const pool = getOrderPool(order);
                           if (!pool) return null;
                           if (order.order_status === "shipping_fee_pending") return null; // already shown above
-                          if (!["notified_shipment", "ready_to_ship", "notified_shipment_fee_paid", "notified_shipment_fee_pending", "shipped"].includes(order.order_status)) return null;
+                          if (!["notified_shipment", "ready_to_ship", "notified_shipment_fee_paid", "notified_shipment_fee_pending", "shipped", "transited", "transit_shipped", "transit_forwarded", "transit_arrived", "delivered"].includes(order.order_status)) return null;
                           const isConsolidation = pool.consolidation_type && pool.consolidation_type !== "";
                           const isOfficialPool = pool.is_admin_created === true;
                           const poolHasPendingEdit = pendingEditRequests.some(r => String(r.target_pool_id) === String(pool.id));

@@ -3,13 +3,16 @@
  * 根据批次类型（普通运输 / 暂存 / 自取）显示不同内容
  */
 import { useState, useEffect, memo } from "react";
-import { X, MapPin, Truck, Star, Package, Save, Image as ImageIcon, CheckCircle, Calendar, Info, Eye, Loader2 } from "lucide-react";
+import { X, MapPin, Truck, Star, Package, Save, Image as ImageIcon, CheckCircle, Calendar, CalendarDays, Info, Eye, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
+import { Calendar as CalendarPicker } from "@/components/ui/calendar";
+import { format } from "date-fns";
 import { base44 } from "@/api/base44Client";
 import { getCountry } from "@/lib/countries";
 import AdminOrderEditModal from "@/components/admin/AdminOrderEditModal";
@@ -252,13 +255,21 @@ function TransitShippingPanel({ batch, pool, transitMethods, isManager, onSaved,
           {transitMethods.length > 0 ? (
             <select
               className="mt-1 w-full border rounded-lg px-2 py-1.5 text-sm bg-white disabled:opacity-60 disabled:cursor-not-allowed"
-              value={formData.transit_shipping_method}
+              value={formData.transit_shipping_method_id ?? ""}
               disabled={recordShipped}
-              onChange={e => setFormData(p => ({ ...p, transit_shipping_method: e.target.value }))}
+              onChange={e => {
+                const id = e.target.value ? Number(e.target.value) : null;
+                const m = transitMethods.find(mm => mm.id === id);
+                setFormData(p => ({
+                  ...p,
+                  transit_shipping_method_id: id,
+                  transit_shipping_method: m?.name || ''
+                }));
+              }}
             >
               <option value="">请选择</option>
               {transitMethods.map(m => (
-                <option key={m.id} value={m.name}>{m.name}</option>
+                <option key={m.id} value={m.id}>{m.name}</option>
               ))}
             </select>
           ) : (
@@ -399,9 +410,26 @@ function StorageBatchPanel({ batch, pool, isManager, onSaved }) {
 }
 
 // ─── 自取面板 ────────────────────────────────────────────────────────────────
-function PickupBatchPanel({ batch, pool, isManager, onSaved }) {
-  const [timeSlot, setTimeSlot] = useState('');
+const PICKUP_TIME_SLOTS = [
+  '09:00-11:00',
+  '11:00-13:00',
+  '13:00-15:00',
+  '14:00-16:00',
+  '15:00-17:00',
+  '17:00-19:00',
+];
+
+function PickupBatchPanel({ batch, pool, isManager, onSaved, detail }) {
+  const [pickupDate, setPickupDate] = useState('');       // "2026-06-15"
+  const [pickupTimeRange, setPickupTimeRange] = useState(''); // "14:00-16:00"
   const [saving, setSaving] = useState(false);
+  const timeSlot = pickupDate && pickupTimeRange ? `${pickupDate} ${pickupTimeRange}` : '';
+
+  // 优先用 findOne detail（batch 级别），回退 pool 级别字段
+  const pickupTimeSlot = detail?.transit_pickup_time_slot ?? pool?.transit_pickup_time_slot ?? '';
+  const pickupUserConfirmed = detail?.transit_pickup_user_confirmed ?? pool?.transit_pickup_user_confirmed ?? false;
+  const pickupAdminConfirmed = detail?.transit_pickup_admin_confirmed ?? pool?.transit_pickup_admin_confirmed ?? false;
+  const pickupCompleted = detail?.transit_pickup_completed ?? pool?.transit_pickup_completed ?? false;
 
   const handleConfirmPickup = async () => {
     setSaving(true);
@@ -440,16 +468,16 @@ function PickupBatchPanel({ batch, pool, isManager, onSaved }) {
       {/* Self-pickup management */}
       <div className="space-y-3 border-t pt-4">
         <p className="text-sm font-semibold text-gray-700">自取管理</p>
-        {pool.transit_pickup_time_slot ? (
+        {pickupTimeSlot ? (
           <div className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm">
             <p className="text-xs text-gray-500">约定自取时间段</p>
-            <p className="font-medium text-gray-800 mt-0.5">{pool.transit_pickup_time_slot}</p>
+            <p className="font-medium text-gray-800 mt-0.5">{pickupTimeSlot}</p>
             <div className="flex gap-2 mt-2">
-              <Badge className={pool.transit_pickup_user_confirmed ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-500'}>
-                用户{pool.transit_pickup_user_confirmed ? '已确认' : '未确认'}
+              <Badge className={pickupUserConfirmed ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-500'}>
+                用户{pickupUserConfirmed ? '已确认' : '未确认'}
               </Badge>
-              <Badge className={pool.transit_pickup_admin_confirmed ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}>
-                管理员{pool.transit_pickup_admin_confirmed ? '已确认' : '未确认'}
+              <Badge className={pickupAdminConfirmed ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}>
+                管理员{pickupAdminConfirmed ? '已确认' : '未确认'}
               </Badge>
             </div>
           </div>
@@ -457,8 +485,43 @@ function PickupBatchPanel({ batch, pool, isManager, onSaved }) {
           <div className="space-y-2">
             <Label className="text-xs text-gray-500">约定自取时间段</Label>
             <div className="flex gap-2">
-              <Input className="flex-1 text-sm" placeholder="例：2026-06-15 14:00-16:00"
-                value={timeSlot} onChange={e => setTimeSlot(e.target.value)} />
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" className="flex-1 justify-start text-left font-normal text-sm">
+                    <CalendarDays className="w-3.5 h-3.5 mr-1.5" />
+                    {timeSlot || '选择日期和时间段'}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <CalendarPicker
+                    mode="single"
+                    selected={pickupDate ? new Date(pickupDate) : undefined}
+                    onSelect={(d) => setPickupDate(d ? format(d, 'yyyy-MM-dd') : '')}
+                    initialFocus
+                  />
+                  <div className="border-t p-2 space-y-1.5">
+                    <p className="text-xs text-gray-500 px-1">时间段</p>
+                    <div className="grid grid-cols-2 gap-1.5">
+                      {PICKUP_TIME_SLOTS.map(slot => (
+                        <button
+                          key={slot}
+                          type="button"
+                          onClick={() => setPickupTimeRange(slot)}
+                          className={`px-2 py-1.5 text-xs rounded-md border transition-colors ${
+                            pickupTimeRange === slot
+                              ? 'border-indigo-400 bg-indigo-50 text-indigo-700'
+                              : 'border-gray-200 text-gray-600 hover:border-gray-300 hover:bg-gray-50'
+                          }`}
+                        >
+                          {slot}
+                        </button>
+                      ))}
+                    </div>
+                    <Input className="text-xs" placeholder="自定义，如 14:00-16:00"
+                      value={pickupTimeRange} onChange={e => setPickupTimeRange(e.target.value)} />
+                  </div>
+                </PopoverContent>
+              </Popover>
               <Button onClick={handleConfirmPickup} disabled={saving || !timeSlot} className="shrink-0">
                 {saving ? '...' : '约定'}
               </Button>
@@ -468,13 +531,13 @@ function PickupBatchPanel({ batch, pool, isManager, onSaved }) {
           <p className="text-xs text-gray-400">等待中转地负责人约定自取时间</p>
         )}
 
-        {pool.transit_pickup_completed && (
+        {pickupCompleted && (
           <div className="flex items-center gap-2 text-sm text-green-600 bg-green-50 border border-green-100 rounded-lg px-3 py-2">
             <CheckCircle className="w-4 h-4" />自取已完成
           </div>
         )}
 
-        {isManager && pool.transit_pickup_time_slot && !pool.transit_pickup_completed && pool.transit_pickup_user_confirmed && pool.transit_pickup_admin_confirmed && (
+        {isManager && pickupTimeSlot && !pickupCompleted && pickupUserConfirmed && pickupAdminConfirmed && (
           <Button className="w-full bg-green-600 hover:bg-green-700" onClick={async () => {
             setSaving(true);
             try {
@@ -538,7 +601,7 @@ export default function BatchDetailPanel({ batch, pool, transitMethods, isManage
   }
 
   const normalizeId = id => id === 'pickup' ? '__pickup__' : id === 'storage' ? '__storage__' : (id || '');
-  const methodId = normalizeId(batch.transit_shipping_method_id);
+  const methodId = normalizeId(batch.transit_shipping_method_id || batch.transit_shipping_method);
   const isStorage = methodId === '__storage__';
   const isPickup = methodId === '__pickup__';
 
@@ -630,7 +693,7 @@ export default function BatchDetailPanel({ batch, pool, transitMethods, isManage
         {isStorage ? (
           <StorageBatchPanel batch={batch} pool={pool} isManager={isManager} onSaved={onSaved} />
         ) : isPickup ? (
-          <PickupBatchPanel batch={batch} pool={pool} isManager={isManager} onSaved={onSaved} />
+          <PickupBatchPanel batch={batch} pool={pool} isManager={isManager} onSaved={onSaved} detail={detail} />
         ) : (
           <MemoizedTransitShippingPanel batch={batch} pool={pool} transitMethods={transitMethods} isManager={isManager} onSaved={onSaved} detail={detail} />
         )}

@@ -32,6 +32,7 @@ import AdminNavbarSettings from '@/pages/AdminNavbarSettings';
 import MemberTiers from '@/pages/MemberTiers';
 import HelpCenter from '@/pages/HelpCenter';
 import HelpCenterFaq from '@/pages/HelpCenterFaq';
+import TrackingQuery from '@/pages/TrackingQuery';
 import AdminFaq from '@/pages/AdminFaq';
 import UserTodo from '@/pages/UserTodo';
 import SubmitTicketOrder from '@/pages/SubmitTicketOrder';
@@ -168,6 +169,8 @@ const AuthenticatedApp = () => {
           <AdminFeeRules />
         </LayoutWrapper>
       } />
+      {/* 物流查询页（公开访问，无 locale 前缀） */}
+      <Route path="/:locale/TrackingQuery" element={<LayoutWrapper currentPageName="TrackingQuery"><TrackingQuery /></LayoutWrapper>} />
       {/* ===== 需要登录才能访问的路由 ===== */}
       <Route element={<ProtectedRoute />}>
         <Route path="/:locale/SubmitOrder" element={<LayoutWrapper currentPageName="SubmitOrder"><SubmitOrder /></LayoutWrapper>} />

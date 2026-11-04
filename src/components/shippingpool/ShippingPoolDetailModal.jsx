@@ -1350,24 +1350,6 @@ export default function ShippingPoolDetailModal({ pool: initialPool, isAdmin, cu
             }
            </div>
 
-           {/* Destination address */}
-           {(pool.recipient_name || pool.address_line1 || pool.city || pool.country) &&
-          <div className="bg-blue-50 border border-blue-100 rounded-lg px-3 py-2.5 hidden">
-               <p className="text-xs text-blue-600 font-medium mb-1">发货目的地</p>
-               <div className="text-sm text-blue-800 space-y-0.5">
-                 {pool.recipient_name && <p className="font-medium">{pool.recipient_name}</p>}
-                 {pool.recipient_phone && <p className="text-xs">{pool.recipient_phone}</p>}
-                 <p className="whitespace-pre-wrap">
-                   {pool.address_line1}{pool.address_line2 ? ` ${pool.address_line2}` : ""}<br />
-                   {pool.city && `${pool.city} `}
-                   {pool.state && `${pool.state} `}
-                   {pool.postal_code && `${pool.postal_code}`}<br />
-                   {pool.country}
-                 </p>
-               </div>
-             </div>
-          }
-
           {/* Selected shipping addons */}
           {((pool.selected_addons || []).length > 0 || (pool.selected_addon_ids || []).length > 0) &&
           <div className="bg-yellow-50 border border-yellow-100 rounded-lg px-3 py-2.5">
@@ -2042,6 +2024,113 @@ export default function ShippingPoolDetailModal({ pool: initialPool, isAdmin, cu
               </div>
             </div>
           }
+
+          {/* Destination / transit address block */}
+          {(() => {
+            const isTransit = pool.consolidation_type === "transit";
+
+            // Shared renderer for the blue address card
+            const AddressCard = ({ title, children }) => (
+              <div className="bg-blue-50 border border-blue-100 rounded-lg px-3 py-2.5">
+                <p className="text-xs text-blue-600 font-medium mb-1">{title}</p>
+                <div className="text-sm text-blue-800 space-y-0.5">{children}</div>
+              </div>
+            );
+
+            // Render a transit_shipping final_address object ({recipient_name, phone, addr1/2/3, state, country, postal_code})
+            const renderFinalAddress = (addr) => (
+              <>
+                {addr.recipient_name && <p className="font-medium">{addr.recipient_name}</p>}
+                {addr.phone && <p className="text-xs">{addr.phone}</p>}
+                <p className="whitespace-pre-wrap">
+                  {[addr.addr1, addr.addr2, addr.addr3].filter(Boolean).join(" ")}<br />
+                  {addr.state && `${addr.state} `}
+                  {addr.postal_code && `${addr.postal_code}`}<br />
+                  {addr.country}
+                </p>
+              </>
+            );
+
+            if (isTransit) {
+              const transitLoc = (tranLocations || []).find(
+                l => String(l.id) === String(pool.transit_location_id)
+              ) || (tranLocations || []).find(l => l.name === pool.transit_location_name);
+              const hasTransitAddr = pool.transit_location_name || (transitLoc && (transitLoc.address || transitLoc.province || transitLoc.country));
+
+              // 按当前用户（管理员看全部）过滤 transit_shipping 记录
+              const visibleTransitRecords = (pool.transit_shipping || []).filter(t => t && (isAdmin || (currentUser?.email && t.user_email === currentUser.email)));
+
+              // 每条记录按自己的 transit_shipping_method 判断类型
+              const isPickupOrStorageMethod = (m) => m === '__pickup__' || m === 'pickup' || m === '__storage__' || m === 'storage';
+              const isStorageMethodOf = (m) => m === '__storage__' || m === 'storage';
+              // 普通快递记录：有 final_address 的显示"最终收货地址"
+              const transitRecords = visibleTransitRecords.filter(t => t.final_address && t.final_address.recipient_name);
+              // 自取/暂存记录：transit_shipping_method 是 pickup/storage
+              const pickupStorageRecords = visibleTransitRecords.filter(t => isPickupOrStorageMethod(t.transit_shipping_method));
+
+              if (!hasTransitAddr && transitRecords.length === 0 && pickupStorageRecords.length === 0) return null;
+              return (
+                <div className="space-y-2">
+                  {hasTransitAddr && (
+                    <AddressCard title="中转地收货地址">
+                      {pool.transit_location_name && <p className="font-medium">{pool.transit_location_name}</p>}
+                      {transitLoc && (
+                        <p className="whitespace-pre-wrap">
+                          {[transitLoc.address, transitLoc.province].filter(Boolean).join(" ")}
+                          {transitLoc.country ? `\n${transitLoc.country}` : ""}
+                        </p>
+                      )}
+                    </AddressCard>
+                  )}
+                  {pickupStorageRecords.map((t, i) => {
+                    const isStorage = isStorageMethodOf(t.transit_shipping_method);
+                    const label = isStorage ? '暂存' : '自取';
+                    const hasSlot = !!t.transit_pickup_time_slot;
+                    // 管理员始终带用户名；普通用户只看自己那条，多条才带
+                    const suffix = (isAdmin || pickupStorageRecords.length > 1) ? ` · ${t.user_name || t.user_email || `用户${i + 1}`}` : '';
+                    return (
+                      <div key={t.id || i} className="bg-blue-50 border border-blue-100 rounded-lg px-3 py-2.5">
+                        <p className="text-xs text-blue-900 font-semibold mb-1">{label}{suffix}</p>
+                        {isStorage ? null
+                          : hasSlot ? <p className="text-sm text-blue-900">约定自取时间：{t.transit_pickup_time_slot}</p>
+                          : pool.status === 'transit_arrived' ? <p className="text-sm text-blue-900">等待中转地负责人约定自取时间</p>
+                          : null}
+                      </div>
+                    );
+                  })}
+                  {transitRecords.map((t, i) => {
+                    const suffix = (isAdmin || transitRecords.length > 1) ? ` · ${t.user_name || t.user_email || `用户${i + 1}`}` : '';
+                    return (
+                      <AddressCard key={t.id || i} title={`最终收货地址${suffix}`}>
+                        {t.transit_shipping_method && (
+                          <p className="text-xs text-blue-700">发货方式：{t.transit_shipping_method}</p>
+                        )}
+                        {renderFinalAddress(t.final_address)}
+                      </AddressCard>
+                    );
+                  })}
+                </div>
+              );
+            }
+
+            // Non-transit: show pool-level recipient address
+            const hasAddr = pool.recipient_name || pool.address_line1 || pool.city || pool.state || pool.country;
+            if (!hasAddr) return null;
+            return (
+              <AddressCard title="收货地址">
+                {pool.recipient_name && <p className="font-medium">{pool.recipient_name}</p>}
+                {pool.recipient_phone && <p className="text-xs">{pool.recipient_phone}</p>}
+                <p className="whitespace-pre-wrap">
+                  {pool.address_line1}{pool.address_line2 ? ` ${pool.address_line2}` : ""}
+                  {pool.address_line3 ? ` ${pool.address_line3}` : ""}<br />
+                  {pool.city && `${pool.city} `}
+                  {pool.state && `${pool.state} `}
+                  {pool.postal_code && `${pool.postal_code}`}<br />
+                  {pool.country}
+                </p>
+              </AddressCard>
+            );
+          })()}
 
           {/* Participants */}
           {participantUsers.length > 0 &&

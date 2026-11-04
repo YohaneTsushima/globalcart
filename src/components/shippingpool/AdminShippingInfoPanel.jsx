@@ -808,7 +808,9 @@ export default function AdminShippingInfoPanel({
           {pool.payment_status !== "paid" && ((pool.fee_breakdown_per_user || []).length > 0 || (parseFloat(pool.shipping_fee_jpy) || 0) > 0) && (
             <div className="bg-orange-50 border border-orange-200 rounded-lg p-3 space-y-2">
               <p className="text-xs text-orange-700 font-medium">
-                ⚠️ 此发货池为未付款发货，运费尚未确认收款（应收合计 ¥{savedGrandTotalJpy.toLocaleString()} JPY）。
+                {allParticipantsPaid()
+                  ? `⚠️ 此发货池运费已收齐（合计 ¥${savedGrandTotalJpy.toLocaleString()} JPY）。`
+                  : `⚠️ 此发货池为未付款发货，运费尚未确认收款（应收合计 ¥${savedGrandTotalJpy.toLocaleString()} JPY）。`}
               </p>
               {pool.payment_status === "awaiting_confirmation" && (
                 <p className="text-xs text-blue-700">用户已提交补付，请核实凭证后确认收款。</p>
@@ -829,11 +831,13 @@ export default function AdminShippingInfoPanel({
                   </div>
                 );
               })}
-              <Button size="sm" className="bg-green-600 hover:bg-green-700 w-full"
-                onClick={handleConfirmPostShipmentPayment} disabled={confirmingSaving}>
-                <CheckCircle className="w-3.5 h-3.5 mr-1.5" />
-                {confirmingSaving ? "确认中..." : "确认收款（不改变发货状态）"}
-              </Button>
+              {!allParticipantsPaid() && (
+                <Button size="sm" className="bg-green-600 hover:bg-green-700 w-full"
+                  onClick={handleConfirmPostShipmentPayment} disabled={confirmingSaving}>
+                  <CheckCircle className="w-3.5 h-3.5 mr-1.5" />
+                  {confirmingSaving ? "确认中..." : "确认收款（不改变发货状态）"}
+                </Button>
+              )}
             </div>
           )}
         </div>
