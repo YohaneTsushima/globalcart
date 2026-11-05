@@ -3,22 +3,23 @@
  * 根据批次类型（普通运输 / 暂存 / 自取）显示不同内容
  */
 import { useState, useEffect, memo } from "react";
-import { X, MapPin, Truck, Star, Package, Save, Image as ImageIcon, CheckCircle, Calendar, CalendarDays, Info, Eye, Loader2 } from "lucide-react";
+import { X, MapPin, Truck, Star, Package, Save, CheckCircle, Calendar, Info, Eye, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
-import { Calendar as CalendarPicker } from "@/components/ui/calendar";
-import { format } from "date-fns";
 import { base44 } from "@/api/base44Client";
 import { getCountry } from "@/lib/countries";
 import AdminOrderEditModal from "@/components/admin/AdminOrderEditModal";
 import MultiImageUploader from "@/components/common/MultiImageUploader";
 import { toast } from "sonner";
 import { transitLocationApi } from "@/lib/tenantApi";
+import { usePickupActions, buildPickupTimeSlot } from "@/hooks/usePickupActions";
+import PickupStatusBadges from "@/components/transit/pickup/PickupStatusBadges";
+import PickupTimeSlotPicker from "@/components/transit/pickup/PickupTimeSlotPicker";
+import PickupConfirmActions from "@/components/transit/pickup/PickupConfirmActions";
+import { createPageUrl } from "@/utils";
 
 function AddressBlock({ address }) {
   if (!address || !address.recipient_name) return (
@@ -226,7 +227,10 @@ function TransitShippingPanel({ batch, pool, transitMethods, isManager, onSaved,
       toast.success('已确认中转地发货');
       onSaved?.();
     } catch (err) {
-      alert('发货失败：' + err.message);
+      // alert('发货失败：' + err.message);
+      const message = err?.response?.data?.message;
+      console.error('[BatchDetailPanel] handleShip failed:', message);
+      toast.error(message || '发货失败，请稍后重试');
     } finally {
       setShipping(false);
     }
@@ -410,47 +414,41 @@ function StorageBatchPanel({ batch, pool, isManager, onSaved }) {
 }
 
 // ─── 自取面板 ────────────────────────────────────────────────────────────────
-const PICKUP_TIME_SLOTS = [
-  '09:00-11:00',
-  '11:00-13:00',
-  '13:00-15:00',
-  '14:00-16:00',
-  '15:00-17:00',
-  '17:00-19:00',
-];
-
-function PickupBatchPanel({ batch, pool, isManager, onSaved, detail }) {
+function PickupBatchPanel({ batch, pool, isManager, isAdmin, currentUser, onSaved, detail }) {
   const [pickupDate, setPickupDate] = useState('');       // "2026-06-15"
   const [pickupTimeRange, setPickupTimeRange] = useState(''); // "14:00-16:00"
-  const [saving, setSaving] = useState(false);
-  const timeSlot = pickupDate && pickupTimeRange ? `${pickupDate} ${pickupTimeRange}` : '';
+  const timeSlot = buildPickupTimeSlot(pickupDate, pickupTimeRange);
 
-  // 优先用 findOne detail（batch 级别），回退 pool 级别字段
-  const pickupTimeSlot = detail?.transit_pickup_time_slot ?? pool?.transit_pickup_time_slot ?? '';
-  const pickupUserConfirmed = detail?.transit_pickup_user_confirmed ?? pool?.transit_pickup_user_confirmed ?? false;
-  const pickupAdminConfirmed = detail?.transit_pickup_admin_confirmed ?? pool?.transit_pickup_admin_confirmed ?? false;
-  const pickupCompleted = detail?.transit_pickup_completed ?? pool?.transit_pickup_completed ?? false;
-
-  const handleConfirmPickup = async () => {
-    setSaving(true);
-    try {
-      const orderIds = batch.entries.flatMap(e =>
-        Array.isArray(e.order_details) ? e.order_details.map(o => o.id) : [e.order_id || e.id]
-      ).filter(Boolean);
-      await base44.functions.invoke('updateTransitPoolShipment', {
-        request_id: pool.id,
-        action: 'confirm_pickup_batch',
-        order_ids: orderIds,
-        pickup_time_slot: timeSlot || null,
-        user_email: batch.user_email,
-      });
-      onSaved?.();
-    } catch (err) {
-      alert('操作失败：' + err.message);
-    } finally {
-      setSaving(false);
-    }
-  };
+  const {
+    saving,
+    pickupTimeSlot,
+    pickupUserConfirmed,
+    pickupAdminConfirmed,
+    pickupCompleted,
+    pickupCompletedAt,
+    canSchedule,
+    canUserConfirm,
+    canManagerConfirm,
+    canComplete,
+    schedule,
+    confirm,
+    complete,
+  } = usePickupActions({
+    scope: 'batch',
+    batch,
+    pool,
+    detail,
+    isManager,
+    isAdmin,
+    currentUser,
+    onSaved,
+    notify: {
+      baseUrl: createPageUrl('MyOrders'),
+      entityType: 'ShippingPool',
+      entityId: pool?.id,
+      managerEmail: pool?.creator_email,
+    },
+  });
 
   return (
     <div className="space-y-4">
@@ -472,57 +470,26 @@ function PickupBatchPanel({ batch, pool, isManager, onSaved, detail }) {
           <div className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm">
             <p className="text-xs text-gray-500">约定自取时间段</p>
             <p className="font-medium text-gray-800 mt-0.5">{pickupTimeSlot}</p>
-            <div className="flex gap-2 mt-2">
-              <Badge className={pickupUserConfirmed ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-500'}>
-                用户{pickupUserConfirmed ? '已确认' : '未确认'}
-              </Badge>
-              <Badge className={pickupAdminConfirmed ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}>
-                管理员{pickupAdminConfirmed ? '已确认' : '未确认'}
-              </Badge>
-            </div>
+            <PickupStatusBadges
+              userConfirmed={pickupUserConfirmed}
+              adminConfirmed={pickupAdminConfirmed}
+              completed={pickupCompleted}
+              completedAt={pickupCompletedAt}
+              adminLabel="中转地负责人"
+              className="mt-2"
+            />
           </div>
-        ) : isManager ? (
+        ) : canSchedule ? (
           <div className="space-y-2">
             <Label className="text-xs text-gray-500">约定自取时间段</Label>
             <div className="flex gap-2">
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button variant="outline" className="flex-1 justify-start text-left font-normal text-sm">
-                    <CalendarDays className="w-3.5 h-3.5 mr-1.5" />
-                    {timeSlot || '选择日期和时间段'}
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-0" align="start">
-                  <CalendarPicker
-                    mode="single"
-                    selected={pickupDate ? new Date(pickupDate) : undefined}
-                    onSelect={(d) => setPickupDate(d ? format(d, 'yyyy-MM-dd') : '')}
-                    initialFocus
-                  />
-                  <div className="border-t p-2 space-y-1.5">
-                    <p className="text-xs text-gray-500 px-1">时间段</p>
-                    <div className="grid grid-cols-2 gap-1.5">
-                      {PICKUP_TIME_SLOTS.map(slot => (
-                        <button
-                          key={slot}
-                          type="button"
-                          onClick={() => setPickupTimeRange(slot)}
-                          className={`px-2 py-1.5 text-xs rounded-md border transition-colors ${
-                            pickupTimeRange === slot
-                              ? 'border-indigo-400 bg-indigo-50 text-indigo-700'
-                              : 'border-gray-200 text-gray-600 hover:border-gray-300 hover:bg-gray-50'
-                          }`}
-                        >
-                          {slot}
-                        </button>
-                      ))}
-                    </div>
-                    <Input className="text-xs" placeholder="自定义，如 14:00-16:00"
-                      value={pickupTimeRange} onChange={e => setPickupTimeRange(e.target.value)} />
-                  </div>
-                </PopoverContent>
-              </Popover>
-              <Button onClick={handleConfirmPickup} disabled={saving || !timeSlot} className="shrink-0">
+              <PickupTimeSlotPicker
+                date={pickupDate}
+                timeRange={pickupTimeRange}
+                onDateChange={setPickupDate}
+                onTimeRangeChange={setPickupTimeRange}
+              />
+              <Button onClick={() => schedule(timeSlot)} disabled={saving || !timeSlot} className="shrink-0">
                 {saving ? '...' : '约定'}
               </Button>
             </div>
@@ -531,23 +498,15 @@ function PickupBatchPanel({ batch, pool, isManager, onSaved, detail }) {
           <p className="text-xs text-gray-400">等待中转地负责人约定自取时间</p>
         )}
 
-        {pickupCompleted && (
-          <div className="flex items-center gap-2 text-sm text-green-600 bg-green-50 border border-green-100 rounded-lg px-3 py-2">
-            <CheckCircle className="w-4 h-4" />自取已完成
-          </div>
-        )}
-
-        {isManager && pickupTimeSlot && !pickupCompleted && pickupUserConfirmed && pickupAdminConfirmed && (
-          <Button className="w-full bg-green-600 hover:bg-green-700" onClick={async () => {
-            setSaving(true);
-            try {
-              await base44.functions.invoke('updateTransitPoolPickup', { pool_id: pool.id, action: 'complete' });
-              onSaved?.();
-            } finally { setSaving(false); }
-          }} disabled={saving}>
-            <CheckCircle className="w-4 h-4 mr-2" />标记已自取
-          </Button>
-        )}
+        <PickupConfirmActions
+          canUserConfirm={canUserConfirm}
+          canManagerConfirm={canManagerConfirm}
+          canComplete={canComplete}
+          saving={saving}
+          onConfirm={confirm}
+          onComplete={complete}
+          layout="col"
+        />
       </div>
     </div>
   );
@@ -571,7 +530,7 @@ function OrderDetailModal({ order, onClose, onSaved }) {
 }
 
 // ─── Main Export ──────────────────────────────────────────────────────────────
-export default function BatchDetailPanel({ batch, pool, transitMethods, isManager, onClose, onSaved, detail, loading }) {
+export default function BatchDetailPanel({ batch, pool, transitMethods, isManager, isAdmin, currentUser, onClose, onSaved, detail, loading }) {
   const [orderDetail, setOrderDetail] = useState(null);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
 
@@ -693,7 +652,7 @@ export default function BatchDetailPanel({ batch, pool, transitMethods, isManage
         {isStorage ? (
           <StorageBatchPanel batch={batch} pool={pool} isManager={isManager} onSaved={onSaved} />
         ) : isPickup ? (
-          <PickupBatchPanel batch={batch} pool={pool} isManager={isManager} onSaved={onSaved} detail={detail} />
+          <PickupBatchPanel batch={batch} pool={pool} isManager={isManager} isAdmin={isAdmin} currentUser={currentUser} onSaved={onSaved} detail={detail} />
         ) : (
           <MemoizedTransitShippingPanel batch={batch} pool={pool} transitMethods={transitMethods} isManager={isManager} onSaved={onSaved} detail={detail} />
         )}

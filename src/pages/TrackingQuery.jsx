@@ -2,7 +2,37 @@ import { useState, useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
 import { base44 } from "@/api/base44Client";
 import { getCompanyName } from "@/lib/kuaidi100Companies";
-import { Loader2, Package, Truck, AlertCircle, Copy, Check } from "lucide-react";
+import { Loader2, Package, Truck, AlertCircle, Copy, Check, ChevronDown, ChevronUp } from "lucide-react";
+
+// 快递公司 logo（kuaidi100 CDN，按公司编码 key；kuaidi100 生产环境同款）
+// 注意：未知/冷门编码会 404（返回文本），需 onError 回退
+const carrierLogoUrl = (code, size = 56) => `https://cdn.kuaidi100.com/images/all/${size}/${code}.png`;
+
+function CarrierLogo({ code, name, size = 28 }) {
+  const [failed, setFailed] = useState(false);
+  if (!code || failed) {
+    // 回退：公司名首字圆徽章（比通用"?"更友好）
+    return (
+      <span
+        className="rounded-full bg-gray-100 text-gray-600 flex items-center justify-center font-medium"
+        style={{ width: size, height: size, fontSize: size * 0.45 }}
+      >
+        {(name || "?").slice(0, 1)}
+      </span>
+    );
+  }
+  return (
+    <img
+      src={carrierLogoUrl(code)}
+      alt={name}
+      width={size}
+      height={size}
+      loading="lazy"
+      className="rounded"
+      onError={() => setFailed(true)}
+    />
+  );
+}
 
 
 // 从 context 里提取状态标签（已签收/待取件/派送中/运输中/已揽件...）
@@ -50,11 +80,13 @@ function formatTime(timeStr) {
 export default function TrackingQuery() {
   const [params] = useSearchParams();
   const orderId = params.get("order_id") || "";
+  const [orderNumber, setOrderNumber] = useState(null);
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [data, setData] = useState(null);
   const [copied, setCopied] = useState(false);
+  const [expanded, setExpanded] = useState(false);
 
   useEffect(() => {
     if (!orderId) return;
@@ -66,6 +98,7 @@ export default function TrackingQuery() {
       .invoke("tracking/query", { order_id: orderId })
       .then((res) => {
         if (!cancelled) setData(res?.data ?? res);
+        setOrderNumber(res?.data?.order_number || res?.order_number);
       })
       .catch((e) => {
         if (!cancelled) {
@@ -90,6 +123,9 @@ export default function TrackingQuery() {
   // 后端响应（base44.functions.invoke 返回 r.data）：
   // { code, data: { tracking_number, provider, type, company_code, status, status_code, last_update_time, traces: [{time, status, context}] }, msg }
   const traces = Array.isArray(data?.traces) ? data.traces : [];
+  const VISIBLE_COUNT = 3;
+  const canToggle = traces.length > VISIBLE_COUNT;
+  const visibleTraces = canToggle && !expanded ? traces.slice(0, VISIBLE_COUNT) : traces;
   const comCode = data?.company_code || data?.provider || data?.com || "";
   const comName = comCode ? getCompanyName(comCode) : "物流轨迹";
   const nu = data?.tracking_number || data?.nu || "";
@@ -107,7 +143,7 @@ export default function TrackingQuery() {
         {/* 头部：快递公司 + 单号 + 复制 + 客服电话 */}
         <div className="flex items-start justify-between flex-wrap gap-2 pb-3">
           <div className="flex items-center gap-2">
-            <span className="text-lg">📦</span>
+            <CarrierLogo code={comCode} name={comName} />
             <span className="text-base font-semibold text-gray-900">{comName}</span>
             <span className="font-mono text-base text-gray-800 select-all">{nu}</span>
             <button
@@ -127,7 +163,7 @@ export default function TrackingQuery() {
         <div className="flex flex-wrap gap-4 pb-3 text-xs text-gray-500 border-b border-gray-100">
           <div>
             <span className="text-gray-400">订单号：</span>
-            <span className="font-mono text-gray-700 select-all">{orderId || "-"}</span>
+            <span className="font-mono text-gray-700 select-all">{orderNumber || "-"}</span>
           </div>
           {type && (
             <div>
@@ -172,16 +208,16 @@ export default function TrackingQuery() {
           <div className="mt-4">
             {/* 时间轴轨迹 */}
             <div className="relative">
-              {traces.map((t, i) => {
+              {visibleTraces.map((t, i) => {
                 // 优先用后端给的 t.status，回退到从 context 提取
                 const tag = t.status
                   ? { label: t.status, tone: STATUS_TONE[t.status] || "transit" }
                   : extractStatusTag(t.context);
                 const isLatest = i === 0;
                 return (
-                  <div key={i} className="relative pl-6 pb-5 last:pb-0">
-                    {/* 竖线 */}
-                    {i < traces.length - 1 && (
+                  <div key={i} className="relative pl-6 pb-5">
+                    {/* 竖线：不是最后一条，或收起状态下还有隐藏条目时，画到容器底 */}
+                    {(i < visibleTraces.length - 1 || (canToggle && !expanded)) && (
                       <div className="absolute left-[5px] top-4 bottom-0 w-px bg-gray-200" />
                     )}
                     {/* 圆点 */}
@@ -202,6 +238,22 @@ export default function TrackingQuery() {
                   </div>
                 );
               })}
+              {/* 展开/收起切换 */}
+              {canToggle && (
+                <div className="relative pl-6">
+                  <div className="absolute left-0 top-1.5 w-[11px] h-[11px] rounded-full border-2 border-gray-300 bg-white" />
+                  <button
+                    onClick={() => setExpanded(v => !v)}
+                    className="inline-flex items-center gap-1 text-sm text-blue-600 hover:text-blue-800 transition-colors"
+                  >
+                    {expanded ? (
+                      <>收起全部 <ChevronUp className="w-4 h-4" /></>
+                    ) : (
+                      <>展开更多物流明细 <ChevronDown className="w-4 h-4" /></>
+                    )}
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         ) : (

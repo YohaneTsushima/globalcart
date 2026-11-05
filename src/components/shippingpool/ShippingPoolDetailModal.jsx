@@ -30,6 +30,10 @@ import TransitShippedPanel from "@/components/shippingpool/TransitShippedPanel";
 import UserGroupHeader from "@/components/shippingpool/UserGroupHeader";
 import MessageThread from "@/components/common/MessageThread";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
+import { usePickupActions } from "@/hooks/usePickupActions";
+import PickupStatusBadges from "@/components/transit/pickup/PickupStatusBadges";
+import PickupConfirmActions from "@/components/transit/pickup/PickupConfirmActions";
+import { createPageUrl } from "@/utils";
 import { toast } from "sonner";
 import { persistentToastError } from "@/lib/toastUtils.jsx";
 import ConfirmDialog from "@/components/common/ConfirmDialog";
@@ -2092,7 +2096,16 @@ export default function ShippingPoolDetailModal({ pool: initialPool, isAdmin, cu
                       <div key={t.id || i} className="bg-blue-50 border border-blue-100 rounded-lg px-3 py-2.5">
                         <p className="text-xs text-blue-900 font-semibold mb-1">{label}{suffix}</p>
                         {isStorage ? null
-                          : hasSlot ? <p className="text-sm text-blue-900">约定自取时间：{t.transit_pickup_time_slot}</p>
+                          : hasSlot ? (
+                            <PickupRecordCard
+                              record={t}
+                              pool={pool}
+                              isAdmin={isAdmin}
+                              currentUser={currentUser}
+                              isManager={isAdmin}
+                              onRefresh={refreshPool}
+                            />
+                          )
                           : pool.status === 'transit_arrived' ? <p className="text-sm text-blue-900">等待中转地负责人约定自取时间</p>
                           : null}
                       </div>
@@ -2832,6 +2845,59 @@ export default function ShippingPoolDetailModal({ pool: initialPool, isAdmin, cu
       </div>
     </div>);
 
+}
+
+function PickupRecordCard({ record, pool, isAdmin, currentUser, isManager, onRefresh }) {
+  const {
+    saving,
+    pickupTimeSlot,
+    pickupUserConfirmed,
+    pickupAdminConfirmed,
+    pickupCompleted,
+    pickupCompletedAt,
+    canUserConfirm,
+    canManagerConfirm,
+    canComplete,
+    confirm,
+    complete,
+  } = usePickupActions({
+    scope: "record",
+    record,
+    pool,
+    isAdmin,
+    isManager,
+    currentUser,
+    onSaved: onRefresh,
+    notify: {
+      baseUrl: createPageUrl("ShippingPool"),
+      entityType: "TransitShipping",
+      entityId: record?.id || pool?.id,
+      managerEmail: pool?.creator_email,
+    },
+  });
+
+  return (
+    <div className="space-y-2">
+      <p className="text-sm text-blue-900">约定自取时间：{pickupTimeSlot}</p>
+      <PickupStatusBadges
+        userConfirmed={pickupUserConfirmed}
+        adminConfirmed={pickupAdminConfirmed}
+        completed={pickupCompleted}
+        completedAt={pickupCompletedAt}
+        adminLabel="中转地负责人"
+      />
+      <PickupConfirmActions
+        canUserConfirm={canUserConfirm}
+        canManagerConfirm={canManagerConfirm}
+        canComplete={canComplete}
+        saving={saving}
+        onConfirm={confirm}
+        onComplete={complete}
+        size="sm"
+        layout="col"
+      />
+    </div>
+  );
 }
 
 function InfoBlock({ label, value, highlight }) {

@@ -239,14 +239,17 @@ export async function fetchSubmitOrderPageData() {
 
 // ─── TransitLocation shortcuts ─────────────────────────────────────────────────
 export const transitLocationApi = {
-  workData:           (id, data)          => mutate('TransitLocation', 'workData', {}).then(r => r),
-  workDataId:         (id, data)          => mutate('TransitLocation', 'getTransitLocationWorkPageData', { id }).then(r => r),
-  poolWork:           (poolCode)          => mutate('TransitLocation', `transitPoolWork/${poolCode}`).then(r => r),
-  create:             (data)              => mutate('TransitLocation', 'create', { data }).then(r => r.result || r.data?.result || r),
-  update:             (id, data)          => mutate('TransitLocation', 'update', { id, data }).then(r => r.result || r.data?.result || r),
-  delete:             (id)                => mutate('TransitLocation', 'delete', { id }),
-  findOne:            (id)                => mutate('TransitShipping', 'findOne', { id }),
-  saveInfo:           (id, data)          => mutate('TransitShipping', 'save', { id, data }),
-  handleArrived:      (data)              => mutates('TransitShipping', 'handleArrived', data),
-  handleShipped:      (id, data)          => mutate('TransitShipping', 'handleShipped', { id, data }),
+  workData:                (id, data)          => mutate('TransitLocation', 'workData', {}).then(r => r),
+  workDataId:              (id, data)          => mutate('TransitLocation', 'getTransitLocationWorkPageData', { id }).then(r => r),
+  poolWork:                (poolCode)          => mutate('TransitLocation', `transitPoolWork/${poolCode}`).then(r => r),
+  create:                  (data)              => mutate('TransitLocation', 'create', { data }).then(r => r.result || r.data?.result || r),
+  update:                  (id, data)          => mutate('TransitLocation', 'update', { id, data }).then(r => r.result || r.data?.result || r),
+  delete:                  (id)                => mutate('TransitLocation', 'delete', { id }),
+  findOne:                 (id)                => mutate('TransitShipping', 'findOne', { id }),
+  saveInfo:                (id, data)          => mutate('TransitShipping', 'save', { id, data }),
+  handleArrived:           (data)              => mutates('TransitShipping', 'handleArrived', data),
+  handleShipped:           (id, data)          => mutate('TransitShipping', 'handleShipped', { id, data }),
+  confirmPickup:           (id, data)          => mutate('TransitShipping', 'confirmPickup', { id, data }),
+  userOrAdminConfirm:      (id, data)          => mutate('TransitShipping', 'userOrAdminConfirm', { id, data }),
+  completedPickup:         (id, data)          => mutate('TransitShipping', 'completedPickup', { id, data }),
 };

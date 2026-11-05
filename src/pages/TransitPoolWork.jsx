@@ -17,6 +17,7 @@ import { Badge } from "@/components/ui/badge";
 import PoolInfoPanel from "@/components/transit/PoolInfoPanel";
 import BatchDetailPanel from "@/components/transit/BatchDetailPanel";
 import { usePermissions } from "@/hooks/usePermissions";
+import { isManagerOf } from "@/lib/managerUtils";
 import { tenantEntity, transitLocationApi } from "@/lib/tenantApi";
 
 // ─── Normalize transit method id ─────────────────────────────────────────────
@@ -190,8 +191,10 @@ export default function TransitPoolWork() {
   const [batchDetailLoading, setBatchDetailLoading] = useState(false);
 
   // const isAdmin = user?.role === 'admin' || user?.role === 'tenant_admin' || user?.role === 'platform_admin';
-  const isAdmin = usePermissions();
-  const isManager = isAdmin || (location && location.manager_email === user?.email);
+  const { isAdmin: isAdminStrict } = usePermissions();
+  const isAdmin = isAdminStrict; // 真实布尔判定（usePermissions().isAdmin），供 BatchDetailPanel 等新代码使用
+  // manager_email 是数组（多负责人，见 lib/managerUtils.js），用 isManagerOf 归一化判断
+  const isManager = isAdmin || isManagerOf(location, user?.email);
 
   const fetchData = async ({ silent = false } = {}) => {
     if (!silent) setLoading(true);
@@ -342,6 +345,8 @@ export default function TransitPoolWork() {
               pool={request}
               transitMethods={transitMethods}
               isManager={isManager}
+              isAdmin={isAdmin}
+              currentUser={user}
               onSaved={refreshSelectedDetail}
             />
           </div>

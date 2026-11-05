@@ -12,6 +12,7 @@ import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { usePermissions } from "@/hooks/usePermissions";
 import { Plus, RefreshCw, Truck, MapPin, Edit2, Trash2, Check, X as XIcon, AlertCircle, Layers, Archive, ArchiveRestore, Settings2, LogIn } from "lucide-react";
 import { getCountry } from "@/lib/countries";
+import { normalizeManagerEmails, hasManager } from "@/lib/managerUtils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -595,8 +596,8 @@ export default function ShippingPool() {
             <div className="space-y-2">
               {/* Sort: locations without manager first */}
               {[...locations].sort((a, b) => {
-                const aHasManager = !!a.manager_email;
-                const bHasManager = !!b.manager_email;
+                const aHasManager = hasManager(a);
+                const bHasManager = hasManager(b);
                 if (aHasManager === bHasManager) return 0;
                 return aHasManager ? 1 : -1;
               }).map(loc => (
@@ -621,7 +622,7 @@ export default function ShippingPool() {
                       <Badge className={`text-xs ${loc.is_active ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500"}`}>
                         {loc.is_active ? "启用" : "停用"}
                       </Badge>
-                      {!loc.manager_email && (
+                      {!hasManager(loc) && (
                         <Badge className="text-xs bg-orange-100 text-orange-700 border-orange-200">
                           <AlertCircle className="w-2.5 h-2.5 mr-1 inline" />
                           未分配负责人
@@ -631,7 +632,7 @@ export default function ShippingPool() {
                     <div className="flex flex-wrap gap-x-3 mt-0.5">
                       {loc.address && <p className="text-xs text-gray-500">{loc.address}</p>}
                       {loc.handling_fee > 0 && <p className="text-xs text-orange-500">手续费 {loc.handling_fee_currency || "JPY"} {loc.handling_fee}</p>}
-                      {loc.manager_email && <p className="text-xs text-gray-400">负责人：{allUsers.find(u => u.email === loc.manager_email)?.full_name || loc.manager_email}{loc.manager_contact ? ` · ${loc.manager_contact}` : ""}</p>}
+                      {loc.manager_email && <p className="text-xs text-gray-400">负责人：{normalizeManagerEmails(loc.manager_email).map(e => allUsers.find(u => u.email === e)?.full_name || e).join("、")}{loc.manager_contact ? ` · ${loc.manager_contact}` : ""}</p>}
                     </div>
                     {loc.description && <p className="text-xs text-gray-400 mt-0.5">{loc.description}</p>}
                   </div>

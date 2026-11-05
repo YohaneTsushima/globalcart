@@ -32,6 +32,10 @@ const notificationCategories = [
       { key: "shipping_request_sent", label: "发货申请已发出" },
       { key: "shipping_request_arrived", label: "发货申请已送达中转地" },
       { key: "transit_shipped", label: "中转地已发货" },
+      { key: "pickup_time_scheduled", label: "自取时间已约定，请确认" },
+      { key: "pickup_user_confirmed", label: "用户已确认自取时间" },
+      { key: "pickup_admin_confirmed", label: "中转地负责人已确认自取时间" },
+      { key: "pickup_completed", label: "自取已完成" },
     ]
   },
   {

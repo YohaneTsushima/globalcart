@@ -155,6 +155,21 @@ export default function AdminShippingInfoPanel({
       return !!rec && isPaymentRecordPaid(rec);
     });
   };
+
+  // 中转地（transit）与非中转地（other/单件）在收款确认上的放行门槛不同
+  // 注意：此处 pool 尚未声明（189 行 useState），须用 initialPool（同 128/131 行）
+  const isTransit = initialPool.consolidation_type === "transit";
+
+  // 是否已有付款凭证（池级 payment_proof_url 或任一用户 per_user_payments 记录）
+  // 用函数延迟读取 live 的 pool（setPool 更新后为准）
+  const hasAnyPaymentProof = () =>
+    !!pool.payment_proof_url ||
+    (pool.per_user_payments || []).some(p => !!p.payment_proof_url);
+
+  // 确认收款是否放行：
+  // - 中转地：维持严格全员 paid（走逐个「确认此用户已付款」或全员付款）
+  // - 非中转地：只要有付款凭证即可确认，不必卡全员 paid / fee_breakdown 非空
+  const canConfirmPayment = () => (isTransit ? allParticipantsPaid() : hasAnyPaymentProof());
   
   // Derive unique users from orders
   const uniqueUsers = [...new Map(
@@ -178,8 +193,10 @@ export default function AdminShippingInfoPanel({
   // Sync full pool + form fields from parent when it becomes available (e.g. after async API fetch)
   // This handles the case where parent initially passes a partial pool (e.g. { id })
   // and later updates it with full data after an API call completes.
+  // 注意：不能只按 status 判断是否同步——「确认此用户已付款」只改 per_user_payments、status 不变，
+  // 否则 getShippingPoolDetail 拉回的新付款状态不会同步进来（UI 不刷新）。
   useEffect(() => {
-    if (!initialPool?.status || initialPool.status === pool.status) return;
+    if (!initialPool?.status) return;
     setPool(prev => ({ ...prev, ...initialPool }));
     setTrackingNumber(initialPool.tracking_number || "");
     setBoxTemplateId(initialPool.box_template_id || "none");
@@ -212,7 +229,7 @@ export default function AdminShippingInfoPanel({
       if (calc) { setShippingFeeJpy(String(calc.fee)); setFeeAutoCalced(true); setShippingCalcResult(calc); }
       else { setShippingCalcResult(null); }
     }
-  }, [initialPool?.status]);
+  }, [initialPool?.status, JSON.stringify(initialPool?.per_user_payments)]);
 
   // Sync packing fees when getShippingPoolDetail returns updated data (e.g. after handleSaveInfoOnly)
   const packingFeesKeyRef = useRef(JSON.stringify([initialPool?.packing_fees_per_user, initialPool?.packing_fee_jpy ?? null]));
@@ -831,7 +848,7 @@ export default function AdminShippingInfoPanel({
                   </div>
                 );
               })}
-              {!allParticipantsPaid() && (
+              {!canConfirmPayment() && (
                 <Button size="sm" className="bg-green-600 hover:bg-green-700 w-full"
                   onClick={handleConfirmPostShipmentPayment} disabled={confirmingSaving}>
                   <CheckCircle className="w-3.5 h-3.5 mr-1.5" />
@@ -1259,8 +1276,7 @@ export default function AdminShippingInfoPanel({
                     );
                   })()}
                   {(() => {
-                    const allPaid = allParticipantsPaid();
-                    const paymentOk = canDirectShipWithoutPayment || allPaid;
+                    const paymentOk = canDirectShipWithoutPayment || canConfirmPayment();
                     const canShipDirectly = paymentOk && !!trackingNumber;
                     return (
                       <div className="space-y-1.5">
@@ -1300,9 +1316,9 @@ export default function AdminShippingInfoPanel({
                             <Button size="sm" className="bg-blue-600 hover:bg-blue-700 w-full"
                               onClick={() => setConfirmPaymentAndShipDialogOpen(true)}
                               disabled={confirmingSaving || !canShipDirectly}
-                              title={!trackingNumber ? "需填写运单号" : !paymentOk ? "需全员付款" : ""}>
+                              title={!trackingNumber ? "需填写运单号" : !paymentOk ? (isTransit ? "需全员付款" : "需付款凭证") : ""}>
                               <Truck className="w-3.5 h-3.5 mr-1.5" />
-                              {confirmingSaving ? "确认中..." : canShipDirectly ? "全部确认收款并进入已发货" : `全部确认收款并进入已发货${!trackingNumber ? "（需填写运单号）" : "（需全员付款）"}`}
+                              {confirmingSaving ? "确认中..." : canShipDirectly ? "全部确认收款并进入已发货" : `全部确认收款并进入已发货${!trackingNumber ? "（需填写运单号）" : `（${isTransit ? "需全员付款" : "需付款凭证"}）`}`}
                             </Button>
                           </>
                         )}

@@ -4,6 +4,7 @@ import { createPageUrl } from "@/utils";
 import { base44 } from "@/api/base44Client";
 import { useAuth } from "@/lib/AuthContext";
 import { fetchTenantConfig } from "@/lib/tenantApi";
+import { isManagerOfAny } from "@/lib/managerUtils";
 import { connect, disconnect } from "@/lib/socket";
 import { 
   ShoppingBag, Package, Truck, User, Settings, 
@@ -112,8 +113,9 @@ export default function Layout({ children, currentPageName }) {
   }, [user?.email]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Derive isTransitManager from already-fetched transitLocations (no extra network request)
+  // manager_email 是数组（多负责人），用 isManagerOfAny 归一化判断
   const isTransitManager = useMemo(
-    () => user?.email ? transitLocations.some(l => l.manager_email === user.email && l.is_active) : false,
+    () => user?.email ? isManagerOfAny(transitLocations, user.email) : false,
     [transitLocations, user?.email]
   );
 
