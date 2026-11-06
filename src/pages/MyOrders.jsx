@@ -23,6 +23,7 @@ import OrderDetailPanel from "@/components/orders/OrderDetailPanel";
 import ColumnCustomizer from "@/components/orders/ColumnCustomizer";
 import PaymentModal from "@/components/orders/PaymentModal";
 import UserNotifyShipmentModal from "@/components/orders/UserNotifyShipmentModal";
+import TransitNotifyShipmentModal from "@/components/orders/TransitNotifyShipmentModal";
 import { getNotifyShipmentCache, setNotifyShipmentCache } from "@/lib/notifyShipmentCache";
 import ShippingEditModal from "@/components/shippingpool/ShippingEditModal";
 import ShippingPoolDetailModal from "@/components/shippingpool/ShippingPoolDetailModal";
@@ -269,6 +270,10 @@ export default function MyOrders() {
   const [shipmentOrder, setShipmentOrder] = useState(null);
   const [shipmentOrders, setShipmentOrders] = useState(null); // multi-order bulk
   const [shipmentInitialData, setShipmentInitialData] = useState(null); // data from findOrderForNotifyShipment
+  // in_storage 订单申请中转地发货（精简弹窗）
+  const [transitShipmentOrder, setTransitShipmentOrder] = useState(null);
+  const [transitShipmentOrders, setTransitShipmentOrders] = useState(null);
+  const [transitShipmentInitialData, setTransitShipmentInitialData] = useState(null);
   const [shipmentLoading, setShipmentLoading] = useState(false); // loading state for notify shipment API call
   const [bulkPaymentOrders, setBulkPaymentOrders] = useState(null); // multi-order bulk payment
   const [editShipOrder, setEditShipOrder] = useState(null); // order being edit-shipped
@@ -534,6 +539,9 @@ export default function MyOrders() {
   // Orders eligible for bulk notify (in_warehouse only) — operate on full filtered, not paged
   const inWarehouseOrders = flatOrders.filter(o => o.order_status === "in_warehouse");
   const selectedInWarehouse = flatOrders.filter(o => selectedIds.includes(o.id) && o.order_status === "in_warehouse");
+  // in_storage orders eligible for bulk transit re-shipment
+  const inStorageOrders = flatOrders.filter(o => o.order_status === "in_storage");
+  const selectedInStorage = flatOrders.filter(o => selectedIds.includes(o.id) && o.order_status === "in_storage");
 
   // Orders eligible for bulk payment
   const paymentPendingOrders = flatOrders.filter(o => o.order_status === "payment_pending" && o.payment_status !== "awaiting_confirmation");
@@ -639,6 +647,37 @@ export default function MyOrders() {
           </span>
           {order.transit_storage_until && (
             <span className="text-xs text-gray-400">期限至 {order.transit_storage_until}</span>
+          )}
+          {canNotifyShipment && (
+            <Button size="sm" className="h-7 text-xs bg-indigo-600 hover:bg-indigo-700"
+              disabled={shipmentLoading}
+              onClick={async () => {
+                const orderIds = [order.id];
+                const cached = getNotifyShipmentCache(orderIds);
+                if (cached) { setTransitShipmentInitialData(cached); setTransitShipmentOrder(order); return; }
+                setShipmentLoading(true);
+                debugger
+                try {
+                  const r = await base44.functions.invoke('order/info/findTransitForShipment', {
+                    id: null,
+                    data: {
+                      transit_location_id: order.pool?.transit_location_id || order.transit_location_id || null,
+                      user_email: order.user_email,
+                      pool_id: order.consolidation_pool_id || order.pool?.pool_id || null,
+                    }
+                  });
+                  setNotifyShipmentCache(orderIds, r.data);
+                  setTransitShipmentInitialData(r.data);
+                  setTransitShipmentOrder(order);
+                } catch (err) {
+                  persistentToastError('获取发货信息失败');
+                } finally {
+                  setShipmentLoading(false);
+                }
+              }}>
+              {shipmentLoading ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <Truck className="w-3 h-3 mr-1" />}
+              {shipmentLoading ? '加载中...' : '申请中转地发货'}
+            </Button>
           )}
         </div>
       )}
@@ -790,6 +829,46 @@ export default function MyOrders() {
     const status = repr.order_status;
     return (
       <div className="flex flex-col gap-1">
+        {status === "in_storage" && (
+          <div className="flex flex-col gap-1 items-start">
+            <span className="inline-flex items-center gap-1 text-xs bg-indigo-100 text-indigo-700 border border-indigo-200 px-1.5 py-0.5 rounded-full font-medium">
+              📦 暂存中{repr.transit_location_name ? `于 ${repr.transit_location_name}` : ''}
+            </span>
+            {repr.transit_storage_until && (
+              <span className="text-xs text-gray-400">期限至 {repr.transit_storage_until}</span>
+            )}
+            {canNotifyShipment && (
+              <Button size="sm" className="h-7 text-xs bg-indigo-600 hover:bg-indigo-700"
+                disabled={shipmentLoading}
+                onClick={async () => {
+                  const orderIds = orders.map(o => o.id);
+                  const cached = getNotifyShipmentCache(orderIds);
+                  if (cached) { setTransitShipmentInitialData(cached); setTransitShipmentOrders(orders); return; }
+                  setShipmentLoading(true);
+                  try {
+                    const r = await base44.functions.invoke('order/info/findTransitForShipment', {
+                      id: null,
+                      data: {
+                        transit_location_id: repr.pool?.transit_location_id || repr.transit_location_id || null,
+                        user_email: repr.user_email,
+                        pool_id: repr.consolidation_pool_id || repr.pool?.pool_id || null,
+                      }
+                    });
+                    setNotifyShipmentCache(orderIds, r.data);
+                    setTransitShipmentInitialData(r.data);
+                    setTransitShipmentOrders(orders);
+                  } catch (err) {
+                    persistentToastError('获取发货信息失败');
+                  } finally {
+                    setShipmentLoading(false);
+                  }
+                }}>
+                {shipmentLoading ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <Truck className="w-3 h-3 mr-1" />}
+                {shipmentLoading ? '加载中...' : '申请中转地发货'}
+              </Button>
+            )}
+          </div>
+        )}
         {(pool.pool_code || repr.pool_code) && (
           <button
             className="text-xs font-mono text-purple-700 bg-purple-50 border border-purple-100 px-1.5 py-0.5 rounded hover:bg-purple-100 hover:border-purple-300 transition-colors cursor-pointer"
@@ -951,6 +1030,40 @@ export default function MyOrders() {
             onClick={() => setSelectedIds([])} disabled={actionLoading}>取消</Button>
         </div>
       )}
+      {selectedInStorage.length > 0 && canNotifyShipment && (
+        <div className="flex items-center gap-3 bg-indigo-50 border border-indigo-200 rounded-xl px-4 py-2.5">
+          <span className="text-sm text-indigo-700 font-medium">已选 {selectedInStorage.length} 件暂存包裹</span>
+          <Button size="sm" className="h-7 text-xs bg-indigo-600 hover:bg-indigo-700 ml-auto"
+            disabled={actionLoading || shipmentLoading}
+            onClick={async () => {
+              const orderIds = selectedInStorage.map(o => o.id);
+              const cached = getNotifyShipmentCache(orderIds);
+              if (cached) {
+                setTransitShipmentInitialData(cached);
+                setTransitShipmentOrders(selectedInStorage);
+                return;
+              }
+              setShipmentLoading(true);
+              try {
+                const r = await base44.functions.invoke('order/info/findOrderForNotifyShipment', {
+                  id: null, data: { order_ids: orderIds }
+                });
+                setNotifyShipmentCache(orderIds, r.data);
+                setTransitShipmentInitialData(r.data);
+                setTransitShipmentOrders(selectedInStorage);
+              } catch (err) {
+                persistentToastError('获取发货信息失败');
+              } finally {
+                setShipmentLoading(false);
+              }
+            }}>
+            {shipmentLoading ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <Truck className="w-3 h-3 mr-1" />}
+            {shipmentLoading ? '加载中...' : '批量申请中转地发货'}
+          </Button>
+          <Button size="sm" variant="ghost" className="h-7 text-xs"
+            onClick={() => setSelectedIds([])} disabled={actionLoading}>取消</Button>
+        </div>
+      )}
       {selectedPaymentPending.length > 1 && (
         <div className="flex items-center gap-3 bg-red-50 border border-red-200 rounded-xl px-4 py-2.5">
           <span className="text-sm text-red-700 font-medium">已选 {selectedPaymentPending.length} 笔待付款订单</span>
@@ -1050,7 +1163,7 @@ export default function MyOrders() {
                   <tr key={order.id} className={`hover:bg-gray-50 cursor-pointer ${selectedIds.includes(order.id) ? "bg-teal-50/50" : ""}`}
                     onClick={() => setSelectedOrder(order)}>
                     <td className="px-3 py-3" onClick={e => e.stopPropagation()}>
-                      {!showArchived && (order.order_status === "in_warehouse" || bulkDeliverStatuses.includes(order.order_status) || (order.order_status === "payment_pending" && order.payment_status !== "awaiting_confirmation") || (order.order_status === "delivered" && !order.is_archived)) && (
+                      {!showArchived && (order.order_status === "in_warehouse" || order.order_status === "in_storage" || bulkDeliverStatuses.includes(order.order_status) || (order.order_status === "payment_pending" && order.payment_status !== "awaiting_confirmation") || (order.order_status === "delivered" && !order.is_archived)) && (
                         <Checkbox checked={selectedIds.includes(order.id)} onCheckedChange={() => toggleSelect(order.id)} />
                       )}
                     </td>
@@ -1071,7 +1184,7 @@ export default function MyOrders() {
               const span = poolOrders.length;
               const allGroupSelected = poolOrders.every(o => selectedIds.includes(o.id));
               const groupEligible = !showArchived && poolOrders.some(o =>
-                o.order_status === "in_warehouse" || bulkDeliverStatuses.includes(o.order_status) ||
+                o.order_status === "in_warehouse" || o.order_status === "in_storage" || bulkDeliverStatuses.includes(o.order_status) ||
                 (o.order_status === "payment_pending" && o.payment_status !== "awaiting_confirmation") ||
                 (o.order_status === "delivered" && !o.is_archived));
               return poolOrders.map((p, idx) => (
@@ -1149,6 +1262,30 @@ export default function MyOrders() {
         />
       )}
 
+      {transitShipmentOrder && (
+        <TransitNotifyShipmentModal
+          order={transitShipmentOrder}
+          initialData={transitShipmentInitialData}
+          onClose={() => { setTransitShipmentOrder(null); setTransitShipmentInitialData(null); }}
+          onSuccess={() => {
+            setTransitShipmentOrder(null);
+            setTransitShipmentInitialData(null);
+            fetchOrders(user);
+          }}
+        />
+      )}
+      {transitShipmentOrders && (
+        <TransitNotifyShipmentModal
+          orders={transitShipmentOrders}
+          initialData={transitShipmentInitialData}
+          onClose={() => { setTransitShipmentOrders(null); setTransitShipmentInitialData(null); }}
+          onSuccess={() => {
+            setTransitShipmentOrders(null);
+            setTransitShipmentInitialData(null);
+            fetchOrders(user);
+          }}
+        />
+      )}
       {shipmentOrder && (
         <UserNotifyShipmentModal
           order={shipmentOrder}

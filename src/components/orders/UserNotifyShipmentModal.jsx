@@ -99,14 +99,15 @@ function DeadlineToken({ value, onChange }) {
   );
 }
 
-function TransitMethodSection({ consType, selectedTransitId, transitLocations, transitMethods, selectedTransitMethodId, setSelectedTransitMethodId }) {
+function TransitMethodSection({ consType, selectedTransitId, transitLocations, transitMethods, selectedTransitMethodId, setSelectedTransitMethodId, isStorageReship }) {
   if (consType !== "transit") return null;
   // id may be string or number depending on source (user click vs pool data) — compare loosely
   const selectedLoc = transitLocations.find(l => String(l.id) === String(selectedTransitId));
   const disabledMethodIds = selectedLoc?.disabled_transit_method_ids || [];
   const visibleMethods = transitMethods.filter(m => !disabledMethodIds.some(id => String(id) === String(m.id)));
-  const allowPickup = selectedLoc?.allow_pickup;
-  const allowStorage = selectedLoc?.allow_storage;
+  // in_storage 重新发货时隐藏"暂存"/"自取"，只能选真实发货方式
+  const allowPickup = selectedLoc?.allow_pickup && !isStorageReship;
+  const allowStorage = selectedLoc?.allow_storage && !isStorageReship;
   if (visibleMethods.length === 0 && !allowPickup && !allowStorage) return null;
 
   const getRateSummary = (m) => {
@@ -258,6 +259,9 @@ function TransitAddonSection({ consType, selectedTransitId, transitLocations, sh
 export default function UserNotifyShipmentModal({ order, orders, initialData, onClose, onSuccess, hazmatText }) {
   const targetOrders = orders || (order ? [order] : []);
   const isMulti = targetOrders.length > 1;
+  // in_storage 订单重新发起中转地发货时，只能选真实发货方式（transitMethods），
+  // 不再提供"暂存"/"自取"选项（第一次选暂存时本来就不收费，第二次按 transitMethods 计费）
+  const isStorageReship = targetOrders.some(o => o.order_status === "in_storage");
 
   const [method, setMethod] = useState(targetOrders[0]?.shipping_method || "");
   const [consType, setConsType] = useState("");
@@ -1306,6 +1310,7 @@ export default function UserNotifyShipmentModal({ order, orders, initialData, on
               transitMethods={transitMethods}
               selectedTransitMethodId={selectedTransitMethodId}
               setSelectedTransitMethodId={setSelectedTransitMethodId}
+              isStorageReship={isStorageReship}
             />
           )}
           {/* Show shipping addons for all shipment types */}

@@ -252,4 +252,5 @@ export const transitLocationApi = {
   confirmPickup:           (id, data)          => mutate('TransitShipping', 'confirmPickup', { id, data }),
   userOrAdminConfirm:      (id, data)          => mutate('TransitShipping', 'userOrAdminConfirm', { id, data }),
   completedPickup:         (id, data)          => mutate('TransitShipping', 'completedPickup', { id, data }),
+  confirmStorage:          (id, data)          => mutate('TransitShipping', 'confirmStorage', { id, data }),
 };

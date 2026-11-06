@@ -3,12 +3,15 @@
  * 根据批次类型（普通运输 / 暂存 / 自取）显示不同内容
  */
 import { useState, useEffect, memo } from "react";
-import { X, MapPin, Truck, Star, Package, Save, CheckCircle, Calendar, Info, Eye, Loader2 } from "lucide-react";
+import { X, MapPin, Truck, Star, Package, Save, CheckCircle, Calendar, CalendarDays, Info, Eye, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
+import { Calendar as CalendarPicker } from "@/components/ui/calendar";
+import { format } from "date-fns";
 import { base44 } from "@/api/base44Client";
 import { getCountry } from "@/lib/countries";
 import AdminOrderEditModal from "@/components/admin/AdminOrderEditModal";
@@ -349,9 +352,14 @@ function TransitShippingPanel({ batch, pool, transitMethods, isManager, onSaved,
 const MemoizedTransitShippingPanel = memo(TransitShippingPanel);
 
 // ─── 暂存面板 ────────────────────────────────────────────────────────────────
-function StorageBatchPanel({ batch, pool, isManager, onSaved }) {
-  const [storageUntil, setStorageUntil] = useState('');
+function StorageBatchPanel({ batch, pool, isManager, onSaved, detail }) {
+  const [storageUntil, setStorageUntil] = useState(detail?.storage_until || '');
   const [saving, setSaving] = useState(false);
+
+  // detail 是异步加载的（挂载时为 null），加载完成后同步暂存期限到 state
+  useEffect(() => {
+    if (detail) setStorageUntil(detail.storage_until || '');
+  }, [detail]);
 
   // Check if this specific batch's orders are already in storage mode
   const storageConfirmed = batch.entries.every(e => {
@@ -367,16 +375,33 @@ function StorageBatchPanel({ batch, pool, isManager, onSaved }) {
       const orderIds = batch.entries.flatMap(e =>
         Array.isArray(e.order_details) ? e.order_details.map(o => o.id) : [e.order_id || e.id]
       ).filter(Boolean);
-      await base44.functions.invoke('updateTransitPoolShipment', {
-        request_id: pool.id,
-        action: 'confirm_storage_batch',
-        order_ids: orderIds,
-        storage_until: storageUntil || null,
-        user_email: batch.user_email,
-      });
+
+      let payload = {
+        id: detail.id,
+        data: {
+          id: detail?.ids,
+          storage_until: storageUntil,
+          user_email: detail.user_email,
+          order_ids: orderIds,
+        }
+        
+      }
+
+      await transitLocationApi.confirmStorage(detail.id, payload.data);
+
+      // await base44.functions.invoke('updateTransitPoolShipment', {
+      //   request_id: pool.id,
+      //   action: 'confirm_storage_batch',
+      //   order_ids: orderIds,
+      //   storage_until: storageUntil || null,
+      //   user_email: batch.user_email,
+      // });
       onSaved?.();
     } catch (err) {
-      alert('操作失败：' + err.message);
+      // alert('操作失败：' + err.message);
+      const message = err?.response?.data?.message;
+      console.error('[BatchDetailPanel] handleSave failed:', message);
+      toast.error(message || '暂存失败，请稍后重试');
     } finally {
       setSaving(false);
     }
@@ -401,8 +426,36 @@ function StorageBatchPanel({ batch, pool, isManager, onSaved }) {
           <p className="text-sm font-semibold text-gray-700">确认暂存</p>
           <div>
             <Label className="text-xs text-gray-500">暂存期限（不填则无期限）</Label>
-            <Input type="date" className="mt-1 text-sm" value={storageUntil}
-              onChange={e => setStorageUntil(e.target.value)} />
+            <div className="flex gap-2">
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" className="mt-1 flex-1 justify-start text-left font-normal text-sm">
+                    <CalendarDays className="w-3.5 h-3.5 mr-1.5" />
+                    {storageUntil || "选择暂存截止日期"}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  {(() => {
+                    // 今天 00:00 作为禁用下界（保留今天可选，禁用今天之前）；每次渲染取当前时间，跨零点后行为正确
+                    const today = new Date();
+                    today.setHours(0, 0, 0, 0);
+                    return (
+                      <CalendarPicker
+                        mode="single"
+                        selected={storageUntil ? new Date(storageUntil) : undefined}
+                        onSelect={(d) => setStorageUntil(d ? format(d, "yyyy-MM-dd") : '')}
+                        disabled={{ before: today }}
+                        initialFocus
+                      />
+                    );
+                  })()}
+                </PopoverContent>
+              </Popover>
+              <Button variant="outline" className="mt-1 shrink-0 text-sm text-gray-500"
+                disabled={!storageUntil} onClick={() => setStorageUntil('')}>
+                清除
+              </Button>
+            </div>
           </div>
           <Button className="w-full bg-indigo-600 hover:bg-indigo-700" onClick={handleConfirmStorage} disabled={saving}>
             <CheckCircle className="w-4 h-4 mr-2" />{saving ? '处理中...' : '确认暂存此批次订单'}
@@ -650,7 +703,7 @@ export default function BatchDetailPanel({ batch, pool, transitMethods, isManage
 
         {/* Type-specific panels */}
         {isStorage ? (
-          <StorageBatchPanel batch={batch} pool={pool} isManager={isManager} onSaved={onSaved} />
+          <StorageBatchPanel batch={batch} pool={pool} isManager={isManager} onSaved={onSaved} detail={detail}/>
         ) : isPickup ? (
           <PickupBatchPanel batch={batch} pool={pool} isManager={isManager} isAdmin={isAdmin} currentUser={currentUser} onSaved={onSaved} detail={detail} />
         ) : (
