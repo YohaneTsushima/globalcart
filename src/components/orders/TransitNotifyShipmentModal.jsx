@@ -3,8 +3,8 @@
  * 只包含：最终收货地址 + 中转段运输方式 + 支付运费
  * 复用 AddressBlock / PaymentMethodSelector / ImageUploader，不改动 UserNotifyShipmentModal
  */
-import { useState, useEffect } from "react";
-import { X, Truck, Loader2, CheckCircle, ExternalLink } from "lucide-react";
+import { useState, useEffect, useRef } from "react";
+import { X, Truck, Loader2, ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { base44 } from "@/api/base44Client";
@@ -50,11 +50,41 @@ export default function TransitNotifyShipmentModal({ order, orders, initialData,
   const [alipayFormData, setAlipayFormData] = useState(null);
   const [showAlipayConfirm, setShowAlipayConfirm] = useState(false);
   const [generatingAlipay, setGeneratingAlipay] = useState(false);
+  const [alipayPaying, setAlipayPaying] = useState(false);
+  const alipayPopupRef = useRef(null);
+  const alipayPollTimerRef = useRef(null);
+  const onSuccessRef = useRef(onSuccess);
+
+  useEffect(() => {
+    onSuccessRef.current = onSuccess;
+  }, [onSuccess]);
+
+  // 监听支付宝回调的 postMessage（PaymentClose 发送）——付款完成后关闭并刷新
+  useEffect(() => {
+    const handleMessage = (e) => {
+      if (e.data?.type === "alipay_payment_done") {
+        if (alipayPollTimerRef.current) {
+          clearInterval(alipayPollTimerRef.current);
+          alipayPollTimerRef.current = null;
+        }
+        setAlipayPaying(false);
+        toast.success('支付成功');
+        onSuccessRef.current?.();
+      }
+      if (e.data?.type === "alipay_payment_navigate" && e.data.url) {
+        window.location.href = e.data.url;
+      }
+    };
+    window.addEventListener("message", handleMessage);
+    return () => {
+      window.removeEventListener("message", handleMessage);
+      if (alipayPollTimerRef.current) clearInterval(alipayPollTimerRef.current);
+    };
+  }, []);
+
   const [exchangeRates, setExchangeRates] = useState(null);
   const [userCredit, setUserCredit] = useState(null);
   const [currentUser, setCurrentUser] = useState(null);
-
-  const [submitting, setSubmitting] = useState(false);
 
   // ── 初始化：从 initialData 加载 ───────────────────────────────────────────
   useEffect(() => {
@@ -114,7 +144,7 @@ export default function TransitNotifyShipmentModal({ order, orders, initialData,
     if (!file) return;
     setUploadingProof(true);
     try {
-      const { file_url } = await base44.integrations.Core.UploadFile({ file, path: "shipment_proof" });
+      const { file_url } = await base44.integrations.Core.UploadFile({ file, path: "transit_proof" });
       setProofUrl(file_url);
     } catch (err) {
       toast.error("上传失败: " + (err?.message || err));
@@ -149,6 +179,7 @@ export default function TransitNotifyShipmentModal({ order, orders, initialData,
     };
     setGeneratingAlipay(true);
     try {
+
       const res = await base44.functions.invoke("alipay/transit/pay", {
         pool_id: targetOrders[0]?.consolidation_pool_id,
         user_id: currentUser.id,
@@ -158,6 +189,7 @@ export default function TransitNotifyShipmentModal({ order, orders, initialData,
         payment_method: newMethod,
         popup_mode: true,
         transit_method_id: selectedTransitMethodId,
+        address_id: resolvedAddress.id
       });
       if (!res?.data?.success) {
         toast.error(`下单失败: ${res?.data?.result}`);
@@ -182,7 +214,15 @@ export default function TransitNotifyShipmentModal({ order, orders, initialData,
     setShowAlipayConfirm(false);
     setAlipayFormData(null);
     if (popup) {
-      toast.info("支付中，请在弹出的支付宝窗口完成付款...");
+      setAlipayPaying(true);
+      alipayPopupRef.current = popup;
+      alipayPollTimerRef.current = setInterval(() => {
+        if (popup.closed) {
+          clearInterval(alipayPollTimerRef.current);
+          alipayPollTimerRef.current = null;
+          setAlipayPaying(false);
+        }
+      }, 500);
     }
   };
 
@@ -195,60 +235,25 @@ export default function TransitNotifyShipmentModal({ order, orders, initialData,
       });
       if (res.data?.success) {
         toast.success("记账付款成功");
+        onSuccess?.();
       }
     } catch (err) {
       toast.error("记账付款失败: " + (err?.message || err));
     }
   };
 
-  // ── 提交 ──────────────────────────────────────────────────────────────────
-  const canSubmit = isAddressOk() && !!selectedTransitMethodId && !submitting;
-
-  const handleSubmit = async () => {
-    if (!canSubmit) return;
-    setSubmitting(true);
-    try {
-      const orderIds = targetOrders.map(o => o.id);
-      const transitLoc = transitLocations.find(l => String(l.id) === String(targetOrders[0]?.transit_location_id));
-      const transitMethodName = transitMethods.find(m => String(m.id) === String(selectedTransitMethodId))?.name || "";
-
-      const shipmentPayload = {
-        consType: "transit",
-        address: resolvedAddress,
-        transit_location_id: targetOrders[0]?.transit_location_id || null,
-        transit_location_name: transitLoc?.name || targetOrders[0]?.transit_location_name || "",
-        transit_location_country: transitLoc?.country || "",
-        transit_shipping_method_id: selectedTransitMethodId,
-        transit_shipping_method_name: transitMethodName,
-        selected_addon_ids: [],
-        selected_addons: [],
-        join_existing_pool: false,
-        is_private: false,
-        shared_with_emails: [],
-      };
-
-      await base44.functions.invoke('shipping/createShippingPool', {
-        order_ids: orderIds,
-        notice_key: 'shipping_request_sent',
-        payload: shipmentPayload,
-        new_address: saveNewAddress,
-        pref_id: userPrefId,
-      });
-
-      toast.success('中转地发货申请已提交');
-      onSuccess?.();
-      onClose?.();
-    } catch (err) {
-      const message = err?.response?.data?.message || err?.message;
-      toast.error(message || '提交失败，请稍后重试');
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="bg-white rounded-xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={e => { if (e.target === e.currentTarget && !alipayPaying) onClose(); }}>
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto relative">
+        {/* 支付宝支付中遮盖层 */}
+        {alipayPaying && (
+          <div className="absolute inset-0 bg-white/80 backdrop-blur-sm rounded-xl z-20 flex flex-col items-center justify-center gap-3"
+               onClick={e => e.stopPropagation()}>
+            <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
+            <p className="text-sm text-gray-600 font-medium">支付中，请在弹出的支付宝窗口完成付款...</p>
+            <p className="text-xs text-gray-400">请不要刷新和关闭本页面...</p>
+          </div>
+        )}
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b">
           <h2 className="text-base font-semibold text-gray-900">
@@ -388,29 +393,14 @@ export default function TransitNotifyShipmentModal({ order, orders, initialData,
             {/* 支付宝 */}
             {selectedMethodMeta?.value === "alipay" && (
               <div className="space-y-2 mt-2">
-                {alipayUrl && (
-                  <div className="p-3 bg-green-50 border border-green-200 rounded-lg text-sm text-green-700 flex items-center gap-2">
-                    <CheckCircle className="w-4 h-4 flex-shrink-0" />付款链接已生成，请在新标签完成付款后刷新页面。
-                  </div>
-                )}
                 <div className="flex gap-2">
                   <Button className="flex-1 bg-blue-600 hover:bg-blue-700" onClick={handleGenerateAlipay} disabled={generatingAlipay}>
                     {generatingAlipay ? (
                       <><Loader2 className="w-4 h-4 mr-2 animate-spin" />生成中...</>
                     ) : (
-                      <><ExternalLink className="w-4 h-4 mr-2" />{alipayUrl ? "重新生成链接" : "生成支付宝付款链接"}</>
+                      <><ExternalLink className="w-4 h-4 mr-2" />生成支付宝付款链接</>
                     )}
                   </Button>
-                  {alipayUrl && (
-                    <a
-                      href={alipayUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex items-center justify-center gap-2 px-4 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded-md transition-colors whitespace-nowrap"
-                    >
-                      <ExternalLink className="w-4 h-4" />打开付款页
-                    </a>
-                  )}
                 </div>
               </div>
             )}
@@ -429,14 +419,6 @@ export default function TransitNotifyShipmentModal({ order, orders, initialData,
               </div>
             )}
           </div>
-        </div>
-
-        {/* Footer */}
-        <div className="px-5 py-4 border-t flex gap-2">
-          <Button variant="outline" className="flex-1" onClick={onClose}>取消</Button>
-          <Button className="flex-1 bg-indigo-600 hover:bg-indigo-700" onClick={handleSubmit} disabled={!canSubmit}>
-            {submitting ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />提交中...</> : `提交申请${isMulti ? ` (${targetOrders.length})` : ""}`}
-          </Button>
         </div>
       </div>
 
