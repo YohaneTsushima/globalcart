@@ -12,11 +12,12 @@ import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import CountrySelect from "@/components/common/CountrySelect";
+import KuaidiCompanySelect from "@/components/common/KuaidiCompanySelect";
 import { getCountry } from "@/lib/countries";
 
 const CURRENCIES = ["JPY", "CNY", "USD", "TWD", "HKD", "EUR", "SGD"];
 const EMPTY_RATE = { zone: "通用", first_weight_g: 500, first_weight_fee: 0, additional_unit_g: 500, additional_unit_fee: 0, currency: "CNY" };
-const BLANK = { name: "", description: "", country: "CN", fee: 0, fee_currency: "CNY", rate_mode: "simple", simple_rates: [{ ...EMPTY_RATE }], is_active: true };
+const BLANK = { name: "", description: "", country: "CN", fee: 0, fee_currency: "CNY", rate_mode: "simple", simple_rates: [{ ...EMPTY_RATE }], is_active: true, provider_key: "" };
 
 function RateRow({ rate, onChange, onDelete }) {
   return (
@@ -112,7 +113,16 @@ function TransitDetailPanel({ selected, onSave, onCancel }) {
       <div className="grid grid-cols-2 gap-3">
         <div>
           <Label className="text-xs text-gray-500">名称 *</Label>
-          <Input className="mt-1 h-8 text-sm" value={form.name} onChange={e => f("name", e.target.value)} placeholder="如：顺丰速运" />
+          <KuaidiCompanySelect
+            className="mt-1"
+            value={form.provider_key || ""}
+            name={form.name || ""}
+            placeholder="如：顺丰速运"
+            onSelect={(code, companyName) => setForm(p => ({ ...p, name: companyName, provider_key: code }))}
+          />
+          {form.provider_key && (
+            <p className="mt-1 text-[10px] text-gray-400">快递100编码：<span className="font-mono">{form.provider_key}</span></p>
+          )}
         </div>
         <div>
           <Label className="text-xs text-gray-500">中转国家 *</Label>

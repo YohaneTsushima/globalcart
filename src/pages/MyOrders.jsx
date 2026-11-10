@@ -96,7 +96,8 @@ const STATUS_FILTERS = [
   { v: "transited", l: "已向中转地发出" },
   { v: "transit_forwarded", l: "中转地已发货" },
   { v: "transit_arrived", l: "中转地已收货" },
-  { v: "forwarded_notified", l: "已通知中转地发货" },
+  { v: "awaiting_forwarded_notified", l: "等待中转地确认" },
+  { v: "forwarded_notified", l: "已申请中转地发货" },
   { v: "shipped", l: "已发出" },
   { v: "delivered", l: "已收货" },
   { v: "cancelled", l: "已取消" },
@@ -1267,7 +1268,25 @@ export default function MyOrders() {
         <TransitNotifyShipmentModal
           order={transitShipmentOrder}
           initialData={transitShipmentInitialData}
-          onClose={() => { setTransitShipmentOrder(null); setTransitShipmentInitialData(null); }}
+          onClose={() => { setTransitShipmentOrder(null); setTransitShipmentInitialData(null); fetchOrders(user); }}
+          onProofUploaded={async () => {
+            const order = transitShipmentOrder;
+            const orderIds = [order.id];
+            try {
+              const r = await base44.functions.invoke('order/info/findTransitForShipment', {
+                id: null,
+                data: {
+                  transit_location_id: order.pool?.transit_location_id || order.transit_location_id || null,
+                  user_email: order.user_email,
+                  pool_id: order.consolidation_pool_id || order.pool?.pool_id || null,
+                }
+              });
+              setNotifyShipmentCache(orderIds, r.data);
+              setTransitShipmentInitialData(r.data);
+            } catch (err) {
+              console.error('[MyOrders] 刷新 findTransitForShipment 失败:', err);
+            }
+          }}
           onSuccess={() => {
             setTransitShipmentOrder(null);
             setTransitShipmentInitialData(null);
@@ -1279,7 +1298,7 @@ export default function MyOrders() {
         <TransitNotifyShipmentModal
           orders={transitShipmentOrders}
           initialData={transitShipmentInitialData}
-          onClose={() => { setTransitShipmentOrders(null); setTransitShipmentInitialData(null); }}
+          onClose={() => { setTransitShipmentOrders(null); setTransitShipmentInitialData(null); fetchOrders(user); }}
           onSuccess={() => {
             setTransitShipmentOrders(null);
             setTransitShipmentInitialData(null);

@@ -253,4 +253,6 @@ export const transitLocationApi = {
   userOrAdminConfirm:      (id, data)          => mutate('TransitShipping', 'userOrAdminConfirm', { id, data }),
   completedPickup:         (id, data)          => mutate('TransitShipping', 'completedPickup', { id, data }),
   confirmStorage:          (id, data)          => mutate('TransitShipping', 'confirmStorage', { id, data }),
+  handleUploadProof:       (id, data)          => mutate('TransitShipping', 'handleUploadProof', { id, data }),
+  confirmUploadProof:      (id, data)          => mutate('TransitShipping', 'confirmUploadProof', { id, data }),
 };

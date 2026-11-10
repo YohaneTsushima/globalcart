@@ -20,7 +20,16 @@ const POOL_STATUS_CONFIG = {
   pending: '准备中',
   ready_to_ship: '准备发往中转站',
   transited: '已向中转地发出',
-  completed: '已完成'
+  completed: '已完成',
+  // 后端 ShippingPool 状态补充
+  in_warehouse: '已入库',
+  in_storage: '暂存中',
+  transit_arrived: '中转地已收货',
+  transit_shipped: '中转地已发货',
+  transit_forwarded: '中转地已发货',
+  awaiting_forwarded_notified: '等待中转地确认',
+  shipped: '已发出',
+  delivered: '已收货',
 }
 
 export default function TransitPoolCard({ pool, transitStatus, isSelected, onToggleSelect, onClick }) {

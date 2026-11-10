@@ -81,9 +81,15 @@ function TransitShippingPanel({ batch, pool, transitMethods, isManager, onSaved,
   useEffect(() => {
     // Priority 1: use findOne detail record (fresh, complete)
     if (detail) {
+      // 用户申请发货时选的真实方式存在 detail.transit_shipping_method_id（如 8），
+      // 而 detail.transit_shipping_method 可能是 "__storage__" 标记，需用 id 反查真实方式名
+      const detailMethodId = detail.transit_shipping_method_id;
+      const detailMethodName = transitMethods.find(m => String(m.id) === String(detailMethodId))?.name
+        || (detail.transit_shipping_method && !String(detail.transit_shipping_method).startsWith('__') ? detail.transit_shipping_method : '')
+        || defaultMethod;
       setFormData({
-        transit_shipping_method: detail.transit_shipping_method || defaultMethod,
-        transit_shipping_method_id: batch.transit_shipping_method_id,
+        transit_shipping_method: detailMethodName,
+        transit_shipping_method_id: detailMethodId ?? batch.transit_shipping_method_id,
         transit_tracking_number: detail.transit_tracking_number ?? '',
         transit_fee_jpy: detail.transit_fee_jpy ?? '',
         transit_note: detail.transit_note ?? '',
@@ -613,9 +619,16 @@ export default function BatchDetailPanel({ batch, pool, transitMethods, isManage
   }
 
   const normalizeId = id => id === 'pickup' ? '__pickup__' : id === 'storage' ? '__storage__' : (id || '');
-  const methodId = normalizeId(batch.transit_shipping_method_id || batch.transit_shipping_method);
-  const isStorage = methodId === '__storage__';
-  const isPickup = methodId === '__pickup__';
+  // 暂存/自取标记权威来源：detail（findOne 的 TransitShipping 记录，如 '__storage__'），其次 batch
+  // 注意 transit_shipping_method_id 是用户申请发货时选的真实方式 id（如 8），不能用于判断暂存/自取
+  const methodMarker = detail?.transit_shipping_method || batch.transit_shipping_method || '';
+  const methodId = normalizeId(String(methodMarker).startsWith('__') ? methodMarker : batch.transit_shipping_method_id);
+  const isStorage = methodId === '__storage__' || methodMarker === '__storage__';
+  const isPickup = methodId === '__pickup__' || methodMarker === '__pickup__';
+  // detail.status 是 TransitStatus（TransitShipping 记录）：
+  //   'awaiting'（等待确认）/ 'forwarded_notified'（已申请中转地发货）都表示暂存后用户申请发货、等负责人发货
+  //   （这是 TransitStatus，区别于 OrderStatus 的 awaiting_forwarded_notified 等订单级状态）
+  const awaitingShip = detail?.status === 'awaiting' || detail?.status === 'forwarded_notified';
 
   const batchLabel = batch.group_label || `${batch.user_name || batch.user_email} 批次`;
 
@@ -626,9 +639,13 @@ export default function BatchDetailPanel({ batch, pool, transitMethods, isManage
         <div>
           <div className="flex items-center gap-2">
             <p className="font-semibold text-gray-800 text-sm">{batchLabel}</p>
-            {isStorage && <Badge className="bg-indigo-100 text-indigo-700 text-xs">暂存</Badge>}
-            {isPickup && <Badge className="bg-teal-100 text-teal-700 text-xs">自取</Badge>}
-            {!isStorage && !isPickup && <Badge className="bg-blue-100 text-blue-700 text-xs">中转发货</Badge>}
+            {isStorage && !awaitingShip && <Badge className="bg-indigo-100 text-indigo-700 text-xs">暂存</Badge>}
+            {isPickup && !awaitingShip && <Badge className="bg-teal-100 text-teal-700 text-xs">自取</Badge>}
+            {(!isStorage && !isPickup) || awaitingShip ? (
+              <Badge className="bg-blue-100 text-blue-700 text-xs">
+                中转发货{isStorage && awaitingShip ? '（用户申请暂存货物发货）' : ''}
+              </Badge>
+            ) : null}
           </div>
           <p className="text-xs text-gray-500 mt-0.5">{batch.user_name || batch.user_email}</p>
         </div>
@@ -702,9 +719,9 @@ export default function BatchDetailPanel({ batch, pool, transitMethods, isManage
         </div>
 
         {/* Type-specific panels */}
-        {isStorage ? (
+        {isStorage && !awaitingShip ? (
           <StorageBatchPanel batch={batch} pool={pool} isManager={isManager} onSaved={onSaved} detail={detail}/>
-        ) : isPickup ? (
+        ) : isPickup && !awaitingShip ? (
           <PickupBatchPanel batch={batch} pool={pool} isManager={isManager} isAdmin={isAdmin} currentUser={currentUser} onSaved={onSaved} detail={detail} />
         ) : (
           <MemoizedTransitShippingPanel batch={batch} pool={pool} transitMethods={transitMethods} isManager={isManager} onSaved={onSaved} detail={detail} />

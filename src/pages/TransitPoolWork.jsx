@@ -64,11 +64,29 @@ function collectAddons(entry) {
 function buildUserGroupList(entries, request) {
   const hasPerUserGroups = !request?.title && (request?.per_user_groups || []).length > 0;
 
+  // 从 request.per_user_groups 找到该 entry 所属 group，取 group 级的暂存/自取标记
+  // （group 的 transit_shipping_method_id 保留 '__storage__'/'__pickup__'，而 entry 的是用户申请后的真实方式 id，被覆盖）
+  // group 按 user_email + transit method 唯一，无 group_index；用 user_email + order_entries 含该 order_id 来定位
+  const findGroupMarker = (entry) => {
+    const groups = request?.per_user_groups || [];
+    const orderId = String(entry.order_id ?? entry.id ?? '');
+    // 优先：user_email 匹配且该 group 的 order_entries 含此订单
+    let g = groups.find(g => g.user_email === entry.user_email &&
+      (g.order_entries || []).some(e => String(e.order_id ?? e.id) === orderId));
+    // 兜底：同 user 的 group（若只有一组）
+    if (!g) {
+      const sameUser = groups.filter(g => g.user_email === entry.user_email);
+      if (sameUser.length === 1) g = sameUser[0];
+    }
+    return normalizeMethodId(g?.transit_shipping_method_id) || normalizeMethodId(g?.transit_shipping_method_name) || '';
+  };
+
   if (hasPerUserGroups) {
     const groups = {};
     entries.forEach(rawEntry => {
       const entry = normalizeEntry(rawEntry);
-      const methodId = normalizeMethodId(entry.transit_shipping_method_id);
+      const methodMarker = findGroupMarker(entry);
+      const methodId = methodMarker || normalizeMethodId(entry.transit_shipping_method_id);
       const key = `${entry.user_email}__${methodId}__${entry.group_index ?? 0}`;
       if (!groups[key]) {
         groups[key] = {
@@ -90,7 +108,7 @@ function buildUserGroupList(entries, request) {
         };
       }
       groups[key].entries.push(entry);
-      groups[key].estimated_jpy += entry.order_details.reduce((s, o) => s + (o.estimated_jpy || 0), 0);
+      groups[key].estimated_jpy += entry.order_details.reduce((s, o) => s + (Number(o.estimated_jpy) || 0), 0);
     });
     return Object.values(groups).sort((a, b) =>
       a.user_email.localeCompare(b.user_email) || a.group_index - b.group_index
@@ -109,7 +127,7 @@ function buildUserGroupList(entries, request) {
           user_name: entry.user_name,
           group_label: entry.user_name || entry.user_email,
           final_address: entry.final_address,
-          transit_shipping_method_id: normalizeMethodId(entry.transit_shipping_method_id),
+          transit_shipping_method_id: findGroupMarker(entry) || normalizeMethodId(entry.transit_shipping_method_id),
           transit_shipping_method: entry.transit_shipping_method,
           selected_addons: collectAddons(entry),
           product_image_url: entry.product_image_url,
@@ -126,11 +144,19 @@ function buildUserGroupList(entries, request) {
 
 // ─── Batch list item ──────────────────────────────────────────────────────────
 function BatchListItem({ batch, selected, onClick }) {
-  // 后端 transit_shipping_method 字段值是 "__pickup__" / "__storage__" / 具体快递名（如"顺丰速运"）
-  const methodStr = batch.transit_shipping_method || '';
-  const isStorage = methodStr === '__storage__';
-  const isPickup = methodStr === '__pickup__';
-  const methodName = isStorage ? '暂存' : isPickup ? '自取' : (methodStr || '中转发货');
+  // 归一化暂存/自取标记（历史值：0 / 'pickup' / 'storage' / '__pickup__' / '__storage__'）
+  // sentinel 可能在 id 或 name 任一字段，两个都检查（与 shippingFeeCalc.isPickupStorageMethod 一致）
+  const normId = v => {
+    if (v === 'pickup' || v === '__pickup__') return '__pickup__';
+    if (v === 'storage' || v === '__storage__') return '__storage__';
+    return v == null ? '' : String(v);
+  };
+  
+  const idMark = normId(batch.transit_shipping_method_id);
+  const nameMark = normId(batch.transit_shipping_method);
+  const isStorage = idMark === '__storage__' || nameMark === '__storage__';
+  const isPickup = idMark === '__pickup__' || nameMark === '__pickup__';
+  const methodName = isStorage ? '暂存' : isPickup ? '自取' : (batch.transit_shipping_method || '中转发货');
 
   return (
     <button

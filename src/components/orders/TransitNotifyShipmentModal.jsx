@@ -19,12 +19,23 @@ import {
   isAddressFormValid,
   EMPTY_ADDRESS_FORM,
 } from "@/components/common/AddressForm";
+import { transitLocationApi } from "@/lib/tenantApi";
 
 const CURRENCY_SYMBOLS = { CNY: "¥", USD: "$", TWD: "NT$", HKD: "HK$", EUR: "€", SGD: "S$" };
 
-export default function TransitNotifyShipmentModal({ order, orders, initialData, onClose, onSuccess }) {
+export default function TransitNotifyShipmentModal({ pool, order, orders, initialData, onClose, onProofUploaded, onSuccess }) {
   const targetOrders = orders || (order ? [order] : []);
   const isMulti = targetOrders.length > 1;
+
+  // pool 数据来自 findTransitForShipment 返回的 data.pools（数组），
+  // 优先从 initialData 解析；找不到再回退到外部传入的 pool prop
+  const resolvedPool = (() => {
+    const pools = initialData?.pools || initialData?.pool || [];
+    const fromInitial = Array.isArray(pools)
+      ? (pools.find(p => order?.consolidation_pool_id && String(p.id) === String(order.consolidation_pool_id)) || pools[0])
+      : pools;
+    return fromInitial || pool || null;
+  })();
 
   // ── 地址 ──────────────────────────────────────────────────────────────────
   const [savedAddresses, setSavedAddresses] = useState([]);
@@ -45,6 +56,7 @@ export default function TransitNotifyShipmentModal({ order, orders, initialData,
   const [paymentMethod, setPaymentMethod] = useState("");
   const [selectedMethodMeta, setSelectedMethodMeta] = useState(null);
   const [proofUrl, setProofUrl] = useState("");
+  const [proofError, setProofError] = useState("");
   const [uploadingProof, setUploadingProof] = useState(false);
   const [alipayUrl, setAlipayUrl] = useState(null);
   const [alipayFormData, setAlipayFormData] = useState(null);
@@ -142,14 +154,67 @@ export default function TransitNotifyShipmentModal({ order, orders, initialData,
   // ── 支付：凭证上传 ────────────────────────────────────────────────────────
   const handleProofChange = async (file) => {
     if (!file) return;
+    if (!resolvedPool?.id) {
+      setProofError("缺少中转池信息，无法上传凭证");
+      return;
+    }
     setUploadingProof(true);
+    setProofError("");
+    let file_url = "";
     try {
-      const { file_url } = await base44.integrations.Core.UploadFile({ file, path: "transit_proof" });
+      ({ file_url } = await base44.integrations.Core.UploadFile({ file, path: "transit_proof" }));
       setProofUrl(file_url);
+
+      let data = {
+        pool_code: resolvedPool.pool_code,
+        payment_proof_url: file_url,
+        transit_shipping_method_id: selectedTransitMethodId,
+        payment_method: selectedMethodMeta?.method_name || selectedMethodMeta?.label || "",
+        payment_method_id: selectedMethodMeta?.id || null,
+        address_id: resolvedAddress.id,
+        // 多订单传全部订单号数组，单订单传长度 1 的数组
+        order_number: targetOrders.map(o => o.order_number).filter(Boolean),
+      }
+      await transitLocationApi.handleUploadProof(resolvedPool.id, data);
+
+      setProofError("");
+      toast.success(`[${targetOrders.map(o => o.order_number).filter(Boolean).join("、")}] 的中转凭证上传成功！`);
+
+      await onProofUploaded?.();
+
     } catch (err) {
-      toast.error("上传失败: " + (err?.message || err));
+      const message = err?.response?.data?.message;
+      console.error('[TransitNotifyShipmentModal] handleProofChange failed:', message);
+      // 显示常驻错误信息（不只靠 toast）
+      setProofError(`上传失败：${message}` || '凭证保存失败，请重新上传');
+      // 上传到存储成功但保存失败：把刚上传的文件删掉（传显式 url，proofUrl state 还没更新）
+      handleDeleteProof({ url: file_url, silent: true });
     } finally {
       setUploadingProof(false);
+    }
+  };
+
+  // ── 支付：凭证删除 ────────────────────────────────────────────────────────
+  const handleDeleteProof = async ({ isError = false, url: explicitUrl, silent = false } = {}) => {
+    const url = explicitUrl || proofUrl || resolvedPool?.payment_proof_url;
+    if (!url) return;
+
+    if (isError) {
+      setProofError("凭证显示错误，请重新上传");
+    } else if (!silent) {
+      // 用户主动删除：清空错误信息
+      // silent（失败回滚删除）：保留 catch 里已设置的错误信息，不能清空
+      setProofError("");
+    }
+
+    setProofUrl("");
+    try {
+      await base44.integrations.Core.DeleteFile({ imageUrl: url, path: "transit_proof" });
+    } catch (_) {}
+
+    // silent：失败回滚删除，不弹"删除成功"（错误信息已在 proofError 显示）
+    if (!isError && !silent) {
+      toast.success("付款凭证已删除");
     }
   };
 
@@ -242,16 +307,25 @@ export default function TransitNotifyShipmentModal({ order, orders, initialData,
     }
   };
 
+  // 进行中（上传凭证 / 生成支付宝 / 支付中）时，阻止用户点 modal 外部关闭
+  const busy = uploadingProof || generatingAlipay || alipayPaying;
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={e => { if (e.target === e.currentTarget && !alipayPaying) onClose(); }}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={e => { if (e.target === e.currentTarget && !busy) onClose(); }}>
       <div className="bg-white rounded-xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto relative">
-        {/* 支付宝支付中遮盖层 */}
-        {alipayPaying && (
+        {/* 进行中遮盖层：阻止点击 modal 内外任意区域 */}
+        {busy && (
           <div className="absolute inset-0 bg-white/80 backdrop-blur-sm rounded-xl z-20 flex flex-col items-center justify-center gap-3"
                onClick={e => e.stopPropagation()}>
             <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
-            <p className="text-sm text-gray-600 font-medium">支付中，请在弹出的支付宝窗口完成付款...</p>
-            <p className="text-xs text-gray-400">请不要刷新和关闭本页面...</p>
+            <p className="text-sm text-gray-600 font-medium">
+              {alipayPaying
+                ? "支付中，请在弹出的支付宝窗口完成付款..."
+                : uploadingProof
+                  ? "凭证上传保存中，请稍候..."
+                  : "处理中，请稍候..."}
+            </p>
+            <p className="text-xs text-gray-400">请不要刷新、关闭本页面或点击其他区域...</p>
           </div>
         )}
         {/* Header */}
@@ -259,7 +333,8 @@ export default function TransitNotifyShipmentModal({ order, orders, initialData,
           <h2 className="text-base font-semibold text-gray-900">
             申请中转地发货{isMulti ? `（${targetOrders.length} 件）` : ""}
           </h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+          <button onClick={() => { if (!busy) onClose(); }} disabled={busy}
+            className={`text-gray-400 hover:text-gray-600 ${busy ? "opacity-40 cursor-not-allowed" : ""}`}>
             <X className="w-5 h-5" />
           </button>
         </div>
@@ -411,11 +486,14 @@ export default function TransitNotifyShipmentModal({ order, orders, initialData,
                 <ImageUploader
                   value={proofUrl}
                   onChange={handleProofChange}
-                  onDelete={() => setProofUrl("")}
+                  onDelete={handleDeleteProof}
                   uploading={uploadingProof}
                   label="上传付款凭证"
                   id="transit-shipment-proof"
                 />
+                {proofError && (
+                  <p className="mt-1.5 text-xs text-red-600">{proofError}</p>
+                )}
               </div>
             )}
           </div>
