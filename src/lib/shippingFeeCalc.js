@@ -101,16 +101,18 @@ export function calcFeeBreakdownPerUser({
     // Rewarehouse fee: if any of user's orders have a rewarehouse_fee_jpy, sum them
     const rewarehouseFeeJpy = userOrders.reduce((s, o) => s + (parseFloat(o.rewarehouse_fee_jpy) || 0), 0);
 
-    // Addon fees: per-user, deduplicated by addon id/name (one charge per user per service)
+    // 发货增值服务：中转拼邮按该用户自己的 transit_shipping 记录计费（每个用户可能不同），
+    // 其他拼邮类型沿用池级 addon。按 addon id/name 去重，一个用户同一服务只收一次。
+    const addonSource = isTransit
+      ? (transitRecordByEmail[email]?.selected_addons || [])
+      : (pool.selected_addons || []);
     const seenAddonKeys = new Set();
     const userAddons = [];
-    for (const o of userOrders) {
-      for (const a of (pool.selected_addons || [])) {
-        const key = a.id || a.service_name;
-        if (key && !seenAddonKeys.has(key)) {
-          seenAddonKeys.add(key);
-          userAddons.push(a);
-        }
+    for (const a of addonSource) {
+      const key = a.id || a.service_name;
+      if (key && !seenAddonKeys.has(key)) {
+        seenAddonKeys.add(key);
+        userAddons.push(a);
       }
     }
     const userAddonFeeJpy = userAddons.reduce((s, a) => {

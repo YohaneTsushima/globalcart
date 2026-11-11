@@ -278,8 +278,8 @@ export default function SubmitOrder() {
 
   const handleAddonFeeChange = (addonId, value) => {
     const val = parseFloat(value);
-    const fee = isNaN(val) ? 0 : val;
-    
+    const fee = isNaN(val) ? undefined : val;
+
     setAddonCustomFees(prev => ({ ...prev, [addonId]: fee }));
     
     // Validate and update errors
@@ -387,7 +387,7 @@ export default function SubmitOrder() {
             selected_addons: selectedAddonObjects.map((a) => ({ id: a.id, service_name: a.service_name, fee: parseFloat(a.fee) || 0, fee_currency: a.fee_currency || "JPY" })),
             custom_addon_fee: selectedAddons
               .filter(id => {
-                const addon = addonOptions.find(a => a.id === id && a.custom_fee);
+                const addon = addonOptions.find(a => a.id === id);
                 return addon?.is_user_customizable && addonCustomFees[id] !== undefined && !addonFeeErrors[id];
               })
               .map(id => ({ id, fee: addonCustomFees[id] })),

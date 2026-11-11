@@ -585,6 +585,21 @@ export default function MyOrders() {
   };
 
   // 单商品订单的操作列（分支①）：完整 per-order 操作
+  // 发货池是否已进入「可收款」阶段。
+  // open / pending / processing 是建单与打包处理阶段：后台保存发货信息时会把费用明细
+  // 一并预览落库（ShippingPoolRecordServiceImpl#saveShippingDetail 每次都会重算 fee_breakdown_per_user），
+  // 但此时并没有向用户发起收款，payment_status 也还是 null，不能据此显示「补付运费」。
+  const POOL_NOT_PAYABLE_STATUSES = ["open", "pending", "processing"];
+  const isPoolPaymentDue = (pool, email) => {
+    if (!pool) return false;
+    const status = pool.status || pool.pool_status;
+    if (status && POOL_NOT_PAYABLE_STATUSES.includes(status)) return false;
+    const myPay = (pool.per_user_payments || []).find(p => p.user_email === email);
+    if (pool.payment_status === "paid") return false;
+    if (myPay && myPay.payment_status === "paid") return false;
+    return (pool.fee_breakdown_per_user || []).length > 0 || (pool.shipping_fee_jpy || 0) > 0;
+  };
+
   const renderOrderActions = (order) => (
     <div className="flex flex-col gap-1">
       {(order.unread_roles || []).includes("user") && (
@@ -729,18 +744,12 @@ export default function MyOrders() {
               }}>
               <CheckCircle className="w-3 h-3 mr-1" />收货
             </Button>
-            {(() => {
-              if (!pool) return null;
-              const feeNotified = (pool.fee_breakdown_per_user || []).length > 0 || (pool.shipping_fee_jpy || 0) > 0;
-              const myPay = (pool.per_user_payments || []).find(p => p.user_email === user?.email);
-              const unpaid = pool.payment_status !== "paid" && !(myPay && myPay.payment_status === "paid") && feeNotified;
-              return unpaid ? (
-                <Button size="sm" className="h-7 text-xs bg-orange-600 hover:bg-orange-700"
-                  onClick={(e) => { e.stopPropagation(); setViewPool(pool); }}>
-                  <CreditCard className="w-3 h-3 mr-1" />补付运费
-                </Button>
-              ) : null;
-            })()}
+            {isPoolPaymentDue(pool, user?.email) && (
+              <Button size="sm" className="h-7 text-xs bg-orange-600 hover:bg-orange-700"
+                onClick={(e) => { e.stopPropagation(); setViewPool(pool); }}>
+                <CreditCard className="w-3 h-3 mr-1" />补付运费
+              </Button>
+            )}
           </div>
         );
       })()}
@@ -798,17 +807,11 @@ export default function MyOrders() {
                 <Package className="w-3 h-3 mr-1" />发货详情
               </Button>
             )}
-            {(() => {
-              if (!pool?.pool_id) return null;
-              const feeNotified = (pool?.fee_breakdown_per_user || []).length > 0 || (pool?.shipping_fee_jpy || 0) > 0;
-              const myPay = (pool?.per_user_payments || []).find(p => p.user_email === user?.email);
-              const unpaid = pool?.payment_status !== "paid" && !(myPay && myPay.payment_status === "paid") && feeNotified;
-              return unpaid ? (
-                <Button size="sm" className="h-7 text-xs bg-orange-600 hover:bg-orange-700" onClick={() => setViewPool(pool)}>
-                  <CreditCard className="w-3 h-3 mr-1" />补付运费
-                </Button>
-              ) : null;
-            })()}
+            {pool?.pool_id && isPoolPaymentDue(pool, user?.email) && (
+              <Button size="sm" className="h-7 text-xs bg-orange-600 hover:bg-orange-700" onClick={() => setViewPool(pool)}>
+                <CreditCard className="w-3 h-3 mr-1" />补付运费
+              </Button>
+            )}
             <Button size="sm" className="h-7 text-xs bg-green-600 hover:bg-green-700" onClick={() => setDeliverTargetOrder([order])}>
               <CheckCircle className="w-3 h-3 mr-1" />收货
             </Button>
@@ -911,17 +914,11 @@ export default function MyOrders() {
             <Archive className="w-3 h-3 mr-1" />存档
           </Button>
         )}
-        {(() => {
-          if (!pool.pool_id) return null;
-          const feeNotified = (pool.fee_breakdown_per_user || []).length > 0 || (pool.shipping_fee_jpy || 0) > 0;
-          const myPay = (pool.per_user_payments || []).find(p => p.user_email === user?.email);
-          const unpaid = pool.payment_status !== "paid" && !(myPay && myPay.payment_status === "paid") && feeNotified;
-          return unpaid ? (
-            <Button size="sm" className="h-7 text-xs bg-orange-600 hover:bg-orange-700" onClick={(e) => { e.stopPropagation(); setViewPool(pool); }}>
-              <CreditCard className="w-3 h-3 mr-1" />补付运费
-            </Button>
-          ) : null;
-        })()}
+        {pool.pool_id && isPoolPaymentDue(pool, user?.email) && (
+          <Button size="sm" className="h-7 text-xs bg-orange-600 hover:bg-orange-700" onClick={(e) => { e.stopPropagation(); setViewPool(pool); }}>
+            <CreditCard className="w-3 h-3 mr-1" />补付运费
+          </Button>
+        )}
       </div>
     );
   };

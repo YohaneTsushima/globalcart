@@ -3,7 +3,7 @@
  * 根据批次类型（普通运输 / 暂存 / 自取）显示不同内容
  */
 import { useState, useEffect, memo } from "react";
-import { X, MapPin, Truck, Star, Package, Save, CheckCircle, Calendar, CalendarDays, Info, Eye, Loader2 } from "lucide-react";
+import { X, MapPin, Truck, Star, Package, Save, CheckCircle, Calendar, CalendarDays, Info, Eye, Loader2, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -64,6 +64,7 @@ function TransitShippingPanel({ batch, pool, transitMethods, isManager, onSaved,
 
   // 池级收货状态：由 TransitLocationWork「确认收货」写入，决定按钮形态
   const poolArrived = !!pool?.transit_arrival_confirmed_at || !!detail?.transit_arrived_date;
+  const recordNotArrived = detail?.status !== 'arrived';
 
   const [formData, setFormData] = useState({
     transit_shipping_method: defaultMethod,
@@ -150,7 +151,7 @@ function TransitShippingPanel({ batch, pool, transitMethods, isManager, onSaved,
     // Priority 3: fallback to batch.entries[0]
     return batch.entries[0] || null;
   })();
-  const recordShipped = !!existingRecord?.transit_shipped_date || !!existingRecord.transit_forwarded_date;
+  const recordShipped = !!existingRecord?.transit_shipped_date || !!existingRecord.transit_forwarded_date || recordNotArrived;
 
   // 组装该批次的订单 id 列表（用户+订单组 粒度，对应 transit_shipping.order_ids）
   const buildOrderIds = () => batch.entries.flatMap(e =>
@@ -332,10 +333,17 @@ function TransitShippingPanel({ batch, pool, transitMethods, isManager, onSaved,
         </div>
 
         {recordShipped ? (
-          <div className="flex items-center gap-2 text-xs text-green-700 bg-green-50 border border-green-200 rounded-lg px-3 py-2">
-            <CheckCircle className="w-4 h-4" />
-            已确认中转地发货{formData.transit_shipped_date ? `（${formData.transit_shipped_date}）` : ''}
-          </div>
+          recordNotArrived && !existingRecord?.transit_shipped_date && !existingRecord?.transit_forwarded_date ? (
+            <div className="flex items-center gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+              <AlertTriangle className="w-4 h-4" />
+              包裹未到达中转地，暂不可编辑
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 text-xs text-green-700 bg-green-50 border border-green-200 rounded-lg px-3 py-2">
+              <CheckCircle className="w-4 h-4" />
+              已确认中转地发货{formData.transit_shipped_date ? `（${formData.transit_shipped_date}）` : ''}
+            </div>
+          )
         ) : isManager && poolArrived ? (
           <div className="flex gap-2">
             <Button variant="outline" className="flex-1" onClick={handleSave} disabled={saving}>

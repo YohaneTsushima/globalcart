@@ -1354,8 +1354,8 @@ export default function ShippingPoolDetailModal({ pool: initialPool, isAdmin, cu
             }
            </div>
 
-          {/* Selected shipping addons */}
-          {((pool.selected_addons || []).length > 0 || (pool.selected_addon_ids || []).length > 0) &&
+          {/* Selected shipping addons —— 中转拼邮的增值服务按用户区分，改在包裹清单里各自展示 */}
+          {pool.consolidation_type !== "transit" && ((pool.selected_addons || []).length > 0 || (pool.selected_addon_ids || []).length > 0) &&
           <div className="bg-yellow-50 border border-yellow-100 rounded-lg px-3 py-2.5">
               <p className="text-xs text-yellow-700 font-medium mb-1.5">发货增值服务</p>
               <div className="space-y-1">
@@ -1454,6 +1454,37 @@ export default function ShippingPoolDetailModal({ pool: initialPool, isAdmin, cu
                               {canSeeDetail ? o.order_number : "—"} · {parseInt(o.weight_g) || 0}g
                               {isAdmin && o.id ? ` · ${tenantUserMap[o.user_email]?.display_name || tenantUserMap[o.user_email]?.full_name || o.user_name || ""}` : ""}
                             </p>
+                            {/* 订单增值服务（订单级 addon，含用户自定义金额） */}
+                            {canSeeDetail && (o.selected_addons || []).length > 0 && (
+                              <div className="mt-1.5 space-y-0.5">
+                                {(o.selected_addons || []).map((a, i) => {
+                                  const baseFee = parseFloat(a.fee) || 0;
+                                  const customFee = (a.custom_fee === null || a.custom_fee === undefined)
+                                    ? null
+                                    : parseFloat(a.custom_fee);
+                                  const hasCustom = customFee !== null && !Number.isNaN(customFee);
+                                  return (
+                                    <div key={i} className="flex items-center justify-between gap-2 text-xs">
+                                      <span className="text-purple-700 truncate">
+                                        订单增值服务 · {a.service_name || a.id}
+                                      </span>
+                                      <span className="flex-shrink-0 whitespace-nowrap">
+                                        {baseFee > 0 && (
+                                          <span className={hasCustom ? "line-through text-gray-400" : "text-purple-700 font-medium"}>
+                                            +{a.fee_currency || "JPY"} {Math.round(baseFee)}
+                                          </span>
+                                        )}
+                                        {hasCustom && (
+                                          <span className="text-purple-600 font-medium ml-1">
+                                            自定义 +{a.fee_currency || "JPY"} {Math.round(customFee)}
+                                          </span>
+                                        )}
+                                      </span>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
                           
                             </div>
                             <div className="flex items-center gap-1">
@@ -1626,6 +1657,7 @@ export default function ShippingPoolDetailModal({ pool: initialPool, isAdmin, cu
               }; // end renderOrder
 
               const isConsolidation = pool.consolidation_type && pool.consolidation_type !== "";
+              const isTransitPool = pool.consolidation_type === "transit";
 
               return (
                 <div className="space-y-3">
@@ -1635,9 +1667,16 @@ export default function ShippingPoolDetailModal({ pool: initialPool, isAdmin, cu
                     const groupWeight = groupOrders.reduce((s, o) => s + (parseInt(o.weight_g) || 0), 0);
                     const isMyGroup = email === currentUser?.email;
                     // Aggregate addons from this user's orders — deduplicated per user
-                    const uniqueGroupAddons = [...new Map(
+                    // 订单级增值服务 chip 只在非拼邮（consolidation_type 为空）时展示；
+                    // 中转/拼邮场景下每个订单行内已经单独展示「订单增值服务」，头部再挂 chip 会重复
+                    const uniqueGroupAddons = pool.consolidation_type ? [] : [...new Map(
                       groupOrders.flatMap(o => o.selected_addons || []).map(a => [a.id || a.service_name, a])
                     ).values()];
+                    // 中转拼邮：发货增值服务存在该用户自己的 transit_shipping 记录里，与订单级增值服务是两回事
+                    const userTransitRecord = isTransitPool
+                      ? (pool.transit_shipping || []).find(t => t && t.user_email === email)
+                      : null;
+                    const groupShippingAddons = userTransitRecord?.selected_addons || [];
                     // Transit method name
                     const transitMethodId = groupOrders[0]?.consolidation_transit_shipping_id || pool.transit_shipping_method_id || "";
                     const transitMethodName = transitShippingMethods.find(m => m.id === transitMethodId)?.name || "";
@@ -1669,6 +1708,38 @@ export default function ShippingPoolDetailModal({ pool: initialPool, isAdmin, cu
                             setRewarehouseSelectedIds={setRewarehouseSelectedIds}
                             setShowBulkRewarehouse={setShowBulkRewarehouse}
                           />
+                        )}
+                        {isTransitPool && groupShippingAddons.length > 0 && (
+                          <div className="mb-1.5 bg-yellow-50 border border-yellow-100 rounded-lg px-2.5 py-1.5">
+                            <p className="text-xs text-yellow-700 font-medium mb-1">发货增值服务</p>
+                            <div className="space-y-0.5">
+                              {groupShippingAddons.map((a, i) => {
+                                const baseFee = parseFloat(a.fee) || 0;
+                                const customFee = (a.custom_fee === null || a.custom_fee === undefined)
+                                  ? null
+                                  : parseFloat(a.custom_fee);
+                                const hasCustom = customFee !== null && !Number.isNaN(customFee);
+                                const currency = a.fee_currency || "JPY";
+                                return (
+                                  <div key={a.id ?? i} className="flex items-center justify-between gap-2 text-xs">
+                                    <span className="text-gray-700">{a.service_name || a.id}</span>
+                                    <span className="flex-shrink-0 whitespace-nowrap">
+                                      {baseFee > 0 && (
+                                        <span className={hasCustom ? "line-through text-gray-400" : "text-yellow-700 font-medium"}>
+                                          +{currency} {Math.round(baseFee)}
+                                        </span>
+                                      )}
+                                      {hasCustom && (
+                                        <span className="text-yellow-600 font-medium ml-1">
+                                          自定义 +{currency} {Math.round(customFee)}
+                                        </span>
+                                      )}
+                                    </span>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
                         )}
                         <div className="space-y-1.5">
                           {groupOrders.map(o => renderOrder(o))}
@@ -2486,10 +2557,26 @@ export default function ShippingPoolDetailModal({ pool: initialPool, isAdmin, cu
                       const shippingFee = Math.round(parseFloat(pool.shipping_fee_jpy) || 0);
                       const packingFee = Math.round(parseFloat(pool.packing_fee_jpy) || 0);
                       const itemSizeFee = orders.reduce((sum, o) => sum + (parseFloat(o.item_size_extra_fee) || 0), 0);
-                      const addonFee = (pool.selected_addons || []).reduce((sum, a) => {
-                        const fee = a.custom_fee != null ? a.custom_fee : a.fee;
-                        return sum + (parseFloat(fee) || 0);
-                      }, 0);
+                      const addonFee = (() => {
+                        // 中转拼邮的发货增值服务按用户区分，这里汇总全池（同一用户同一服务只算一次）
+                        if (pool.consolidation_type === "transit") {
+                          const seen = new Set();
+                          let total = 0;
+                          (pool.transit_shipping || []).forEach(t => {
+                            (t?.selected_addons || []).forEach(a => {
+                              const key = `${t.user_email}__${a.id || a.service_name}`;
+                              if (seen.has(key)) return;
+                              seen.add(key);
+                              total += parseFloat(a.custom_fee != null ? a.custom_fee : a.fee) || 0;
+                            });
+                          });
+                          return total;
+                        }
+                        return (pool.selected_addons || []).reduce((sum, a) => {
+                          const fee = a.custom_fee != null ? a.custom_fee : a.fee;
+                          return sum + (parseFloat(fee) || 0);
+                        }, 0);
+                      })();
                       const grandTotal = boxFee + shippingFee + packingFee + itemSizeFee + addonFee;
                       const hasFeeItems = boxFee > 0 || shippingFee > 0 || packingFee > 0 || itemSizeFee > 0 || addonFee > 0;
                       return (

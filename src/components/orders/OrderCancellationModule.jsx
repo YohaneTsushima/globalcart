@@ -27,8 +27,9 @@ const CANCEL_REASON_CATEGORIES = [
   { value: "other", label: "其他", color: "bg-gray-100 text-gray-700" },
 ];
 
-export default function OrderCancellationModule({ order, onSuccess, compact = false, isAdmin = true }) {
+export default function OrderCancellationModule({ order, onSuccess, compact = false, isAdmin = true, defaultExpanded = false }) {
   const [cancelReason, setCancelReason] = useState("");
+  const [expanded, setExpanded] = useState(defaultExpanded);
   const [cancelCategory, setCancelCategory] = useState("");
   const [cancelImages, setCancelImages] = useState([]);
   const [refundAmountJpy, setRefundAmountJpy] = useState("");
@@ -392,6 +393,21 @@ export default function OrderCancellationModule({ order, onSuccess, compact = fa
   if (compact) {
     return (
       <div className="space-y-2">
+        {/* 默认缩进收起：点「取消订单」展开表单 */}
+        {!expanded ? (
+          <div className="pl-3">
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-9 text-xs text-red-600 border-red-200 hover:bg-red-50"
+              onClick={() => setExpanded(true)}
+            >
+              <AlertTriangle className="w-3.5 h-3.5 mr-1.5" />
+              取消订单
+            </Button>
+          </div>
+        ) : (
+        <div className="pl-3 border-l-2 border-red-100 space-y-2">
         {/* 第一行：取消理由输入框（占两行） */}
         <RichTextInput
           value={cancelReason}
@@ -505,6 +521,8 @@ export default function OrderCancellationModule({ order, onSuccess, compact = fa
               {isSubmitting ? <Loader2 className="w-3 h-3 animate-spin" /> : <AlertTriangle className="w-3 h-3" />}
             </Button>
           </div>
+        )}
+        </div>
         )}
 
         {/* 取消历史记录 */}

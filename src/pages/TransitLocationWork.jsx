@@ -124,7 +124,7 @@ export default function TransitLocationWork() {
     pending: requests.filter(r =>
       !r.transit_arrival_confirmed_at &&
       !r.transit_shipped_date &&
-      (r.status === "open" || r.status === "completed" || r.status === 'ready_to_ship')
+      (r.status === "open" || r.status === "completed" || r.status === 'ready_to_ship' || r.status === 'pending')
     ),
     // In transit: completed and shipped from Japan, but transit location hasn't confirmed arrival
     in_transit: requests.filter(r =>

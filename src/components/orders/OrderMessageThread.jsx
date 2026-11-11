@@ -42,6 +42,7 @@ export default function OrderMessageThread({
   userProfileMap = {},
 }) {
   const [showCancelModule, setShowCancelModule] = useState(false);
+  const [cancelStartExpanded, setCancelStartExpanded] = useState(false);
   const { can } = usePermissions();
   // Allow if user has parent permission OR specific child permission
   const canSendMessage = can("message:send_message") || can("message:send_order_message");
@@ -201,21 +202,23 @@ export default function OrderMessageThread({
           <div className="space-y-3">
             <div className="flex items-center justify-between">
               <span className="text-sm font-medium text-gray-700">取消订单</span>
-              <button 
-                onClick={() => setShowCancelModule(false)}
+              <button
+                onClick={() => { setShowCancelModule(false); setCancelStartExpanded(false); }}
                 className="text-xs text-gray-500 hover:text-gray-700 underline"
               >
                 返回留言
               </button>
             </div>
-            <OrderCancellationModule 
-              order={order} 
-              compact 
+            <OrderCancellationModule
+              order={order}
+              compact
               isAdmin={isAdmin}
+              defaultExpanded={cancelStartExpanded}
               onSuccess={() => {
                 setShowCancelModule(false);
+                setCancelStartExpanded(false);
                 onMessageSent?.();
-              }} 
+              }}
             />
           </div>
         ) : (
@@ -236,7 +239,7 @@ export default function OrderMessageThread({
               canCancelOrder ? (
                 <button
                   type="button"
-                  onClick={() => setShowCancelModule(true)}
+                  onClick={() => { setCancelStartExpanded(true); setShowCancelModule(true); }}
                   className="px-3 py-2 text-sm font-medium text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 rounded-md transition-colors whitespace-nowrap"
                 >
                   取消订单

@@ -663,7 +663,11 @@ export default function OrderDetailPanel({ orderId, onClose, onRefresh, currentU
                     return (
                       <div className="flex justify-between items-center py-1 text-blue-700">
                         <span>已付金额</span>
-                        <span className="font-medium">{formatCurrency(order.paid_amount, paidCurrency)}{paidCurrency !== 'JPY' ? ` (≈${paidAmountJpy} JPY)` : ''}</span>
+                        <span className="font-medium">
+                          {paidCurrency === 'JPY'
+                            ? formatCurrency(order.paid_amount, paidCurrency)
+                            : `JPY ${Math.round(paidAmountJpy).toLocaleString()} (≈${parseFloat(Number(order.paid_amount).toFixed(2))} ${paidCurrency})`}
+                        </span>
                       </div>
                     );
                   })()}

@@ -48,7 +48,7 @@ console.log(isAdmin)
   // Location form state
   const [showLocForm, setShowLocForm] = useState(false);
   const [editingLoc, setEditingLoc] = useState(null);
-  const [locForm, setLocForm] = useState({ name: "", code_prefix: "", country: "", province: "", address: "", handling_fee: 0, handling_fee_currency: "JPY", manager_email: [], manager_contact: "", allow_storage: false, allow_pickup: false, description: "", is_active: true, is_default_official_pool: false, disabled_transit_method_ids: [], disabled_addon_ids: [] });
+  const [locForm, setLocForm] = useState({ name: "", code_prefix: "", country: "", province: "", address: "", handling_fee: '', handling_fee_currency: "JPY", manager_email: [], manager_contact: "", allow_storage: false, allow_pickup: false, description: "", is_active: true, is_default_official_pool: false, disabled_transit_method_ids: [], disabled_addon_ids: [] });
   const [savingLoc, setSavingLoc] = useState(false);
   
   // Collapsed state for each location (default: all collapsed)
@@ -132,10 +132,11 @@ console.log(isAdmin)
       const others = locations.filter(l => l.is_default_official_pool && l.id !== editingLoc?.id);
       await Promise.all(others.map(l => tenantEntity.update('TransitLocation', l.id, { is_default_official_pool: false })));
     }
+    const submitData = { ...locForm, handling_fee: locForm.handling_fee === "" ? null : parseFloat(locForm.handling_fee) };
     if (editingLoc) {
-      await transitLocationApi.update(editingLoc.id, locForm);
+      await transitLocationApi.update(editingLoc.id, submitData);
     } else {
-      await transitLocationApi.create(locForm);
+      await transitLocationApi.create(submitData);
     }
     await fetchLocations();
     // Refresh requests data
@@ -144,7 +145,7 @@ console.log(isAdmin)
     // setRequestsByLocation(r?.requestsByLocation || r?.poolsByLocation || {});
     setShowLocForm(false);
     setEditingLoc(null);
-    setLocForm({ name: "", code_prefix: "", country: "", province: "", address: "", handling_fee: 0, handling_fee_currency: "JPY", manager_email: [], manager_contact: "", allow_storage: false, allow_pickup: false, description: "", is_active: true, is_default_official_pool: false, disabled_transit_method_ids: [], disabled_addon_ids: [] });
+    setLocForm({ name: "", code_prefix: "", country: "", province: "", address: "", handling_fee: "", handling_fee_currency: "JPY", manager_email: [], manager_contact: "", allow_storage: false, allow_pickup: false, description: "", is_active: true, is_default_official_pool: false, disabled_transit_method_ids: [], disabled_addon_ids: [] });
     setSavingLoc(false);
   };
 
@@ -152,7 +153,7 @@ console.log(isAdmin)
     setEditingLoc(loc);
     setLocForm({
       name: loc.name, code_prefix: loc.code_prefix || "", country: loc.country || "", province: loc.province || "",
-      address: loc.address || "", handling_fee: loc.handling_fee || 0,
+      address: loc.address || "", handling_fee: loc.handling_fee ?? "",
       handling_fee_currency: loc.handling_fee_currency || "JPY",
       manager_email: normalizeManagerEmails(loc.manager_email), manager_contact: loc.manager_contact || "",
       allow_storage: loc.allow_storage || false,
@@ -229,7 +230,7 @@ console.log(isAdmin)
             刷新数据
           </Button>
           {activeTab === "manage" && canManageTransitLocations && (
-            <Button size="sm" className="bg-red-600 hover:bg-red-700" onClick={() => { setEditingLoc(null); setLocForm({ name: "", code_prefix: "", country: "", province: "", address: "", handling_fee: 0, handling_fee_currency: "JPY", manager_email: [], manager_contact: "", allow_storage: false, allow_pickup: false, description: "", is_active: true, disabled_transit_method_ids: [], disabled_addon_ids: [] }); setShowLocForm(true); }}>
+            <Button size="sm" className="bg-red-600 hover:bg-red-700" onClick={() => { setEditingLoc(null); setLocForm({ name: "", code_prefix: "", country: "", province: "", address: "", handling_fee: "", handling_fee_currency: "JPY", manager_email: [], manager_contact: "", allow_storage: false, allow_pickup: false, description: "", is_active: true, disabled_transit_method_ids: [], disabled_addon_ids: [] }); setShowLocForm(true); }}>
               <Plus className="w-3.5 h-3.5 mr-1.5" />添加中转地
             </Button>
           )}
@@ -451,7 +452,7 @@ console.log(isAdmin)
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <Label className="text-xs text-gray-500">中转手续费</Label>
-                  <Input type="number" step="0.01" className="mt-1 h-8 text-sm" placeholder="0" value={locForm.handling_fee} onChange={e => lf("handling_fee", parseFloat(e.target.value) || 0)} />
+                  <Input type="number" step="0.01" className="mt-1 h-8 text-sm" placeholder="" value={locForm.handling_fee} onChange={e => lf("handling_fee", e.target.value)} />
                 </div>
                 <div>
                   <Label className="text-xs text-gray-500">手续费货币</Label>

@@ -10,7 +10,6 @@ import { createPageUrl } from "@/utils";
 import QRCode from 'qrcode';
 import { X, CreditCard, ExternalLink, CheckCircle, Loader2, Lock } from "lucide-react";
 import ImageUploader from "@/components/common/ImageUploader";
-import ConfirmDialog from "@/components/common/ConfirmDialog";
 import { base44 } from "@/api/base44Client";
 import { openAlipayPopup } from "@/lib/alipayUtils";
 import { usePermissions } from "@/hooks/usePermissions";
@@ -213,8 +212,6 @@ export default function PaymentModal({ orderId, mode = "prepay", onClose, onSucc
   // Alipay
   const [generating, setGenerating] = useState(false);
   const [paying, setPaying] = useState('');
-  const [showAlipayConfirm, setShowAlipayConfirm] = useState(false);
-  const [alipayFormData, setAlipayFormData] = useState(null);
   const [alipayPaying, setAlipayPaying] = useState(false);
   const alipayPopupRef = useRef(null);
   const alipayPollTimerRef = useRef(null);
@@ -280,14 +277,13 @@ export default function PaymentModal({ orderId, mode = "prepay", onClose, onSucc
     const formData = res?.data?.form;
 
     setGenerating(false);
-    setAlipayFormData(formData);
-    setShowAlipayConfirm(true);
+    // 直接打开支付宝收银台，不再二次确认
+    openAlipayCashier(formData);
   };
 
-  const submitToAlipay = () => {
-    const popup = openAlipayPopup(alipayFormData);
-    setShowAlipayConfirm(false);
-    setAlipayFormData(null);
+  // 打开支付宝收银台 + 支付中遮盖层 + 轮询窗口关闭
+  const openAlipayCashier = (formData) => {
+    const popup = openAlipayPopup(formData);
 
     if (popup) {
       setAlipayPaying(true);
@@ -578,15 +574,6 @@ export default function PaymentModal({ orderId, mode = "prepay", onClose, onSucc
       </div>
     </div>
 
-      <ConfirmDialog
-        open={showAlipayConfirm}
-        onOpenChange={setShowAlipayConfirm}
-        title="确认付款"
-        description="点击下方按钮将跳转到支付宝完成付款"
-        confirmText="前往支付宝付款"
-        onConfirm={submitToAlipay}
-        onCancel={() => setAlipayFormData(null)}
-      />
     </>
   );
 }

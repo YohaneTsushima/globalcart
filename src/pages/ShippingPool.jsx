@@ -390,7 +390,7 @@ export default function ShippingPool() {
                     pool={pool}
                     isAdmin={isAdmin}
                     onClick={setSelectedPool}
-                    onManage={pool.transit_location_id && locations && locations.length > 0 ? (p) => {
+                    onManage={pool.transit_location_id && (isAdmin || locations?.some(l => String(l.id) === String(pool.transit_location_id))) ? (p) => {
                       const target = p || pool;
                       window.open(`${window.location.origin}/TransitLocationWork/${target.transit_location_id}`, '_blank');
                     } : null}
