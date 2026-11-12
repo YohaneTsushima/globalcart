@@ -87,7 +87,9 @@ function buildUserGroupList(entries, request) {
       const entry = normalizeEntry(rawEntry);
       const methodMarker = findGroupMarker(entry);
       const methodId = methodMarker || normalizeMethodId(entry.transit_shipping_method_id);
-      const key = `${entry.user_email}__${methodId}__${entry.group_index ?? 0}`;
+      // 一个 transit_shipping 记录就是一个批次；key 必须带记录 id，
+      // 否则同一用户用相同运输方式建的两个批次会在左侧列表里被合并
+      const key = `${entry.user_email}__${methodId}__${entry.id}`;
       if (!groups[key]) {
         groups[key] = {
           key,
@@ -118,7 +120,8 @@ function buildUserGroupList(entries, request) {
     const groups = {};
     entries.forEach(rawEntry => {
       const entry = normalizeEntry(rawEntry);
-      const key = entry.user_email;
+      // 没有 per_user_groups 时也要按 transit_shipping 记录拆批次
+      const key = `${entry.user_email}__${entry.id}`;
       if (!groups[key]) {
         groups[key] = {
           key,
@@ -183,7 +186,9 @@ function BatchListItem({ batch, selected, onClick }) {
           {isPickup && <Badge className="bg-teal-100 text-teal-700 text-xs shrink-0">自取</Badge>}
         </div>
         <div className="flex items-center gap-2 mt-0.5">
-          <span className="text-xs text-gray-500">{batch.entries.length} 件</span>
+          <span className="text-xs text-gray-500">
+            {batch.entries.reduce((n, e) => n + (Array.isArray(e.order_details) ? e.order_details.length : 1), 0)} 件
+          </span>
           {!isStorage && !isPickup && (
             <span className="text-xs text-blue-600 flex items-center gap-0.5">
               <Truck className="w-2.5 h-2.5" />{methodName}

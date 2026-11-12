@@ -66,8 +66,31 @@ function AddonsBlock({ addons }) {
   );
 }
 
+// 批次订单以 findOne 的 detail 为准：列表 entries 可能包含历史重复的 transit_shipping 记录。
+// 无论用哪份数据，都按订单 id 去重，避免同一订单被重复计数/重复提交。
+function resolveBatchOrders(batch, detail) {
+  const detailOrders = Array.isArray(detail?.order_details) ? detail.order_details : [];
+  const source = detailOrders.length > 0
+    ? detailOrders
+    : (batch?.entries || []).flatMap((entry) =>
+        Array.isArray(entry.order_details) && entry.order_details.length > 0
+          ? entry.order_details
+          : [entry]
+      );
+  const seen = new Set();
+  return source.filter((order) => {
+    const key = order?.id ?? order?.order_id;
+    if (key === null || key === undefined) return true;
+    const normalized = String(key);
+    if (seen.has(normalized)) return false;
+    seen.add(normalized);
+    return true;
+  });
+}
+
 // ─── 普通运输面板 ───────────────────────────────────────────────────────────────
 function TransitShippingPanel({ batch, pool, transitMethods, isManager, onSaved, detail }) {
+  const batchOrders = resolveBatchOrders(batch, detail);
   // Get default method from batch's pre-shipment config (user's selected transit method)
   const defaultMethod = transitMethods.find(m => m.id === batch.transit_shipping_method_id)?.name ||
     batch.transit_shipping_method || '';
@@ -164,9 +187,9 @@ function TransitShippingPanel({ batch, pool, transitMethods, isManager, onSaved,
   const recordShipped = !!existingRecord?.transit_shipped_date || !!existingRecord.transit_forwarded_date || recordNotArrived;
 
   // 组装该批次的订单 id 列表（用户+订单组 粒度，对应 transit_shipping.order_ids）
-  const buildOrderIds = () => batch.entries.flatMap(e =>
-    Array.isArray(e.order_details) ? e.order_details.map(o => o.id) : [e.order_id || e.id]
-  ).filter(Boolean);
+  const buildOrderIds = () => batchOrders
+    .map(o => o.id ?? o.order_id)
+    .filter(Boolean);
 
   const buildShippingData = () => ({
     ...formData,
@@ -181,10 +204,10 @@ function TransitShippingPanel({ batch, pool, transitMethods, isManager, onSaved,
       id: pool.id,
       pool_code: pool.pool_code,
       data: {...buildShippingData(),
-        id: batch?.entries[0]?.id, //为后端TransitShippingRecord的主键
+        id: detail?.id ?? batch?.entries?.[0]?.id, //为后端TransitShippingRecord的主键
         user_email: batch.user_email,
         order_ids: buildOrderIds(),
-        order_details: (batch.entries[0]?.order_details || []).map(d => ({
+        order_details: batchOrders.map(d => ({
           id: d.id,
           order_number: d.order_number
         }))
@@ -220,10 +243,10 @@ function TransitShippingPanel({ batch, pool, transitMethods, isManager, onSaved,
       id: pool.id,
       pool_code: pool.pool_code,
       data: {...buildShippingData(),
-        id: batch?.entries[0]?.id, //为后端TransitShippingRecord的主键
+        id: detail?.id ?? batch?.entries?.[0]?.id, //为后端TransitShippingRecord的主键
         user_email: batch.user_email,
         order_ids: buildOrderIds(),
-        order_details: (batch.entries[0]?.order_details || []).map(d => ({
+        order_details: batchOrders.map(d => ({
           id: d.id,
           order_number: d.order_number
         }))
@@ -377,6 +400,7 @@ const MemoizedTransitShippingPanel = memo(TransitShippingPanel);
 
 // ─── 暂存面板 ────────────────────────────────────────────────────────────────
 function StorageBatchPanel({ batch, pool, isManager, onSaved, detail }) {
+  const batchOrders = resolveBatchOrders(batch, detail);
   const [storageUntil, setStorageUntil] = useState(detail?.storage_until || '');
   const [saving, setSaving] = useState(false);
 
@@ -386,19 +410,14 @@ function StorageBatchPanel({ batch, pool, isManager, onSaved, detail }) {
   }, [detail]);
 
   // Check if this specific batch's orders are already in storage mode
-  const storageConfirmed = batch.entries.every(e => {
-    const orders = Array.isArray(e.order_details) ? e.order_details : [e.order_details || e];
-    return orders.every(order =>
-      order?.order_status === 'in_storage' || order?.order_status === 'notified_shipment'
-    );
-  });
+  const storageConfirmed = batchOrders.every(order =>
+    order?.order_status === 'in_storage' || order?.order_status === 'notified_shipment'
+  );
 
   const handleConfirmStorage = async () => {
     setSaving(true);
     try {
-      const orderIds = batch.entries.flatMap(e =>
-        Array.isArray(e.order_details) ? e.order_details.map(o => o.id) : [e.order_id || e.id]
-      ).filter(Boolean);
+      const orderIds = batchOrders.map(o => o.id ?? o.order_id).filter(Boolean);
 
       let payload = {
         id: detail.id,
@@ -637,6 +656,8 @@ export default function BatchDetailPanel({ batch, pool, transitMethods, isManage
   }
 
   const normalizeId = id => id === 'pickup' ? '__pickup__' : id === 'storage' ? '__storage__' : (id || '');
+  // 订单以 findOne 的 detail 为准并去重，避免历史重复的 entries 把同一订单算多次
+  const batchOrders = resolveBatchOrders(batch, detail);
   // 暂存/自取标记权威来源：detail（findOne 的 TransitShipping 记录，如 '__storage__'），其次 batch
   // 注意 transit_shipping_method_id 是用户申请发货时选的真实方式 id（如 8），不能用于判断暂存/自取
   const methodMarker = detail?.transit_shipping_method || batch.transit_shipping_method || '';
@@ -686,17 +707,13 @@ export default function BatchDetailPanel({ batch, pool, transitMethods, isManage
         {/* Orders list */}
         <div>
           <p className="text-xs font-medium text-gray-500 mb-2 flex items-center gap-1">
-            <Package className="w-3.5 h-3.5" />批次订单（{batch.entries.reduce((n, e) => n + (e.order_details?.length || 0), 0)} 件）
+            <Package className="w-3.5 h-3.5" />批次订单（{batchOrders.length} 件）
           </p>
           <div className="space-y-1.5">
-            {batch.entries.flatMap((entry, i) => {
-              const orders = Array.isArray(entry.order_details) && entry.order_details.length > 0
-                ? entry.order_details
-                : [entry];
-              return orders.map((order, j) => {
-                const canSeeDetail = !!order.product_name;
-                return (
-                  <div key={order.id || `${entry.id ?? i}_${j}`} className="flex items-center gap-2 bg-gray-50 border border-gray-100 rounded-lg px-2.5 py-2">
+            {batchOrders.map((order, idx) => {
+              const canSeeDetail = !!order.product_name;
+              return (
+                <div key={order.id ?? order.order_id ?? `order_${idx}`} className="flex items-center gap-2 bg-gray-50 border border-gray-100 rounded-lg px-2.5 py-2">
                     {(order.product_image_url || order.arrival_photo_url) && (
                       <img
                         src={order.product_image_url || order.arrival_photo_url}
@@ -731,7 +748,6 @@ export default function BatchDetailPanel({ batch, pool, transitMethods, isManage
                     )}
                   </div>
                 );
-              });
             })}
           </div>
         </div>

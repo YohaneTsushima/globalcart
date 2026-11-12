@@ -8,7 +8,7 @@
  */
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
-import { X, Truck, Package, Lock, Users, Search, Star, Loader2 } from "lucide-react";
+import { X, Truck, Package, Lock, Users, Search, Star, Loader2, Layers } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import CustomsDeclarationForm from "@/components/orders/CustomsDeclarationForm";
 import { serializeAddressToText, isAddressFormValid, EMPTY_ADDRESS_FORM } from "@/components/common/AddressForm";
@@ -305,6 +305,9 @@ export default function UserNotifyShipmentModal({ order, orders, initialData, on
   const [existingPools, setExistingPools] = useState([]);
   const [poolSearchQuery, setPoolSearchQuery] = useState("");
   const [selectedPoolId, setSelectedPoolId] = useState("");
+  // 加入已有拼邮时选择「当前批次 / 新批次」；有批次默认 current
+  const [transitBatchMode, setTransitBatchMode] = useState("current");
+  const [selectedBatchId, setSelectedBatchId] = useState("");
   // 当前登录用户 pending 状态的中转地发货记录（后端 findOrderForNotifyShipment 返回）
   const [transitRecords, setTransitRecords] = useState(initialData?.transit_shipping || []);
   // Join existing direct (single) pool
@@ -538,18 +541,8 @@ export default function UserNotifyShipmentModal({ order, orders, initialData, on
   // When joining existing pool, method/minWeight/consMethod are locked
   const isJoiningPool = joinExistingPool && selectedPoolId;
 
-  // 该用户在某个池下已有 pending 中转记录时，加入该池必须沿用记录里的运输方式。
+  // 加入已有拼邮时，按「批次」选择：current=追加到已有 transit_shipping，new=新建批次
   // 后端自取/暂存会把 method_id 存成 0，真实标记写在 transit_shipping_method 字段。
-  // 同一池若存在历史重复记录，取 id 最小的一条，与费用计算的「first match wins」保持一致
-  const transitRecordByPool = new Map();
-  (Array.isArray(transitRecords) ? transitRecords : transitRecords ? [transitRecords] : [])
-    .filter(r => r && r.consolidate_pool_id != null)
-    .slice()
-    .sort((a, b) => Number(a.id || 0) - Number(b.id || 0))
-    .forEach(r => {
-      const key = String(r.consolidate_pool_id);
-      if (!transitRecordByPool.has(key)) transitRecordByPool.set(key, r);
-    });
   const pickRecordMethodId = (rec) => {
     if (!rec) return "";
     const rawName = rec.transit_shipping_method || "";
@@ -557,10 +550,18 @@ export default function UserNotifyShipmentModal({ order, orders, initialData, on
     const rawId = normalizeId(rec.transit_shipping_method_id);
     return rawId === "0" ? "" : rawId;
   };
-  const lockedTransitMethodId = isJoiningPool
-    ? pickRecordMethodId(transitRecordByPool.get(String(selectedPoolId)))
-    : "";
-  const isTransitMethodLocked = !!lockedTransitMethodId;
+  const poolBatches = (Array.isArray(transitRecords) ? transitRecords : transitRecords ? [transitRecords] : [])
+    .filter(r => r && String(r.consolidate_pool_id) === String(selectedPoolId))
+    .sort((a, b) => Number(b.id || 0) - Number(a.id || 0));
+  const batchIdsKey = poolBatches.map(b => b.id).join(",");
+  const selectedBatch = poolBatches.find(b => String(b.id) === String(selectedBatchId)) || poolBatches[0] || null;
+  const hasBatches = poolBatches.length > 0;
+  const batchMethodLabel = (batch) => {
+    const id = pickRecordMethodId(batch);
+    return METHOD_LABELS[id]
+      || transitMethods.find(m => String(m.id) === String(id))?.name
+      || "未指定";
+  };
 
   // Read-only values derived from the target pool (joining must never use the user's own form state)
   const joinDeadline = selectedPool?.consolidation_deadline || selectedPool?.scheduled_ship_date || "";
@@ -605,19 +606,57 @@ export default function UserNotifyShipmentModal({ order, orders, initialData, on
     service_name: a.service_name || shippingAddons.find(x => String(x.id) === String(a.id))?.service_name || "",
   }));
 
-  // 加入已有拼邮需求时确定中转运输方式：
-  //  - 该池下已有当前用户的 pending 中转记录 → 强制沿用记录里的方式（前端锁定，不可更改）
-  //  - 否则回落到拼邮需求自身的方式；切换池子时会重新对齐，不再沿用上一个池的选择
+  // 加入已有拼邮需求时确定批次：
+  //  - 该池下已有当前用户的 pending 批次 → 默认选「当前批次」，运输方式沿用批次
+  //  - 没有批次 → 只能「新批次」，运输方式回落到拼邮需求自身的方式
   useEffect(() => {
     if (!isJoiningPool) return;
-    if (lockedTransitMethodId) {
-      setSelectedTransitMethodId(lockedTransitMethodId);
+    if (poolBatches.length > 0) {
+      setTransitBatchMode("current");
+      setSelectedBatchId(prev =>
+        poolBatches.some(b => String(b.id) === String(prev)) ? prev : String(poolBatches[0].id)
+      );
+      setSelectedTransitMethodId(pickRecordMethodId(poolBatches[0]));
+      return;
+    }
+    setTransitBatchMode("new");
+    setSelectedBatchId("");
+    if (joinTransitMethodId) {
+      setSelectedTransitMethodId(joinTransitMethodId);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isJoiningPool, selectedPoolId, batchIdsKey]);
+
+  const handleBatchModeChange = (mode) => {
+    setTransitBatchMode(mode);
+    if (mode === "current") {
+      const batch = selectedBatch || poolBatches[0];
+      if (batch) {
+        setSelectedBatchId(String(batch.id));
+        setSelectedTransitMethodId(pickRecordMethodId(batch));
+      }
       return;
     }
     if (joinTransitMethodId) {
       setSelectedTransitMethodId(joinTransitMethodId);
     }
-  }, [isJoiningPool, selectedPoolId, lockedTransitMethodId, joinTransitMethodId]);
+  };
+
+  // 当前批次的增值服务/备注跟随批次：备注回填，增值服务只读；
+  // 切到「新批次」时清空勾选和备注，避免带过去
+  useEffect(() => {
+    if (!isJoiningPool) return;
+    if (transitBatchMode === "current" && selectedBatch) {
+      setNote(selectedBatch.user_note || "");
+      return;
+    }
+    if (transitBatchMode === "new") {
+      setSelectedAddonIds([]);
+      setAddonCustomFees({});
+      setNote("");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isJoiningPool, transitBatchMode, selectedBatch?.id]);
 
   const filteredPools = existingPools.filter(p => {
     if (!poolSearchQuery) return true;
@@ -640,8 +679,13 @@ export default function UserNotifyShipmentModal({ order, orders, initialData, on
   const handleSubmit = async () => {
     if (isJoiningPool) {
       if (!selectedPoolId) return;
-      if (selectedPool?.consolidation_type === "transit" && !selectedTransitMethodId) return;
-      if (!effectiveIsPickupStorage && !isAddressSlotOk("final")) return;
+      if (selectedPool?.consolidation_type === "transit") {
+        if (transitBatchMode === "new" && !selectedTransitMethodId) return;
+        if (transitBatchMode === "current" && !selectedBatchId) return;
+      }
+      // 当前批次的地址跟随批次，不需要校验/选择地址
+      const currentBatchAddressLocked = transitBatchMode === "current" && !!selectedBatch;
+      if (!currentBatchAddressLocked && !effectiveIsPickupStorage && !isAddressSlotOk("final")) return;
     } else {
       if (!method) return;
       if (consType === "transit" && !selectedTransitId) return;
@@ -715,6 +759,9 @@ export default function UserNotifyShipmentModal({ order, orders, initialData, on
             order_number: order.order_number,
             pool_code: selectedPool.pool_code,
             target_pool_id: selectedPoolId,
+            transit_batch_mode: transitBatchMode,
+            transit_shipping_id: transitBatchMode === "current" ? selectedBatchId : null,
+            user_note: note || '',
             address_id: finalAddress?.id ?? null,
             transit_shipping_method_id: normalizedTransitMethodId,
             transit_shipping_method_name: userTransitMethodName,
@@ -1250,22 +1297,47 @@ export default function UserNotifyShipmentModal({ order, orders, initialData, on
           {/* Joining existing pool: read-only pool config and user's own address */}
           {isJoiningPool && (
             <div className="space-y-3">
-              {/* 当前用户的最终收货地址 —— 加入者选择自己的地址（自取/暂存不需要） */}
-              <div className={effectiveIsPickupStorage ? "opacity-50 pointer-events-none grayscale" : ""}>
-                <AddressBlock
-                  slot="final"
-                  label="最终收货地址"
-                  savedAddresses={savedAddresses}
-                  selectedId={finalAddressId}
-                  isNewMode={!!addressInputMode["final"]}
-                  newAddress={newAddress}
-                  saveNewAddress={saveNewAddress}
-                  onSelect={(v) => handleAddressSelect(v, "final")}
-                  onNewAddressChange={setNewAddress}
-                  onSaveToggle={setSaveNewAddress}
-                  error={!effectiveIsPickupStorage && !isAddressSlotOk("final")}
-                />
-              </div>
+              {/* 当前批次：地址随批次固定，只能查看；新批次才允许选择地址 */}
+              {isJoiningPool && transitBatchMode === "current" && selectedBatch ? (
+                <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 space-y-1.5">
+                  <p className="text-xs text-gray-500 font-medium uppercase tracking-wide">最终收货地址（当前批次）</p>
+                  {selectedBatch.final_address ? (
+                    <>
+                      <p className="text-sm text-gray-800">
+                        {selectedBatch.final_address.recipient_name || "未填写"} · {selectedBatch.final_address.phone || ""}
+                      </p>
+                      <p className="text-xs text-gray-500">
+                        {[
+                          selectedBatch.final_address.country,
+                          selectedBatch.final_address.state,
+                          selectedBatch.final_address.addr1,
+                          selectedBatch.final_address.addr2,
+                          selectedBatch.final_address.addr3,
+                        ].filter(Boolean).join(" ")}
+                      </p>
+                      <p className="text-xs text-gray-400">地址跟随当前批次，不可修改；如需新地址请选择「新批次」。</p>
+                    </>
+                  ) : (
+                    <p className="text-xs text-gray-400">当前批次没有保存地址</p>
+                  )}
+                </div>
+              ) : (
+                <div className={effectiveIsPickupStorage ? "opacity-50 pointer-events-none grayscale" : ""}>
+                  <AddressBlock
+                    slot="final"
+                    label="最终收货地址"
+                    savedAddresses={savedAddresses}
+                    selectedId={finalAddressId}
+                    isNewMode={!!addressInputMode["final"]}
+                    newAddress={newAddress}
+                    saveNewAddress={saveNewAddress}
+                    onSelect={(v) => handleAddressSelect(v, "final")}
+                    onNewAddressChange={setNewAddress}
+                    onSaveToggle={setSaveNewAddress}
+                    error={!effectiveIsPickupStorage && !isAddressSlotOk("final")}
+                  />
+                </div>
+              )}
               <div className="bg-purple-50 border border-purple-100 rounded-xl p-4 space-y-2">
                 <p className="text-xs text-purple-600 font-medium uppercase tracking-wide">
                   🔒 {selectedPool?.pool_code} · 以下配置以拼邮需求为准
@@ -1346,31 +1418,127 @@ export default function UserNotifyShipmentModal({ order, orders, initialData, on
           )}
 
           {consType === "transit" && (
-            <TransitMethodSection
-              consType="transit"
-              selectedTransitId={isJoiningPool ? (selectedPool?.transit_location_id || selectedTransitId) : selectedTransitId}
-              transitLocations={transitLocations}
-              transitMethods={transitMethods}
-              selectedTransitMethodId={selectedTransitMethodId}
-              setSelectedTransitMethodId={setSelectedTransitMethodId}
-              isStorageReship={isStorageReship}
-              locked={isTransitMethodLocked}
-            />
+            <>
+              {isJoiningPool && (
+                <div className="space-y-2">
+                  <label className="text-xs text-gray-500 font-medium uppercase tracking-wide flex items-center gap-1.5">
+                    <Layers className="w-3.5 h-3.5" />批次 <span className="text-red-500">*</span>
+                  </label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      disabled={!hasBatches}
+                      onClick={() => handleBatchModeChange("current")}
+                      className={`px-3 py-2 rounded-lg border text-sm transition-colors ${transitBatchMode === "current"
+                        ? "border-orange-400 bg-orange-50 text-orange-700"
+                        : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"} ${!hasBatches ? "opacity-50 cursor-not-allowed" : ""}`}
+                    >
+                      当前批次
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleBatchModeChange("new")}
+                      className={`px-3 py-2 rounded-lg border text-sm transition-colors ${transitBatchMode === "new"
+                        ? "border-orange-400 bg-orange-50 text-orange-700"
+                        : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"}`}
+                    >
+                      新批次
+                    </button>
+                  </div>
+
+                  {transitBatchMode === "current" && (
+                    <div className="space-y-1.5">
+                      {poolBatches.map(batch => (
+                        <label
+                          key={batch.id}
+                          className={`flex items-center justify-between gap-3 p-2.5 rounded-lg border cursor-pointer transition-colors ${String(selectedBatchId) === String(batch.id)
+                            ? "border-orange-400 bg-orange-50"
+                            : "border-gray-200 hover:bg-gray-50"}`}
+                        >
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="radio"
+                              checked={String(selectedBatchId) === String(batch.id)}
+                              onChange={() => {
+                                setSelectedBatchId(String(batch.id));
+                                setSelectedTransitMethodId(pickRecordMethodId(batch));
+                              }}
+                              className="accent-orange-500"
+                            />
+                            <div className="flex flex-col">
+                              <span className="text-sm font-medium text-gray-800">{batchMethodLabel(batch)}</span>
+                              <span className="text-xs text-gray-400">
+                                {(batch.order_ids || []).length} 件
+                                {batch.created_at ? ` · ${String(batch.created_at).slice(0, 10)}` : ""}
+                              </span>
+                            </div>
+                          </div>
+                        </label>
+                      ))}
+                      {!hasBatches && (
+                        <p className="text-xs text-gray-400">该拼邮需求下没有可用的当前批次</p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {(!isJoiningPool || transitBatchMode === "new") && (
+                <TransitMethodSection
+                  consType="transit"
+                  selectedTransitId={isJoiningPool ? (selectedPool?.transit_location_id || selectedTransitId) : selectedTransitId}
+                  transitLocations={transitLocations}
+                  transitMethods={transitMethods}
+                  selectedTransitMethodId={selectedTransitMethodId}
+                  setSelectedTransitMethodId={setSelectedTransitMethodId}
+                  isStorageReship={isStorageReship}
+                  locked={false}
+                />
+              )}
+
+              {isJoiningPool && transitBatchMode === "current" && selectedBatch && (
+                <p className="text-xs text-gray-500">
+                  当前批次运输方式：<span className="font-medium text-gray-700">{batchMethodLabel(selectedBatch)}</span>（沿用已有批次，不可修改）
+                </p>
+              )}
+            </>
           )}
-          {/* Show shipping addons for all shipment types */}
-          {!joinDirectPool && (
-            <TransitAddonSection
-              consType={consType}
-              selectedTransitId={selectedTransitId}
-              transitLocations={transitLocations}
-              shippingAddons={shippingAddons}
-              selectedAddonIds={selectedAddonIds}
-              setSelectedAddonIds={setSelectedAddonIds}
-              addonCustomFees={addonCustomFees}
-              setAddonCustomFees={setAddonCustomFees}
-              addonFeeErrors={addonFeeErrors}
-              setAddonFeeErrors={setAddonFeeErrors}
-            />
+          {/* 当前批次：增值服务跟随批次，只读；新批次才允许选择 */}
+          {isJoiningPool && transitBatchMode === "current" && selectedBatch ? (
+            <div className="bg-yellow-50 border border-yellow-100 rounded-xl p-4 space-y-1.5">
+              <p className="text-xs text-yellow-700 font-medium uppercase tracking-wide">增值服务（当前批次）</p>
+              {(selectedBatch.selected_addons || []).length === 0 ? (
+                <p className="text-sm text-gray-500">无</p>
+              ) : (
+                (selectedBatch.selected_addons || []).map((a, i) => {
+                  const fee = a.custom_fee ?? a.fee;
+                  return (
+                    <div key={a.id ?? i} className="flex items-center justify-between gap-2 text-sm text-gray-700">
+                      <span>{a.service_name || "增值服务"}</span>
+                      {fee !== undefined && fee !== null && fee !== "" && (
+                        <span className="text-xs text-gray-500">{a.fee_currency || "JPY"} {fee}</span>
+                      )}
+                    </div>
+                  );
+                })
+              )}
+              <p className="text-xs text-gray-400">增值服务跟随当前批次，不可修改；如需变更请选择「新批次」。</p>
+            </div>
+          ) : (
+            !joinDirectPool && (
+              <TransitAddonSection
+                consType={consType}
+                selectedTransitId={selectedTransitId}
+                transitLocations={transitLocations}
+                shippingAddons={shippingAddons}
+                selectedAddonIds={selectedAddonIds}
+                setSelectedAddonIds={setSelectedAddonIds}
+                addonCustomFees={addonCustomFees}
+                setAddonCustomFees={setAddonCustomFees}
+                addonFeeErrors={addonFeeErrors}
+                setAddonFeeErrors={setAddonFeeErrors}
+              />
+            )
           )}
 
           {/* Pool title — only when creating a new pool (not joining existing) */}
@@ -1387,12 +1555,10 @@ export default function UserNotifyShipmentModal({ order, orders, initialData, on
           )}
 
           {/* Note */}
-          {!joinExistingPool && (
-            <div>
-              <label className="text-xs text-gray-500 font-medium uppercase tracking-wide">备注（可选）</label>
-              <Textarea rows={3} placeholder="特殊要求或补充说明..." value={note} onChange={e => setNote(e.target.value)} className="mt-1.5" />
-            </div>
-          )}
+          <div>
+            <label className="text-xs text-gray-500 font-medium uppercase tracking-wide">备注（可选）</label>
+            <Textarea rows={3} placeholder="特殊要求或补充说明..." value={note} onChange={e => setNote(e.target.value)} className="mt-1.5" />
+          </div>
         </div>
 
         {/* Footer: missing required fields reminder */}
@@ -1400,8 +1566,11 @@ export default function UserNotifyShipmentModal({ order, orders, initialData, on
           const missing = [];
           const isPickupStorageSelected = selectedTransitMethodId === '__pickup__' || selectedTransitMethodId === '__storage__';
           if (!method && !joinDirectPool && !joinExistingPool) missing.push("发货方式");
-          if (joinExistingPool && isJoiningPool && selectedPool?.consolidation_type === "transit" && !selectedTransitMethodId) missing.push("中转段运输方式");
-          if (joinExistingPool && isJoiningPool && !effectiveIsPickupStorage && !isAddressSlotOk("final")) {
+          if (joinExistingPool && isJoiningPool && selectedPool?.consolidation_type === "transit") {
+            if (transitBatchMode === "new" && !selectedTransitMethodId) missing.push("中转段运输方式");
+            if (transitBatchMode === "current" && !selectedBatchId) missing.push("当前批次");
+          }
+          if (joinExistingPool && isJoiningPool && !(transitBatchMode === "current" && selectedBatch) && !effectiveIsPickupStorage && !isAddressSlotOk("final")) {
             const inNew = !!addressInputMode["final"] || savedAddresses.length === 0;
             if (inNew) {
               if (!newAddress.recipient_name?.trim()) missing.push("最终收货地址：受取人お名前");
@@ -1486,8 +1655,9 @@ export default function UserNotifyShipmentModal({ order, orders, initialData, on
                 (!joinExistingPool && consType === "" && !joinDirectPool && !isAddressSlotOk("direct")) ||
                 (!joinExistingPool && consType === "other" && !isAddressSlotOk("other")) ||
                (joinExistingPool && !selectedPoolId) ||
-               (isJoiningPool && selectedPool?.consolidation_type === "transit" && !selectedTransitMethodId) ||
-               (isJoiningPool && !effectiveIsPickupStorage && !isAddressSlotOk("final")) ||
+               (isJoiningPool && selectedPool?.consolidation_type === "transit" && transitBatchMode === "new" && !selectedTransitMethodId) ||
+               (isJoiningPool && selectedPool?.consolidation_type === "transit" && transitBatchMode === "current" && !selectedBatchId) ||
+               (isJoiningPool && !(transitBatchMode === "current" && selectedBatch) && !effectiveIsPickupStorage && !isAddressSlotOk("final")) ||
                (joinDirectPool && !selectedDirectPoolId)
              }
            >
