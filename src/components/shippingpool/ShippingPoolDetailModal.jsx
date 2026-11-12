@@ -6,7 +6,7 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { X, Package, Edit2, Save, MoreVertical, ArrowRight, RotateCcw, Loader2, Search, Trash2, AlertCircle, CheckCircle, XCircle, CreditCard, ExternalLink, Upload, Truck, MapPin, PlusCircle, MoveRight, Star, ChevronDown, ChevronUp, Layers, Tag } from "lucide-react";
 import { base44 } from "@/api/base44Client";
-import { openAlipayPopup } from "@/lib/alipayUtils";
+import { openAlipayPopup, openAlipayBlankPopup } from "@/lib/alipayUtils";
 import { usePermissions } from "@/hooks/usePermissions";
 import { updateOrder, tenantEntity, shippingPoolApi, userPrefApi, fetchTenantConfig, editRequestApi } from "@/lib/tenantApi";
 // exchangeRates now provided by getShippingPoolDetail response
@@ -80,8 +80,6 @@ export default function ShippingPoolDetailModal({ pool: initialPool, isAdmin, cu
   const [selectedMethodMeta, setSelectedMethodMeta] = useState(null);
   const [generatingAlipay, setGeneratingAlipay] = useState(false);
   const [alipayUrl, setAlipayUrl] = useState(null);
-  const [showAlipayConfirm, setShowAlipayConfirm] = useState(false);
-  const [alipayFormData, setAlipayFormData] = useState(null);
   const [alipayPaying, setAlipayPaying] = useState(false);
   const alipayPopupRef = useRef(null);
   const alipayPollTimerRef = useRef(null);
@@ -654,53 +652,69 @@ export default function ShippingPoolDetailModal({ pool: initialPool, isAdmin, cu
       payment_config_id: selectedMethodMeta.id
     };
 
-    setGeneratingAlipay(true);
-    
-    const res = await base44.functions.invoke("alipay/shipping-pool/pay", {
-      pool_id: pool.id,
-      user_id: user.id,
-      subject: subject,
-      payment_type: "ship",
-      paid_currency: currencyToSend,
-      payment_method: newMethod,
-      popup_mode: true
-    });
-
-    if(!res?.data?.success) {
-      persistentToastError(`下单失败: ${res?.data?.result}`);
-      setGeneratingAlipay(false);
+    // 先在点击事件里同步开窗：await 之后浏览器可能把 window.open 当成非用户操作拦截
+    const popup = openAlipayBlankPopup();
+    if (!popup) {
+      persistentToastError("请允许浏览器弹窗后重新生成付款链接");
       return;
     }
 
-    const formData = res?.data?.form;
-    setGeneratingAlipay(false);
+    setGeneratingAlipay(true);
 
-    if (formData && typeof formData === 'string') {
-      setAlipayFormData(formData);
-      setShowAlipayConfirm(true);
+    try {
+      const res = await base44.functions.invoke("alipay/shipping-pool/pay", {
+        pool_id: pool.id,
+        user_id: user.id,
+        subject: subject,
+        payment_type: "ship",
+        paid_currency: currencyToSend,
+        payment_method: newMethod,
+        popup_mode: true
+      });
+
+      if (!res?.data?.success) {
+        popup.close();
+        persistentToastError(`下单失败: ${res?.data?.result}`);
+        return;
+      }
+
+      const formData = res?.data?.form;
+      if (!formData || typeof formData !== 'string') {
+        popup.close();
+        persistentToastError("下单失败: 未返回支付宝表单");
+        return;
+      }
+
+      launchAlipayPopup(formData, popup);
+    } catch (err) {
+      popup.close();
+      persistentToastError(`下单失败: ${err?.message || "网络异常"}`);
+    } finally {
+      setGeneratingAlipay(false);
     }
   };
 
-  const submitToAlipay = () => {
-    const popup = openAlipayPopup(alipayFormData);
-    setShowAlipayConfirm(false);
-    setAlipayFormData(null);
-
-    if (popup) {
-      setAlipayPaying(true);
-      setAlertDialogOpen(true);
-      setAlertDialogMessage("支付中，请在弹出的支付宝窗口完成付款...");
-      setAlertDialogDescription("请不要刷新和关闭本页面...");
-      alipayPopupRef.current = popup;
-      alipayPollTimerRef.current = setInterval(() => {
-        if (popup.closed) {
-          clearInterval(alipayPollTimerRef.current);
-          alipayPollTimerRef.current = null;
-          setAlipayPaying(false);
-          setAlertDialogOpen(false);
-        }
-      }, 500);
+  // 把后端返回的支付宝表单提交到（预先打开的）支付窗口
+  const launchAlipayPopup = (formData, targetWindow) => {
+    const popup = openAlipayPopup(formData, { targetWindow });
+    if (!popup) {
+      persistentToastError("请允许弹窗以完成支付");
+      return;
     }
+
+    setAlipayPaying(true);
+    setAlertDialogOpen(true);
+    setAlertDialogMessage("支付中，请在弹出的支付宝窗口完成付款...");
+    setAlertDialogDescription("请不要刷新和关闭本页面...");
+    alipayPopupRef.current = popup;
+    alipayPollTimerRef.current = setInterval(() => {
+      if (popup.closed) {
+        clearInterval(alipayPollTimerRef.current);
+        alipayPollTimerRef.current = null;
+        setAlipayPaying(false);
+        setAlertDialogOpen(false);
+      }
+    }, 500);
   };
 
   // User: upload payment proof (non-alipay)
@@ -2883,16 +2897,6 @@ export default function ShippingPoolDetailModal({ pool: initialPool, isAdmin, cu
             </div>
           </div>
         }
-
-        <ConfirmDialog
-          open={showAlipayConfirm}
-          onOpenChange={setShowAlipayConfirm}
-          title="确认支付"
-          description="点击下方按钮将跳转到支付宝完成付款"
-          confirmText="前往支付宝付款"
-          onConfirm={submitToAlipay}
-          onCancel={() => setAlipayFormData(null)}
-        />
 
         <ConfirmDialog
           open={showConfirmDeliveryDialog}

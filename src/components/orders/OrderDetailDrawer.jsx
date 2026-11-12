@@ -225,14 +225,25 @@ export default function OrderDetailDrawer({ order, currentUser, initialUserPrefe
               <div className="text-xs text-purple-600 font-medium mb-1.5">增值服务</div>
               <div className="space-y-1">
                 {(order.selected_addons || []).length > 0
-                  ? (order.selected_addons).map((a, i) => (
-                      <div key={i} className="flex items-center justify-between text-xs">
-                        <span className="text-gray-700">{a.name || a.id}</span>
-                        {(parseFloat(a.fee) > 0) && (
-                          <span className="font-medium text-purple-700">+{a.fee_currency || "JPY"} {Math.round(parseFloat(a.fee))}</span>
-                        )}
-                      </div>
-                    ))
+                  ? (order.selected_addons).map((a, i) => {
+                      const hasCustom = a.custom_fee !== null && a.custom_fee !== undefined;
+                      const originalFee = parseFloat(a.fee) || 0;
+                      const effectiveFee = hasCustom ? (parseFloat(a.custom_fee) || 0) : originalFee;
+                      const currency = a.fee_currency || "JPY";
+                      return (
+                        <div key={i} className="flex items-center justify-between text-xs">
+                          <span className="text-gray-700">{a.service_name || a.name || a.id}</span>
+                          {effectiveFee > 0 && (
+                            <span className="font-medium text-purple-700">
+                              {hasCustom && originalFee > 0 && (
+                                <span className="line-through text-gray-400 mr-1">+{currency} {Math.round(originalFee)}</span>
+                              )}
+                              +{currency} {Math.round(effectiveFee)}
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })
                   : (order.selected_addon_ids || []).map((id, i) => (
                       <div key={i} className="flex items-center text-xs">
                         <span className="text-gray-500 font-mono">{id}</span>

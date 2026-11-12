@@ -188,14 +188,25 @@ export default function OrderDetailCard({
                     <Tag className="w-3.5 h-3.5" />
                     增值服务
                   </div>
-                  {orderAddons.map((addon, idx) => (
-                    <div key={idx} className="flex items-center justify-between text-gray-700">
-                      <span>{addon.name || addon.id}</span>
-                      {parseFloat(addon.fee) > 0 && (
-                        <span className="font-medium text-yellow-700">+{addon.fee_currency || "JPY"} {Math.round(parseFloat(addon.fee))}</span>
-                      )}
-                    </div>
-                  ))}
+                  {orderAddons.map((addon, idx) => {
+                    const hasCustom = addon.custom_fee !== null && addon.custom_fee !== undefined;
+                    const originalFee = parseFloat(addon.fee) || 0;
+                    const effectiveFee = hasCustom ? (parseFloat(addon.custom_fee) || 0) : originalFee;
+                    const currency = addon.fee_currency || "JPY";
+                    return (
+                      <div key={idx} className="flex items-center justify-between text-gray-700">
+                        <span>{addon.name || addon.service_name || addon.id}</span>
+                        {effectiveFee > 0 && (
+                          <span className="font-medium text-yellow-700">
+                            {hasCustom && originalFee > 0 && (
+                              <span className="line-through text-gray-400 mr-1">+{currency} {Math.round(originalFee)}</span>
+                            )}
+                            +{currency} {Math.round(effectiveFee)}
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               )}
               

@@ -47,11 +47,21 @@ function AddonsBlock({ addons }) {
   );
   return (
     <div className="flex flex-wrap gap-1.5">
-      {addons.map((a, i) => (
-        <span key={i} className="inline-flex items-center gap-1 text-xs bg-yellow-50 border border-yellow-200 text-yellow-700 rounded px-2 py-0.5">
-          <Star className="w-2.5 h-2.5" />{a.service_name}{a.fee > 0 ? ` +${a.fee_currency || 'JPY'} ${a.fee}` : ''}
-        </span>
-      ))}
+      {addons.map((a, i) => {
+        const hasCustom = a.custom_fee !== null && a.custom_fee !== undefined;
+        const originalFee = parseFloat(a.fee) || 0;
+        const effectiveFee = hasCustom ? (parseFloat(a.custom_fee) || 0) : originalFee;
+        const currency = a.fee_currency || 'JPY';
+        return (
+          <span key={i} className="inline-flex items-center gap-1 text-xs bg-yellow-50 border border-yellow-200 text-yellow-700 rounded px-2 py-0.5">
+            <Star className="w-2.5 h-2.5" />{a.service_name}
+            {hasCustom && originalFee > 0 && (
+              <span className="line-through text-yellow-500/60">+{currency} {originalFee}</span>
+            )}
+            {effectiveFee > 0 && <span>+{currency} {effectiveFee}</span>}
+          </span>
+        );
+      })}
     </div>
   );
 }

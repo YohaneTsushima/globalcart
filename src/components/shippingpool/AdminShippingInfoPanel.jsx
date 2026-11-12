@@ -24,6 +24,7 @@ import { getCountryZone } from "@/lib/countries";
 import { calcFeeBreakdownPerUser } from "@/lib/shippingFeeCalc";
 import ShippingFeeBreakdown from "@/components/shippingpool/ShippingFeeBreakdown";
 import MultiImageUploader from "@/components/common/MultiImageUploader";
+import ShippingFeeAdjustDialog from "@/components/shippingpool/ShippingFeeAdjustDialog";
 
 const STATUS_CONFIG = {
   pending:                       { label: "待处理",    color: "bg-amber-100 text-amber-700" },
@@ -182,7 +183,8 @@ export default function AdminShippingInfoPanel({
     if ((initialPool.packing_fees_per_user || []).length > 0) {
       return initialPool.packing_fees_per_user.map(u => ({
         ...u,
-        extra_fee_jpy: u.extra_fee_jpy ?? Math.max(0, (u.fee_jpy || 0) - (u.base_fee_jpy ?? defaultBaseFee)),
+        // 负数代表补正/折扣，不能 clamp 到 0
+        extra_fee_jpy: u.extra_fee_jpy ?? ((u.fee_jpy || 0) - (u.base_fee_jpy ?? defaultBaseFee)),
       }));
     }
     return uniqueUsers.map(u => ({ user_email: u.email, fee_jpy: 0, extra_fee_jpy: 0 }));
@@ -219,17 +221,23 @@ export default function AdminShippingInfoPanel({
     if (saved.length > 0) {
       setPackingFeesPerUser(saved.map(u => ({
         ...u,
-        extra_fee_jpy: u.extra_fee_jpy ?? Math.max(0, (u.fee_jpy || 0) - (u.base_fee_jpy ?? defaultBaseFee)),
+        // 负数代表补正/折扣，不能 clamp 到 0
+        extra_fee_jpy: u.extra_fee_jpy ?? ((u.fee_jpy || 0) - (u.base_fee_jpy ?? defaultBaseFee)),
       })));
     }
-    // Re-calc shipping from restored weight
+    // 已保存的运费是「发布口径」的权威值：这里只准备费率预览，不能因为按当前费率重算就覆盖它，
+    // 否则预览金额会与 fee_breakdown_per_user 漂移，费用弹窗会显示虚假的差额。
     const w = parseFloat(initialPool.final_weight_g || initialPool.total_weight_g);
     if (!isNaN(w) && w > 0) {
       const calc = calcFeeFromWeight(w);
-      if (calc) { setShippingFeeJpy(String(calc.fee)); setFeeAutoCalced(true); setShippingCalcResult(calc); }
-      else { setShippingCalcResult(null); }
+      setShippingCalcResult(calc);
+      const savedFee = parseFloat(initialPool.shipping_fee_jpy);
+      if (!(savedFee > 0)) {
+        setShippingFeeJpy(calc ? String(calc.fee) : "");
+        setFeeAutoCalced(!!calc);
+      }
     }
-  }, [initialPool?.status, JSON.stringify(initialPool?.per_user_payments)]);
+  }, [initialPool?.status, initialPool?.version, JSON.stringify(initialPool?.per_user_payments)]);
 
   // Sync packing fees when getShippingPoolDetail returns updated data (e.g. after handleSaveInfoOnly)
   const packingFeesKeyRef = useRef(JSON.stringify([initialPool?.packing_fees_per_user, initialPool?.packing_fee_jpy ?? null]));
@@ -246,7 +254,8 @@ export default function AdminShippingInfoPanel({
     if (saved.length > 0) {
       setPackingFeesPerUser(saved.map(u => ({
         ...u,
-        extra_fee_jpy: u.extra_fee_jpy ?? Math.max(0, (u.fee_jpy || 0) - (u.base_fee_jpy ?? defaultBaseFee)),
+        // 负数代表补正/折扣，不能 clamp 到 0
+        extra_fee_jpy: u.extra_fee_jpy ?? ((u.fee_jpy || 0) - (u.base_fee_jpy ?? defaultBaseFee)),
       })));
     }
   }, [initialPool?.packing_fees_per_user, initialPool?.packing_fee_jpy, defaultBaseFee]);
@@ -264,6 +273,7 @@ export default function AdminShippingInfoPanel({
     });
   }, [JSON.stringify(initialPool.order_ids)]);
   const [saving, setSaving] = useState(false);
+  const [feeAdjustOpen, setFeeAdjustOpen] = useState(false);
   const [confirmingSaving, setConfirmingSaving] = useState(false);
   const [exchangeRates, setExchangeRates] = useState(exchangeRatesProp);
   const [confirmPaymentDialogOpen, setConfirmPaymentDialogOpen] = useState(false);
@@ -331,7 +341,10 @@ export default function AdminShippingInfoPanel({
 
   const selectedBox = boxTemplates.find(b => b.id === boxTemplateId);
   const boxWeight = selectedBox?.weight_g || 0;
-  const boxPrice = selectedBox?.price_jpy || 0;
+  // 模板未加载/已删除时回退到已保存的外箱价，避免预览金额比发布金额少一个外箱费
+  const boxPrice = boxTemplateId === "none"
+    ? 0
+    : (selectedBox ? (selectedBox.price_jpy || 0) : (parseFloat(pool.box_price_jpy) || 0));
   // Per-user extra packing fees (individual add-ons on top of global fee)
   const effectivePackingFeesPerUser = useMemo(() =>
     packingFeesPerUser.map(u => ({
@@ -410,6 +423,25 @@ export default function AdminShippingInfoPanel({
   // Grand total = sum of all users' total_jpy from the live breakdown
   const grandTotalJpy = feeBreakdowns.reduce((s, b) => s + (b.total_jpy || 0), 0);
 
+  // 费用调整弹窗的预览：用弹窗里的输入重新算一份 breakdown（不写库）
+  const buildFeePreview = (baseFeeJpy, extrasByEmail) => calcFeeBreakdownPerUser({
+    pool,
+    orders,
+    shippingFeeJpy: parseFloat(shippingFeeJpy) || 0,
+    boxPriceJpy: boxPrice,
+    globalPackingFeeJpy: baseFeeJpy,
+    packingFeesPerUser: Object.entries(extrasByEmail).map(([user_email, fee_jpy]) => ({
+      user_email,
+      base_fee_jpy: baseFeeJpy,
+      fee_jpy,
+    })),
+    transitLocation,
+    transitShippingMethod,
+    transitShippingMethods,
+    exchangeRates,
+    transitHandlingFeeSplit,
+  });
+
   // Previously notified/paid total = sum of saved fee_breakdown_per_user (the actual amount user was told to pay)
   // Fall back to shipping_fee_jpy only if no breakdown exists (legacy data)
   const savedGrandTotalJpy = Math.round(
@@ -487,6 +519,8 @@ export default function AdminShippingInfoPanel({
       setPool(p => ({ ...p, ...payload }));
       onPoolUpdated?.({ ...pool, ...payload });
       toast.success(`[${pool.title}] ${successMsg}`);
+      // 保存/发布都会递增 @Version，刷新一次让费用弹窗拿到最新 expect_version
+      await onRefresh?.();
     } catch (e) {
       
       console.error("操作失败:", e);
@@ -497,8 +531,29 @@ export default function AdminShippingInfoPanel({
     }
   };
 
-  const updatePool = async (payload, { setLoading, successMsg } = {}) => {
-    try {
+  // 费用调整弹窗保存成功：同步本地输入 + 刷新池数据（不发布金额）
+  const handleFeeAdjustSaved = (result) => {
+    const updated = result?.pool;
+    if (updated) {
+      const rows = (updated.packing_fees_per_user || []).map((u) => ({
+        ...u,
+        extra_fee_jpy: u.extra_fee_jpy ?? u.fee_jpy ?? 0,
+      }));
+      if (rows.length > 0) {
+        setPackingFeesPerUser(rows);
+        if (rows[0].base_fee_jpy !== undefined && rows[0].base_fee_jpy !== null) {
+          setBasePackingFee(Number(rows[0].base_fee_jpy) || 0);
+        }
+      } else if (updated.packing_fee_jpy !== undefined && updated.packing_fee_jpy !== null) {
+        setBasePackingFee(Number(updated.packing_fee_jpy) || 0);
+      }
+      setPool((p) => ({ ...p, ...updated, version: result?.version ?? p.version }));
+    }
+    setFeeAdjustOpen(false);
+    onRefresh?.();
+  };
+
+  const updatePool = async (payload, { setLoading, successMsg } = {}) => {    try {
       
       await shippingPoolApi.update(pool.id, payload);
       setPool(p => ({ ...p, ...payload }));
@@ -1014,57 +1069,47 @@ export default function AdminShippingInfoPanel({
               onChange={e => setActualShippingCostJpy(filterNumeric(e.target.value))} />
           </div>
 
-          {/* Packing fees per user */}
-          <div className="space-y-2">
-            {/* Global base fee — always shown */}
-            <div>
-              <Label className="text-xs text-gray-500 block mb-1.5">全局捆包作业服务费 (JPY) <span className="text-gray-400 font-normal">（参与平摊）</span></Label>
-              <div className="flex items-center gap-1.5">
-                <Input className="h-8 text-sm flex-1" type="text" inputMode="decimal" placeholder="0"
-                  value={basePackingFee === 0 ? "" : basePackingFee}
-                  onChange={e => setBasePackingFee(parseFloat(filterNumeric(e.target.value)) || 0)} />
-                <button type="button" onClick={() => setBasePackingFee(v => v + 100)}
-                  className="h-8 px-2 text-xs rounded border border-gray-200 bg-white hover:bg-gray-50 text-gray-600 flex-shrink-0">+100</button>
-                <button type="button" onClick={() => setBasePackingFee(v => Math.max(0, v - 100))}
-                  className="h-8 px-2 text-xs rounded border border-gray-200 bg-white hover:bg-gray-50 text-gray-600 flex-shrink-0">-100</button>
-              </div>
-            </div>
-
-            {/* Per-user extra fee (only shown when multiple users) */}
-            {uniqueUsers.length > 1 && packingFeesPerUser.length > 1 && (
-              <div className="border border-gray-100 rounded-lg p-2.5 bg-gray-50 space-y-1.5">
-                <div className="flex items-center justify-between mb-1">
-                  <p className="text-xs text-gray-400">各用户追加费用（全局手续费已计入平摊，此处为个人追加）</p>
-                  <span className="text-xs text-gray-400">基础 ¥{basePackingFee}</span>
+          {/* 费用调整入口：只在通知用户付款前（pending/processing）开放。
+              一旦执行过 handleSetAwaitingPayment，金额即定稿，不再提供调整入口。 */}
+          {isStep1 && (
+            <div className="border border-gray-100 rounded-lg p-2.5 bg-gray-50 space-y-2">
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <p className="text-xs text-gray-500">全局捆包作业服务费（参与平摊）</p>
+                  <p className="text-sm font-medium text-gray-800">¥{Number(basePackingFee || 0).toLocaleString()}</p>
                 </div>
-                {packingFeesPerUser.map((uf, idx) => {
-                  const profile = userProfileMap[uf.user_email] || {};
-                  const displayName = profile.display_name || profile.full_name || uf.user_email;
-                  const extra = parseFloat(uf.extra_fee_jpy) || 0;
-                  return (
-                    <div key={uf.user_email} className="flex items-center gap-1.5">
-                      <span className="text-xs text-gray-600 flex-1 truncate" title={uf.user_email}>{displayName}</span>
-                      <span className="text-xs text-gray-300">+</span>
-                      <Input className="h-7 text-xs w-20" type="text" inputMode="decimal" placeholder="0"
-                        value={extra === 0 ? "" : extra}
-                        onChange={e => setPackingFeesPerUser(prev =>
-                          prev.map((u, i) => i === idx ? { ...u, extra_fee_jpy: parseFloat(e.target.value) || 0 } : u)
-                        )} />
-                      <button type="button" onClick={() => setPackingFeesPerUser(prev =>
-                        prev.map((u, i) => i === idx ? { ...u, extra_fee_jpy: (parseFloat(u.extra_fee_jpy) || 0) + 100 } : u)
-                      )} className="h-7 px-1.5 text-xs rounded border border-gray-200 bg-white hover:bg-gray-50 text-gray-600 flex-shrink-0">+100</button>
-                      <button type="button" onClick={() => setPackingFeesPerUser(prev =>
-                        prev.map((u, i) => i === idx ? { ...u, extra_fee_jpy: (parseFloat(u.extra_fee_jpy) || 0) - 100 } : u)
-                      )} className="h-7 px-1.5 text-xs rounded border border-gray-200 bg-white hover:bg-gray-50 text-gray-600 flex-shrink-0">-100</button>
-                      <span className={`text-xs font-medium flex-shrink-0 w-16 text-right ${extra < 0 ? "text-blue-600" : "text-orange-600"}`}>
-                        {extra >= 0 ? `+¥${extra}` : `-¥${Math.abs(extra)}`}
-                      </span>
-                    </div>
-                  );
-                })}
+                <Button size="sm" variant="outline" className="h-7 text-xs flex-shrink-0"
+                  onClick={() => setFeeAdjustOpen(true)}>
+                  调整费用
+                </Button>
               </div>
-            )}
-          </div>
+
+              {uniqueUsers.length > 1 && packingFeesPerUser.length > 1 && (
+                <div className="space-y-1 border-t border-gray-200 pt-2">
+                  <p className="text-xs text-gray-400">各用户额外费用（全局手续费已计入平摊）</p>
+                  {packingFeesPerUser.map((uf) => {
+                    const profile = userProfileMap[uf.user_email] || {};
+                    const displayName = profile.display_name || profile.full_name || uf.user_email;
+                    const extra = parseFloat(uf.extra_fee_jpy) || 0;
+                    return (
+                      <div key={uf.user_email} className="flex items-center justify-between gap-2">
+                        <span className="text-xs text-gray-600 truncate" title={uf.user_email}>{displayName}</span>
+                        <span className={`text-xs font-medium flex-shrink-0 ${extra < 0 ? "text-blue-600" : extra > 0 ? "text-orange-600" : "text-gray-400"}`}>
+                          {extra === 0 ? "¥0" : extra > 0 ? `+¥${extra}` : `-¥${Math.abs(extra)}`}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {hasPerUserFeeChanged && (
+                <p className="text-xs text-orange-600">
+                  费用相关输入已变化，尚未发布给用户；点「通知用户付款」后按新金额生效并通知。
+                </p>
+              )}
+            </div>
+          )}
 
           {/* Fee breakdown preview */}
           {(shippingFeeJpy || boxPrice > 0 || totalPackingFee > 0) && feeBreakdowns.length > 0 && (
@@ -1167,6 +1212,8 @@ export default function AdminShippingInfoPanel({
                   {saving ? "保存中..." : `通知用户金额更新（¥${Math.round(grandTotalJpy).toLocaleString()} JPY）`}
                 </Button>
                 */}
+                {/* 费用输入改动后，用「通知用户付款」发布新金额（未付款、无付款凭证时才可用）。
+                    补差/退款仍走后续 handlePublishFees，这里只处理首次发布后的重新通知。 */}
                 <Button size="sm" variant="outline" className="w-full text-xs"
                   onClick={handleSaveInfoOnly} disabled={saving}>
                   {saving ? "保存中..." : "仅保存（不通知用户）"}
@@ -1461,6 +1508,17 @@ export default function AdminShippingInfoPanel({
         </div>
       )}
 
+      <ShippingFeeAdjustDialog
+        open={feeAdjustOpen}
+        onClose={() => setFeeAdjustOpen(false)}
+        pool={pool}
+        participants={uniqueUsers.map(u => u.email)}
+        userProfileMap={userProfileMap}
+        baseFee={basePackingFee}
+        buildPreview={buildFeePreview}
+        onSaved={handleFeeAdjustSaved}
+      />
+
       <ConfirmDialog
         open={confirmPaymentDialogOpen}
         onOpenChange={setConfirmPaymentDialogOpen}
@@ -1483,7 +1541,7 @@ export default function AdminShippingInfoPanel({
         open={confirmSetAwaitingPaymentDialogOpen}
         onOpenChange={setConfirmSetAwaitingPaymentDialogOpen}
         title="通知用户付款"
-        description={`确认通知用户付款？合计金额 ¥${Math.round(grandTotalJpy).toLocaleString()} JPY`}
+        description={`确认通知用户付款？合计金额 ¥${Math.round(grandTotalJpy).toLocaleString()} JPY。通知后金额即定稿，不能再调整。`}
         confirmText="确认通知"
         onConfirm={handleSetAwaitingPayment}
       />

@@ -175,11 +175,21 @@ export default function UserGroupCard({ userEntry, orders, transitMethods = [], 
                   <div className="flex items-center gap-1.5 text-xs text-gray-700 flex-wrap">
                     <Star className="w-3.5 h-3.5 text-yellow-500" />
                     <span className="text-gray-500">增值服务：</span>
-                    {addons.map((a, i) => (
-                      <span key={i} className="bg-yellow-50 border border-yellow-200 text-yellow-700 rounded px-1.5 py-0.5">
-                        {a.name}{a.fee > 0 ? ` +${a.fee_currency || 'JPY'} ${a.fee}` : ''}
-                      </span>
-                    ))}
+                    {addons.map((a, i) => {
+                      const hasCustom = a.custom_fee !== null && a.custom_fee !== undefined;
+                      const originalFee = parseFloat(a.fee) || 0;
+                      const effectiveFee = hasCustom ? (parseFloat(a.custom_fee) || 0) : originalFee;
+                      const currency = a.fee_currency || 'JPY';
+                      return (
+                        <span key={i} className="bg-yellow-50 border border-yellow-200 text-yellow-700 rounded px-1.5 py-0.5">
+                          {a.name || a.service_name}
+                          {hasCustom && originalFee > 0 && (
+                            <span className="line-through text-yellow-500/60 ml-1">+{currency} {originalFee}</span>
+                          )}
+                          {effectiveFee > 0 && <span className="ml-1">+{currency} {effectiveFee}</span>}
+                        </span>
+                      );
+                    })}
                   </div>
                 )}
                 {userEntry.note && (

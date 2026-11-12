@@ -181,6 +181,7 @@ export const shippingPoolApi = {
   update:                   (id, d)             => tenantEntity.update('ShippingPool', id, d),
   handleSaveInfoOnly:       (id, data)          => mutate('ShippingPool', 'handleSaveInfoOnly', { id, data }).then(r => r || r?.data || r?.data || r.data?.results || r || []),
   handleSetAwaitingPayment: (id, data)          => mutate('ShippingPool', 'handleSetAwaitingPayment', { id, data }).then(r => r || r?.data || r?.data || r.data?.results || r || []),
+  handleAdjustFees:         (id, data)          => mutate('ShippingPool', 'handleAdjustFees', { id, data }).then(r => r?.result || r),
   delete:                   (id)                => tenantEntity.delete('ShippingPool', id),
   one:                      (id)                => tenantEntity.one('ShippingPool', id),
   other:                    (id)                => mutate('ShippingPool', 'other', { id }).then(r => r?.data || r || []),
