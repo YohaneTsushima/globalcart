@@ -20,6 +20,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import ShippingEditModal from "@/components/shippingpool/ShippingEditModal";
 import AdminShippingInfoPanel from "@/components/shippingpool/AdminShippingInfoPanel";
 import ShippingFeeBreakdown from "@/components/shippingpool/ShippingFeeBreakdown";
+import CustomsDeclarationDisplay from "@/components/shippingpool/CustomsDeclarationDisplay";
 import { ImageWithViewer } from "@/components/common/ImageViewer";
 import PaymentMethodSelector from "@/components/common/PaymentMethodSelector";
 import ImageUploader from "@/components/common/ImageUploader";
@@ -2237,20 +2238,40 @@ export default function ShippingPoolDetailModal({ pool: initialPool, isAdmin, cu
 
             // Non-transit: show pool-level recipient address
             const hasAddr = pool.recipient_name || pool.address_line1 || pool.city || pool.state || pool.country;
-            if (!hasAddr) return null;
+
+            // 报关单：只有单独发货（consolidation_type 为空）才展示，拼邮 / 中转地不展示
+            const customs = pool.customs_declaration;
+            const hasCustoms = !!(customs && Array.isArray(customs.items) && customs.items.some(it => it && it.name));
+            const showCustoms = !pool.consolidation_type && hasCustoms;
+
+            if (!hasAddr && !showCustoms) return null;
             return (
-              <AddressCard title="收货地址">
-                {pool.recipient_name && <p className="font-medium">{pool.recipient_name}</p>}
-                {pool.recipient_phone && <p className="text-xs">{pool.recipient_phone}</p>}
-                <p className="whitespace-pre-wrap">
-                  {pool.address_line1}{pool.address_line2 ? ` ${pool.address_line2}` : ""}
-                  {pool.address_line3 ? ` ${pool.address_line3}` : ""}<br />
-                  {pool.city && `${pool.city} `}
-                  {pool.state && `${pool.state} `}
-                  {pool.postal_code && `${pool.postal_code}`}<br />
-                  {pool.country}
-                </p>
-              </AddressCard>
+              <div className="space-y-2">
+                {hasAddr && (
+                  <AddressCard title="收货地址">
+                    {pool.recipient_name && <p className="font-medium">{pool.recipient_name}</p>}
+                    {pool.recipient_phone && <p className="text-xs">{pool.recipient_phone}</p>}
+                    <p className="whitespace-pre-wrap">
+                      {pool.address_line1}{pool.address_line2 ? ` ${pool.address_line2}` : ""}
+                      {pool.address_line3 ? ` ${pool.address_line3}` : ""}<br />
+                      {pool.city && `${pool.city} `}
+                      {pool.state && `${pool.state} `}
+                      {pool.postal_code && `${pool.postal_code}`}<br />
+                      {pool.country}
+                    </p>
+                  </AddressCard>
+                )}
+                {showCustoms && (
+                  <CustomsDeclarationDisplay
+                    orders={[{
+                      id: pool.pool_id,
+                      order_number: pool.pool_code,
+                      product_name: pool.title,
+                      customs_declaration: customs,
+                    }]}
+                  />
+                )}
+              </div>
             );
           })()}
 

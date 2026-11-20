@@ -48,8 +48,12 @@ export default function OrderMessageThread({
   const canSendMessage = can("message:send_message") || can("message:send_order_message");
   const canSendImage = can("message:send_image");
   
-  // 不允许取消的订单状态
-  const nonCancellableStatuses = ['transit_shipped', 'shipped', 'delivered', 'cancelled', 'archived'];
+  // 不允许取消的订单状态（与后端 OrderInfoServiceImpl.NON_CANCELLABLE_STATUSES 保持一致）
+  const nonCancellableStatuses = [
+    'transited', 'transit_notified_shipment', 'awaiting_forwarded_notified',
+    'forwarded_notified', 'transit_forwarded', 'transit_shipped',
+    'transit_arrived', 'shipped', 'delivered', 'cancelled', 'archived',
+  ];
   const canCancelOrder = !nonCancellableStatuses.includes(order.order_status);
   
   const [localMessages, setLocalMessages] = useState(order.messages || []);

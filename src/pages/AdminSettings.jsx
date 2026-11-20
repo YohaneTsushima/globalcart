@@ -44,6 +44,7 @@ import OfficialPoolSettings from "@/components/admin/OfficialPoolSettings";
 import PaymentTimeoutSettings from "@/components/admin/PaymentTimeoutSettings";
 import AutoArchiveSettings from "@/components/admin/AutoArchiveSettings";
 import NotificationTextSettings from "@/components/admin/NotificationTextSettings";
+import OrderCancelConfigManager from "@/components/admin/OrderCancelConfigManager";
 import QuickActionsManager from "@/components/admin/QuickActionsManager";
 import LogisticsStatusBoardManager from "@/components/admin/LogisticsStatusBoardManager";
 import HeroSectionManager from "@/components/admin/HeroSectionManager";
@@ -1054,6 +1055,7 @@ export default function AdminSettings() {
       {activeTab === "reminder_texts" && !loading && (
         <div className="space-y-5">
           <NotificationTextSettings settings={settings} onReload={load} />
+          <OrderCancelConfigManager onReload={load} />
           <CustomsHazmatTextEditor settings={flat} onReload={load} />
           
           {/* 管理员联系方式设置 */}

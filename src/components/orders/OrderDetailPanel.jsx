@@ -4,7 +4,7 @@
  * 参考票务订单详情面板布局设计
  */
 import { useState, useEffect } from "react";
-import { X, ShoppingBag, Package, CreditCard, FileText, Image as ImageIcon, MessageSquare, Upload, Pencil, Check, Truck, Scissors, ExternalLink } from "lucide-react";
+import { X, ShoppingBag, Package, CreditCard, FileText, Image as ImageIcon, MessageSquare, Upload, Pencil, Check, Truck, Scissors, ExternalLink, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ImageWithViewer } from "@/components/common/ImageViewer";
@@ -546,6 +546,26 @@ export default function OrderDetailPanel({ orderId, onClose, onRefresh, currentU
           {/* ===== MESSAGES & CANCEL TAB ===== */}
           {activeTab === "messages" && (
             <div className="space-y-4">
+              {/* 已取消订单：展示取消理由与取消时间 */}
+              {order.order_status === "cancelled" && (
+                <div className="border border-red-200 bg-red-50/60 rounded-lg p-3 space-y-1.5">
+                  <div className="flex items-center gap-1.5 text-sm font-medium text-red-700">
+                    <AlertTriangle className="w-4 h-4" />取消理由
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {order.cancel_category && (
+                      <Badge className="bg-white text-red-700 border border-red-200">{order.cancel_category}</Badge>
+                    )}
+                    {order.cancelled_at && (
+                      <span className="text-xs text-gray-500">取消时间：{formatDate(order.cancelled_at)}</span>
+                    )}
+                  </div>
+                  <p className="text-sm text-gray-700 whitespace-pre-wrap">
+                    {order.cancel_reason || "（未记录取消理由）"}
+                  </p>
+                </div>
+              )}
+
               {/* Message thread */}
               <OrderMessageThread
                 order={order}
@@ -821,6 +841,15 @@ export default function OrderDetailPanel({ orderId, onClose, onRefresh, currentU
                       <div className="flex-1">
                         <div className="text-sm font-medium text-gray-900">已发货</div>
                         <div className="text-xs text-gray-500">{formatDate(order.shipped_date)}</div>
+                      </div>
+                    </div>
+                  )}
+                  {order.cancelled_at && (
+                    <div className="flex items-start gap-3">
+                      <div className="w-2 h-2 rounded-full bg-red-500 mt-1.5" />
+                      <div className="flex-1">
+                        <div className="text-sm font-medium text-gray-900">订单取消</div>
+                        <div className="text-xs text-gray-500">{formatDate(order.cancelled_at)}</div>
                       </div>
                     </div>
                   )}
