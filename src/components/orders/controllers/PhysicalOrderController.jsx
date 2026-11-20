@@ -78,8 +78,9 @@ export const PhysicalOrderController = {
 
     switch (col.key) {
       case "order_number": {
-        const isSplitPending = order.has_split_marker && !order.parent_order_id && order.split_index !== -1;
-        return <span className="font-mono text-xs text-gray-500">{order.order_number ? `${order.order_number}${isSplitPending ? " - 00" : ""}` : "-"}</span>;
+        // 拆单后的主订单展示为 -00（子订单号本身带 -01/-02…）
+        const isSplitParent = order.has_split_marker && !order.parent_order_id && order.split_index === 0;
+        return <span className="font-mono text-xs text-gray-500">{order.order_number ? `${order.order_number}${isSplitParent ? " - 00" : ""}` : "-"}</span>;
       }
       case "user_name": {
         const profile = userAvatars?.[order.user_email] || {};

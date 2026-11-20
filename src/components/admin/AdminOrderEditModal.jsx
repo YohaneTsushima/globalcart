@@ -3,7 +3,7 @@
  * Full admin workflow panel for a single order.
  * Covers all status transitions per the new order flow.
  */
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import ReactMarkdown from "react-markdown";
 import { base44 } from "@/api/base44Client";
 import { updateOrder, tenantEntity, updateTenantOrder } from "@/lib/tenantApi";
@@ -40,6 +40,25 @@ const ALL_STATUSES = [
   { v: "delivered", l: "已收货" },
   { v: "cancelled", l: "已取消" },
 ];
+
+// 商品链接按「单独成行的 ---」分组；每组会成为一张订单
+function splitProductLink(text) {
+  if (!text) return [];
+  const sections = [];
+  let current = [];
+  for (const line of String(text).split(/\r?\n/)) {
+    if (/^-{3,}$/.test(line.trim())) {
+      const section = current.join("\n").trim();
+      if (section) sections.push(section);
+      current = [];
+    } else {
+      current.push(line);
+    }
+  }
+  const last = current.join("\n").trim();
+  if (last) sections.push(last);
+  return sections;
+}
 
 export default function AdminOrderEditModal({ order, initialItemSizeTemplates, onClose, onSaved, onOpenPool, shippingPools = [], currentUser = null, userProfileMap = {} }) {
   const { can, isAdmin } = usePermissions();
@@ -106,6 +125,9 @@ export default function AdminOrderEditModal({ order, initialItemSizeTemplates, o
   const [splitResult, setSplitResult] = useState(null); // { child_count, children }
   // Child orders (fetched for -00 purchased orders)
   const [childOrders, setChildOrders] = useState(null);
+
+  // 商品链接按 --- 分组后的结果
+  const splitSections = useMemo(() => splitProductLink(order.product_link), [order.product_link]);
 
   // Post-warehouse split request approval state
   const [approvingSplit, setApprovingSplit] = useState(false);
@@ -183,25 +205,23 @@ export default function AdminOrderEditModal({ order, initialItemSizeTemplates, o
     };
   }, []);
 
-  // Fetch child orders for purchased -00 parent orders
+  // Fetch child orders for split parents
   useEffect(() => {
-    if (order.split_index !== -1 || !order.has_split_marker) return;
-    // If already purchased as a split order, load child orders
-    if (order.order_status === 'purchased' && order.order_number?.includes(' - 00')) {
-      tenantEntity.list('Order', { parent_order_id: order.id })
-        .then(children => setChildOrders(children || []))
-        .catch(() => {});
-    }
-  }, [order.id, order.order_status]);
+    if (order.split_index !== 0) return;
+    base44.functions.invoke('order/info/splitChildren', { id: String(order.id) })
+      .then(res => setChildOrders(res?.data || []))
+      .catch(() => {});
+  }, [order.id, order.split_index]);
 
   // ── Split order handler ──
   const handleSplitOrder = async () => {
-    if (!window.confirm(`确认将此订单拆分为 ${(order.split_sections || []).length} 个子订单？此操作不可撤销。`)) return;
+    if (splitSections.length < 2) return;
+    if (!window.confirm(`确认将此订单拆分为 ${splitSections.length} 个订单（1 个主订单 + ${splitSections.length - 1} 个子订单）？此操作不可撤销。`)) return;
     setSplitting(true);
-    const res = await base44.functions.invoke('splitTenantOrder', {
-      orderId: order.id,
-      purchaseScreenshotUrl: purchaseScreenshot || order.purchase_screenshot_url || null,
-      adminNote: form.admin_note,
+    const res = await base44.functions.invoke('order/info/splitOrder', {
+      order_id: order.id,
+      purchase_screenshot_url: purchaseScreenshot || order.purchase_screenshot_url || null,
+      admin_note: form.admin_note,
     });
     setSplitting(false);
     if (res.data?.success) {
@@ -728,33 +748,33 @@ export default function AdminOrderEditModal({ order, initialItemSizeTemplates, o
                       id="order-purchase-screenshot"
                     />
                     {/* Split marker preview */}
-                    {order.has_split_marker && (order.split_sections || []).length > 1 && !splitResult && (
+                    {order.has_split_marker && splitSections.length > 1 && !splitResult && (
                       <div className="bg-indigo-50 border border-indigo-200 rounded-lg px-3 py-2.5 space-y-1.5">
                         <div className="flex items-center gap-1.5 text-xs font-medium text-indigo-700">
                           <Scissors className="w-3.5 h-3.5" />
-                          检测到 {order.split_sections.length} 组商品链接（拆单标记）
+                          检测到 {splitSections.length} 组商品链接（拆单标记）
                         </div>
                         <div className="text-xs text-indigo-600 space-y-1">
-                          {order.split_sections.map((sec, i) => (
+                          {splitSections.map((sec, i) => (
                             <div key={i} className="truncate">
                               <span className="font-medium">第 {i+1} 批：</span>
                               {sec.split('\n')[0].slice(0, 50)}{sec.length > 50 ? '…' : ''}
                             </div>
                           ))}
                         </div>
-                        <p className="text-xs text-indigo-400">购买完成后可点击「下单并拆分」，将生成 {order.split_sections.length} 个子订单，货款平均分配</p>
+                        <p className="text-xs text-indigo-400">购买完成后可点击「下单并拆分」：第一组留在主订单，其余每组生成一张子订单，货款平分（除不尽的余数补到主订单）</p>
                       </div>
                     )}
                     {splitResult && (
                       <div className="bg-green-50 border border-green-200 rounded-lg px-3 py-2 text-xs text-green-700">
-                        ✓ 已拆分为 {splitResult.child_count} 个子订单
+                        ✓ 已拆分为 {splitResult.child_count} 个子订单（主订单保留第一组商品）
                         {(splitResult.children || []).map(c => (
                           <div key={c.id} className="mt-0.5 font-mono">{c.order_number}</div>
                         ))}
                       </div>
                     )}
                     <div className="flex gap-2 flex-wrap">
-                      {order.has_split_marker && (order.split_sections || []).length > 1 && !splitResult ? (
+                      {order.has_split_marker && splitSections.length > 1 && !splitResult ? (
                         <Button size="sm" className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-xs"
                           onClick={handleSplitOrder} disabled={splitting || saving || !canPlaceOrder}>
                           {splitting ? <><Loader2 className="w-3.5 h-3.5 animate-spin mr-1" />拆分中...</> : <><GitBranch className="w-3.5 h-3.5 mr-1" />下单并拆分</>}
@@ -862,7 +882,7 @@ export default function AdminOrderEditModal({ order, initialItemSizeTemplates, o
                   )}
 
                   {/* Child orders quick-warehouse list (for -00 split parent) */}
-                  {order.split_index === -1 && childOrders && childOrders.length > 0 && (
+                  {order.has_split_marker && order.split_index === 0 && childOrders && childOrders.length > 0 && (
                     <div className="border border-indigo-100 rounded-lg bg-indigo-50 p-2.5 space-y-1.5">
                       <div className="text-xs font-medium text-indigo-700 flex items-center gap-1.5">
                         <GitBranch className="w-3.5 h-3.5" />子订单快捷入库（{childOrders.length} 个）
@@ -884,15 +904,14 @@ export default function AdminOrderEditModal({ order, initialItemSizeTemplates, o
                                 type="button"
                                 className="text-teal-600 hover:text-teal-800 text-xs underline whitespace-nowrap"
                                  onClick={async () => {
-                                   const result = await updateOrder(child.id, {
-                                     order_status: 'in_warehouse',
-                                     in_warehouse_date: new Date().toISOString().split('T')[0],
-                                   });
+                                   const result = await updateTenantOrder('order/info/handleMarkInWarehouse', [
+                                     { id: String(child.id), data: { weight_g: child.weight_g || 100 } },
+                                   ]);
                                    if (!result) {
                                      return;
                                    }
-                                   const updated = await tenantEntity.list('Order', { parent_order_id: order.id });
-                                   setChildOrders(updated || []);
+                                   const reloaded = await base44.functions.invoke('order/info/splitChildren', { id: String(order.id) });
+                                   setChildOrders(reloaded?.data || []);
                                  }}
                               >
                                 入库
@@ -969,7 +988,7 @@ export default function AdminOrderEditModal({ order, initialItemSizeTemplates, o
                   ) : (
                     <Button size="sm" className="w-full bg-teal-600 hover:bg-teal-700 text-xs"
                       onClick={() => handleMarkInWarehouse({ andOpenPool: false })} disabled={saving || !canWarehouseIn}>
-                      {order.split_index === -1 ? "✓ 父订单确认入库（-00 单）" : "✓ 确认入库"}
+                      {order.has_split_marker && order.split_index === 0 ? "✓ 父订单确认入库（-00 单）" : "✓ 确认入库"}
                     </Button>
                   )}
                 </div>

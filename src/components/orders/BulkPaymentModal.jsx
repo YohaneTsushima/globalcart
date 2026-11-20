@@ -4,12 +4,13 @@
  * Shows a summary of all selected orders, then lets user upload proof and confirm.
  */
 import { useState } from "react";
-import { X, CreditCard, Upload, CheckCircle, Package, Loader2, ExternalLink } from "lucide-react";
+import { X, CheckCircle, Package, Loader2, ExternalLink } from "lucide-react";
 import { base44 } from "@/api/base44Client";
 import { updateOrder } from "@/lib/tenantApi";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import PaymentMethodSelector from "@/components/common/PaymentMethodSelector";
+import ImageUploader from "@/components/common/ImageUploader";
 
 export default function BulkPaymentModal({ orders, onClose, onSuccess }) {
   const [method, setMethod] = useState("");
@@ -20,26 +21,33 @@ export default function BulkPaymentModal({ orders, onClose, onSuccess }) {
   const [alipayUrl, setAlipayUrl] = useState(null);
   const [generating, setGenerating] = useState(false);
 
-  // Total by currency
-  const totals = orders.reduce((acc, o) => {
-    const cur = o.prepayment_currency || "CNY";
-    acc[cur] = (acc[cur] || 0) + (o.prepayment_amount || 0);
-    return acc;
-  }, {});
-
-  const formatTotal = (cur, val) => {
-    if (cur === "JPY") return `${Math.round(val).toLocaleString()} yen`;
-    if (cur === "CNY") return `${Math.round(val)} yuan`;
-    return `${cur} ${val.toFixed(2)}`;
+  // 每个订单实际应付金额（JPY）：一次性全额看 full_payment_amount，预付款看 prepayment_amount
+  const amountOf = (o) => {
+    const raw = o?.payment_mode === "fullpay_once"
+      ? (o?.full_payment_amount ?? o?.prepayment_amount)
+      : (o?.prepayment_amount ?? o?.full_payment_amount);
+    return Number(raw) || 0;
   };
 
-  const handleUploadProof = async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
+  // 金额统一按日元汇总（订单里的付款金额本身就是 JPY）
+  const totalJpy = orders.reduce((sum, o) => sum + amountOf(o), 0);
+
+  const formatTotal = (val) => `${Math.round(val).toLocaleString()} yen`;
+
+  const handleProofChange = async (fileOrUrl) => {
+    if (!fileOrUrl) return;
+    // 直接粘贴/输入 URL
+    if (typeof fileOrUrl === "string") {
+      setProofUrl(fileOrUrl);
+      return;
+    }
     setUploading(true);
-    const { file_url } = await base44.integrations.Core.UploadFile({ file });
-    setProofUrl(file_url);
-    setUploading(false);
+    try {
+      const { file_url } = await base44.integrations.Core.UploadFile({ file: fileOrUrl, path: "proof" });
+      setProofUrl(file_url);
+    } finally {
+      setUploading(false);
+    }
   };
 
   const handleManualSubmit = async () => {
@@ -93,9 +101,7 @@ export default function BulkPaymentModal({ orders, onClose, onSuccess }) {
                   {o.order_number && <span className="text-xs text-gray-400 flex-shrink-0">{o.order_number}</span>}
                 </div>
                 <span className="text-gray-700 font-medium flex-shrink-0 ml-2">
-                  {o.prepayment_currency === "JPY"
-                    ? `${Math.round(o.prepayment_amount || 0).toLocaleString()} yen`
-                    : `${o.prepayment_currency || "CNY"} ${Math.round(o.prepayment_amount || 0)}`}
+                  {formatTotal(amountOf(o))}
                 </span>
               </div>
             ))}
@@ -104,12 +110,7 @@ export default function BulkPaymentModal({ orders, onClose, onSuccess }) {
           {/* Totals */}
           <div className="bg-red-50 border border-red-100 rounded-lg px-4 py-3">
             <p className="text-xs text-red-500 font-medium mb-1">合计金额</p>
-            {Object.entries(totals).map(([cur, val]) => (
-              <p key={cur} className="text-lg font-bold text-red-700">{formatTotal(cur, val)}</p>
-            ))}
-            {Object.keys(totals).length > 1 && (
-              <p className="text-xs text-red-400 mt-1">含多种货币，请按实际金额分别付款</p>
-            )}
+            <p className="text-lg font-bold text-red-700">{formatTotal(totalJpy)}</p>
           </div>
 
           {/* Method selection */}
@@ -171,19 +172,14 @@ export default function BulkPaymentModal({ orders, onClose, onSuccess }) {
                   请联系客服获取收款账号，付款后上传凭证（可上传同一张截图）
                 </div>
               )}
-              <div>
-                <Label className="text-sm">上传付款凭证</Label>
-                <label className="cursor-pointer block mt-1">
-                  <div className={`flex items-center gap-2 px-3 py-2.5 border-2 border-dashed rounded-lg text-sm justify-center transition-colors ${
-                    proofUrl ? "border-green-300 bg-green-50 text-green-700" : "border-gray-200 text-gray-400 hover:border-gray-300"
-                  }`}>
-                    {proofUrl
-                      ? <><CheckCircle className="w-4 h-4" />凭证已上传</>
-                      : <><Upload className="w-4 h-4" />{uploading ? "上传中..." : "点击上传截图"}</>}
-                  </div>
-                  <input type="file" accept="image/*" className="hidden" onChange={handleUploadProof} disabled={uploading} />
-                </label>
-              </div>
+              <ImageUploader
+                value={proofUrl}
+                onChange={handleProofChange}
+                onDelete={() => setProofUrl("")}
+                uploading={uploading}
+                label="上传付款凭证（可上传同一张截图）"
+                id="bulk-payment-proof"
+              />
             </div>
           )}
         </div>

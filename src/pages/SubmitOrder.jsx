@@ -7,7 +7,7 @@ import { useAuth } from "@/lib/AuthContext";
 import { timePage } from "@/lib/timing";
 import { useNavigate } from "react-router-dom";
 import { createPageUrl } from "@/utils";
-import { ShoppingBag, Info, Upload, Plus, X, HelpCircle, AlertTriangle, Lock, Truck, ChevronDown } from "lucide-react";
+import { ShoppingBag, Info, Upload, Plus, X, HelpCircle, AlertTriangle, Lock, Truck, ChevronDown, Scissors } from "lucide-react";
 import { usePermissions } from "@/hooks/usePermissions";
 import FeeCalculator from "@/components/orders/FeeCalculator";
 import PaymentSection from "@/components/orders/PaymentSection";
@@ -27,6 +27,9 @@ import { t, getLocale } from "@/lib/i18n";
 // Default prepay rate fallback
 const DEFAULT_PREPAY_RATE = 0.80;
 
+// 拆单序号（一、二、三……）
+const CN_NUMBERS = ["一", "二", "三", "四", "五", "六", "七", "八", "九", "十"];
+
 // ────────────────────────────────────────────────────────────────────────────
 
 export default function SubmitOrder() {
@@ -36,6 +39,9 @@ export default function SubmitOrder() {
   const { can } = usePermissions();
   const locale = getLocale();
   const canSubmitOrder = can("order:submit_purchase_request");
+  // 拆单权限（order:submit_split_request）。
+  // 目前拆单按钮只按租户开关 allow_order_split 显示；后续如果要「开关开启 + 该用户有权限」才显示，
+  // 把按钮条件改成 `allowOrderSplit && canSplitOrder` 即可，这里先保留变量。
   const canSplitOrder = can("order:submit_split_request");
   const canSelectOrderAddons = can("addon:select_order_value_added_services");
   const canPrePay = can("payment:pre_pay");
@@ -47,6 +53,8 @@ export default function SubmitOrder() {
   const [activeRule, setActiveRule] = useState(null);
   const [productUrls, setProductUrls] = useState([""]);
   const [urlMode, setUrlMode] = useState("multi");
+  // 拆单：分割线条数（0 = 1 单，1 = 2 单，2 = 3 单……）
+  const [splitIndex, setSplitIndex] = useState(0);
   const [addonOptions, setAddonOptions] = useState([]);
   const [selectedAddons, setSelectedAddons] = useState([]);
   const [addonCustomFees, setAddonCustomFees] = useState({});
@@ -104,7 +112,20 @@ export default function SubmitOrder() {
       setActiveRule(data.active_rule || null);
       const parsed = {};
       Object.entries(data.settings || {}).forEach(([k, v]) => { parsed[k] = v; });
+      // 租户级功能开关（SiteSettings），例如 allow_order_split
+      Object.entries(data.tenant_settings || {}).forEach(([k, v]) => { parsed[k] = v; });
       setSettings(parsed);
+      // 兼容老版本后端：没有下发 tenant_settings 时才单独补查拆单开关
+      if (parsed.allow_order_split === undefined) {
+        base44.functions.invoke('mutateTenantEntity/SiteSettings/list', {
+          entity: 'SiteSettings', action: 'list', filter: { key: 'allow_order_split' },
+        }).then((res) => {
+          const rows = Array.isArray(res?.data) ? res.data : [];
+          if (rows[0]?.value !== undefined) {
+            setSettings((prev) => ({ ...prev, allow_order_split: rows[0].value }));
+          }
+        }).catch(() => {});
+      }
       const prepayOn = parsed.prepay_enabled;
       setPaymentMode(prepayOn ? "prepay" : "fullpay");
       setUserCredit(null);
@@ -256,6 +277,16 @@ export default function SubmitOrder() {
 
   const addUrl = () => setProductUrls((prev) => [...prev, ""]);
   const removeUrl = (idx) => setProductUrls((prev) => prev.filter((_, i) => i !== idx));
+
+  // ── 拆单 ──
+  // splitIndex = 分割线条数：0 → 1 单，1 → 2 单，2 → 3 单……
+  const splitOrderCount = splitIndex + 1;
+  const splitTotalAmount = parseFloat(form.estimated_jpy) || 0;
+  const splitBaseAmount = Math.floor(splitTotalAmount / splitOrderCount);
+  const splitPreview = Array.from({ length: splitOrderCount }, (_, i) => ({
+    name: `${(form.order_name || "订单").trim()} 之${CN_NUMBERS[i] || (i + 1)}`,
+    amount: i === 0 ? splitTotalAmount - splitBaseAmount * (splitOrderCount - 1) : splitBaseAmount,
+  }));
   const toggleAddon = (id) => {
     setSelectedAddons((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]);
     // Clear error when toggling off
@@ -335,6 +366,16 @@ export default function SubmitOrder() {
     
     const isCredit = paymentMode === "credit_weekly" || paymentMode === "credit_monthly";
     const isDeferred = paymentMode === "deferred";
+
+    // 拆单校验：每个订单至少要有 1 日元货款
+    if (splitIndex > 0) {
+      const totalForSplit = parseFloat(form.estimated_jpy) || 0;
+      if (totalForSplit < splitIndex + 1) {
+        toast.error(`货款太少，无法拆分为 ${splitIndex + 1} 个订单`);
+        return;
+      }
+    }
+
     const tagResult = await detectPrimaryStoreTagResult(urlsText);
 
     // 根据付款模式决定预付金额
@@ -391,6 +432,8 @@ export default function SubmitOrder() {
                 return addon?.is_user_customizable && addonCustomFees[id] !== undefined && !addonFeeErrors[id];
               })
               .map(id => ({ id, fee: addonCustomFees[id] })),
+            // 拆单：分割线条数，0 = 1 单，1 = 2 单，2 = 3 单……
+            split_index: splitIndex,
             show_prompt: !dontShowAgain
       };
       // 判断是否需要弹窗确认
@@ -608,22 +651,24 @@ export default function SubmitOrder() {
                     </div>
                   </div>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (urlMode === "multi") {
-                      setUrlMode("textarea");
-                      setProductUrls([productUrls.filter((u) => u.trim()).join("\n")]);
-                    } else {
-                      setUrlMode("multi");
-                      const lines = (productUrls[0] || "").split("\n").map((s) => s.trim()).filter(Boolean);
-                      setProductUrls(lines.length > 0 ? lines : [""]);
-                    }
-                  }}
-                  className="text-xs text-blue-500 hover:text-blue-700 font-medium"
-                >
-                  {urlMode === "multi" ? t("切换文本框", locale) : t("切换分行", locale)}
-                </button>
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (urlMode === "multi") {
+                        setUrlMode("textarea");
+                        setProductUrls([productUrls.filter((u) => u.trim()).join("\n")]);
+                      } else {
+                        setUrlMode("multi");
+                        const lines = (productUrls[0] || "").split("\n").map((s) => s.trim()).filter(Boolean);
+                        setProductUrls(lines.length > 0 ? lines : [""]);
+                      }
+                    }}
+                    className="text-xs text-blue-500 hover:text-blue-700 font-medium"
+                  >
+                    {urlMode === "multi" ? t("切换文本框", locale) : t("切换分行", locale)}
+                  </button>
+                </div>
               </div>
 
               {urlMode === "textarea" ? (
@@ -667,9 +712,22 @@ export default function SubmitOrder() {
             {/* 订单名称和价格 - 并排显示 */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <div>
-                <Label className="text-sm font-medium">
-                  <span className="text-red-500">*</span> {t("订单名称", locale)}
-                </Label>
+                <div className="flex items-center justify-between">
+                  <Label className="text-sm font-medium">
+                    <span className="text-red-500">*</span> {t("订单名称", locale)}
+                  </Label>
+                  {['true', '1'].includes(String(settings.allow_order_split || '').toLowerCase()) && (
+                    <button
+                      type="button"
+                      onClick={() => setSplitIndex((n) => Math.min(n + 1, 9))}
+                      title="拆成多个订单：点一次加一条分割线（1 条 = 2 单，2 条 = 3 单）"
+                      className="text-xs text-indigo-500 hover:text-indigo-700 font-medium flex items-center gap-1"
+                    >
+                      <Scissors className="w-3.5 h-3.5" />
+                      拆单{splitIndex > 0 ? `（${splitOrderCount} 单）` : ""}
+                    </button>
+                  )}
+                </div>
                 <Input
                   placeholder={t("方便辨认的名字（必填）", locale)}
                   required
@@ -696,6 +754,54 @@ export default function SubmitOrder() {
                 />
               </div>
             </div>
+
+            {/* 拆单预览：分割线 + 自动命名的多个订单 */}
+            {splitIndex > 0 && (
+              <div className="rounded-lg border border-indigo-200 bg-indigo-50/60 p-3 space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-medium text-indigo-700">
+                    将创建 {splitOrderCount} 个订单，货款合计 ¥{splitTotalAmount.toLocaleString()} 平分
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setSplitIndex(0)}
+                    className="text-[11px] text-gray-400 hover:text-gray-600 underline"
+                  >
+                    取消拆单
+                  </button>
+                </div>
+                {splitPreview.map((item, i) => (
+                  <div key={i}>
+                    {i > 0 && (
+                      <div className="flex items-center gap-2 py-1.5">
+                        <span className="flex-1 border-t-2 border-dashed border-indigo-300" />
+                        <span className="text-[11px] text-indigo-500 whitespace-nowrap">拆单分割线</span>
+                        <span className="flex-1 border-t-2 border-dashed border-indigo-300" />
+                        {i === splitPreview.length - 1 && (
+                          <button
+                            type="button"
+                            onClick={() => setSplitIndex((n) => Math.max(0, n - 1))}
+                            className="text-gray-400 hover:text-red-500"
+                            title="删除该分割线"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        )}
+                      </div>
+                    )}
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-gray-700">
+                        第 {i + 1} 单：<span className="font-medium">{item.name}</span>
+                      </span>
+                      <span className="font-mono text-gray-600">¥{item.amount.toLocaleString()}</span>
+                    </div>
+                  </div>
+                ))}
+                <p className="text-[11px] text-indigo-400">
+                  货款平均分到每个订单，除不尽的余数补到第 1 单；付款仍在第 1 单支付，子订单共用该付款记录
+                </p>
+              </div>
+            )}
 
             <div style={{ display: 'none' }}>
               <Label className="text-sm font-medium">{t("商品描述 / 规格", locale)}</Label>

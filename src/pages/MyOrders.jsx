@@ -4,7 +4,7 @@ import PaginationBar from "@/components/common/PaginationBar";
 import { base44 } from "@/api/base44Client";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 
-import { Package, RefreshCw, Search, CreditCard, Truck, CheckCircle, ChevronUp, ChevronDown, ChevronsUpDown, AlertCircle, Archive, ArchiveRestore, RotateCcw, Zap, X, Loader2 } from "lucide-react";
+import { Package, RefreshCw, Search, CreditCard, Truck, CheckCircle, ChevronUp, ChevronDown, ChevronsUpDown, AlertCircle, Archive, ArchiveRestore, RotateCcw, Zap, X, Loader2, Scissors } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { usePermissions } from "@/hooks/usePermissions";
 import { Textarea } from "@/components/ui/textarea";
@@ -23,6 +23,7 @@ import OrderDetailPanel from "@/components/orders/OrderDetailPanel";
 import ColumnCustomizer from "@/components/orders/ColumnCustomizer";
 import PaymentModal from "@/components/orders/PaymentModal";
 import UserNotifyShipmentModal from "@/components/orders/UserNotifyShipmentModal";
+import SplitAfterWarehouseModal from "@/components/orders/SplitAfterWarehouseModal";
 import TransitNotifyShipmentModal from "@/components/orders/TransitNotifyShipmentModal";
 import { getNotifyShipmentCache, setNotifyShipmentCache } from "@/lib/notifyShipmentCache";
 import ShippingEditModal from "@/components/shippingpool/ShippingEditModal";
@@ -37,6 +38,13 @@ import { persistentToastError } from "@/lib/toastUtils.jsx";
 import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogAction } from "@/components/ui/alert-dialog";
 
 const STORAGE_KEY = "my_orders_columns";
+
+// 分组里的订单列表：拼邮池分组用 pool_orders，拆单分组用 split_orders
+function groupOrdersOf(group) {
+  if (Array.isArray(group?.pool_orders) && group.pool_orders.length > 0) return group.pool_orders;
+  if (Array.isArray(group?.split_orders) && group.split_orders.length > 0) return group.split_orders;
+  return [];
+}
 
 const IS_DEV_MOCK = import.meta.env.VITE_DEV_MOCK === 'true';
 
@@ -116,8 +124,9 @@ function CellValue({ col, order }) {
           </div>;
     }
     case "order_number": {
-      const isSplitPending = order.has_split_marker && !order.parent_order_id && order.split_index !== -1;
-      return <span className="font-mono text-xs text-gray-500">{order.order_number ? `${order.order_number}${isSplitPending ? " - 00" : ""}` : "-"}</span>;
+      // 拆单后的主订单展示为 -00（子订单号本身带 -01/-02…）
+      const isSplitParent = order.has_split_marker && !order.parent_order_id && order.split_index === 0;
+      return <span className="font-mono text-xs text-gray-500">{order.order_number ? `${order.order_number}${isSplitParent ? " - 00" : ""}` : "-"}</span>;
     }
     case "product_name":
       return (
@@ -296,6 +305,8 @@ export default function MyOrders() {
   const [showArchived, setShowArchived] = useState(false);
   const { pageSize, setPageSize, currentPage, setCurrentPage, resetPage, PAGE_SIZES } = usePageSize("my_orders_page_size", 20);
   const [pageData, setPageData] = useState({});
+  // 入库后拆单：当前要申请的订单 / 提交后刷新用
+  const [splitRequestOrder, setSplitRequestOrder] = useState(null);
   const [pendingEditRequests, setPendingEditRequests] = useState([]);
   const [archiveTargetOrder, setArchiveTargetOrder] = useState(null);
   const [deliverTargetOrder, setDeliverTargetOrder] = useState(null);
@@ -340,15 +351,18 @@ export default function MyOrders() {
       quantity: o.quantity ?? 1,
       prepayment_amount: o.prepayment_amount ?? o.prepayment_amount_jpy ?? 0,
       prepayment_currency: o.prepayment_currency || "JPY",
+      full_payment_amount: o.full_payment_amount ?? 0,
+      full_payment_currency: o.full_payment_currency || null,
       paid_amount: o.paid_amount ?? 0,
       paid_amount_jpy: o.paid_amount_jpy ?? null,
       order_stage_payment_jpy: o.order_stage_payment_jpy ?? o.prepayment_amount_jpy ?? null,
     }) : o;
-    // grouping_orders: [{ order: {...}|null, pool_orders: [...] }]，按池分组
+    // grouping_orders: [{ order: {...}|null, pool_orders: [...], split_orders: [...] }]
     const rawGroups = data.grouping_orders || [];
     const freshGroups = rawGroups.map(g => ({
       order: normalizeOrder(g.order),
       pool_orders: (g.pool_orders || []).map(normalizeOrder),
+      split_orders: (g.split_orders || []).map(normalizeOrder),
     }));
     setOrders(freshGroups);
     setTotal(data.total || 0);
@@ -510,10 +524,10 @@ export default function MyOrders() {
   const handleArchiveOrder = async (target) => {
     setActionLoading(true);
     try {
-      // 支持单个 order 或多商品组 { pool_orders: [...] }，一次存档整组
-      const ids = Array.isArray(target?.pool_orders)
-        ? target.pool_orders.map(o => o.id)
-        : [target.id];
+      // 支持单个 order、拼邮池多商品组 { pool_orders: [...] }、拆单组 { split_orders: [...] }，一次存档整组
+      const ids = target?.order
+        ? [target.order.id]
+        : groupOrdersOf(target).map(o => o.id);
       const payload = ids.map(id => ({ id }));
 
       await base44.functions.invoke('order/info/handleArchive', payload);
@@ -535,8 +549,8 @@ export default function MyOrders() {
   // Pagination — 后端已分页，直接用 orders
   const pagedFiltered = orders;
 
-  // 拍平所有订单（单商品 order + 多商品 pool_orders），供批量筛选/全选用
-  const flatOrders = orders.flatMap(g => (g.order ? [g.order] : (g.pool_orders || [])));
+  // 拍平所有订单（单商品 order + 拼邮池 pool_orders + 拆单 split_orders），供批量筛选/全选用
+  const flatOrders = orders.flatMap(g => (g.order ? [g.order] : groupOrdersOf(g)));
 
   // Orders eligible for bulk notify (in_warehouse only) — operate on full filtered, not paged
   const inWarehouseOrders = flatOrders.filter(o => o.order_status === "in_warehouse");
@@ -546,8 +560,10 @@ export default function MyOrders() {
   const selectedInStorage = flatOrders.filter(o => selectedIds.includes(o.id) && o.order_status === "in_storage");
 
   // Orders eligible for bulk payment
+  // 注意：这里必须包含拆单子单，否则表头「全选」勾不上整个拆单组；
+  // 真正发起批量付款时再用 selectedPaymentPending 排除子单（付款只挂在父单上）。
   const paymentPendingOrders = flatOrders.filter(o => o.order_status === "payment_pending" && o.payment_status !== "awaiting_confirmation");
-  const selectedPaymentPending = flatOrders.filter(o => selectedIds.includes(o.id) && o.order_status === "payment_pending" && o.payment_status !== "awaiting_confirmation");
+  const selectedPaymentPending = flatOrders.filter(o => !o.parent_order_id && selectedIds.includes(o.id) && o.order_status === "payment_pending" && o.payment_status !== "awaiting_confirmation");
 
   // Orders eligible for bulk archive (only if user has archive permission)
   const deliveredOrders = canArchiveOrder ? flatOrders.filter(o => o.order_status === "delivered" && !o.is_archived) : [];
@@ -562,9 +578,9 @@ export default function MyOrders() {
     setSelectedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
   };
 
-  // 整组选中/取消（多商品组 checkbox）：把 pool_orders 所有 id 并入/移出 selectedIds
+  // 整组选中/取消（多商品组 / 拆单组 checkbox）：把组内所有 id 并入/移出 selectedIds
   const toggleGroup = (group) => {
-    const ids = (group.pool_orders || []).map(o => o.id);
+    const ids = groupOrdersOf(group).map(o => o.id);
     const allSelected = ids.every(id => selectedIds.includes(id));
     if (allSelected) setSelectedIds(prev => prev.filter(id => !ids.includes(id)));
     else setSelectedIds(prev => [...new Set([...prev, ...ids])]);
@@ -614,14 +630,19 @@ export default function MyOrders() {
           {order.pool?.pool_code || order.pool_code}
         </button>
       )}
-      {order.order_status === "payment_pending" && order.payment_status !== "awaiting_confirmation" && (() => {
-        const isFullPayOnce = order.payment_mode === "fullpay_once";
-        return (
-          <Button size="sm" className="h-7 text-xs bg-red-600 hover:bg-red-700" onClick={() => setPaymentOrder(order)}>
-            <CreditCard className="w-3 h-3 mr-1" />{isFullPayOnce ? "全额付款" : "付款"}
-          </Button>
-        );
-      })()}
+      {order.order_status === "payment_pending" && order.payment_status !== "awaiting_confirmation" && (
+        order.parent_order_id ? (
+          // 拆单产生的子订单共用父订单的付款记录，付款只在父单上操作
+          <span className="text-xs text-gray-400">请在主订单付款</span>
+        ) : (() => {
+          const isFullPayOnce = order.payment_mode === "fullpay_once";
+          return (
+            <Button size="sm" className="h-7 text-xs bg-red-600 hover:bg-red-700" onClick={() => setPaymentOrder(order)}>
+              <CreditCard className="w-3 h-3 mr-1" />{isFullPayOnce ? "全额付款" : "付款"}
+            </Button>
+          );
+        })()
+      )}
       {order.order_status === "in_warehouse" && canNotifyShipment && (() => {
         const editRequest = order.edit_request;
         const orderId = String(order.id);
@@ -633,28 +654,43 @@ export default function MyOrders() {
             </span>
           );
         }
+        const pendingSplit = (pageData?.split_requests || []).find(
+          r => Number(r.order_id) === Number(order.id)
+        );
         return (
-          <Button size="sm" className="h-7 text-xs bg-teal-600 hover:bg-teal-700"
-            disabled={shipmentLoading}
-            onClick={async () => {
-              const orderIds = [order.id];
-              const cached = getNotifyShipmentCache(orderIds);
-              if (cached) { setShipmentInitialData(cached); setShipmentOrder(order); return; }
-              setShipmentLoading(true);
-              try {
-                const r = await base44.functions.invoke('order/info/findOrderForNotifyShipment', { id: null, data: { order_ids: orderIds } });
-                setNotifyShipmentCache(orderIds, r.data);
-                setShipmentInitialData(r.data);
-                setShipmentOrder(order);
-              } catch (err) {
-                persistentToastError('获取发货信息失败');
-              } finally {
-                setShipmentLoading(false);
-              }
-            }}>
-            {shipmentLoading ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <Truck className="w-3 h-3 mr-1" />}
-            {shipmentLoading ? '加载中...' : '通知发货'}
-          </Button>
+          <div className="flex items-center gap-1">
+            <Button size="sm" className="h-7 text-xs bg-teal-600 hover:bg-teal-700"
+              disabled={shipmentLoading}
+              onClick={async () => {
+                const orderIds = [order.id];
+                const cached = getNotifyShipmentCache(orderIds);
+                if (cached) { setShipmentInitialData(cached); setShipmentOrder(order); return; }
+                setShipmentLoading(true);
+                try {
+                  const r = await base44.functions.invoke('order/info/findOrderForNotifyShipment', { id: null, data: { order_ids: orderIds } });
+                  setNotifyShipmentCache(orderIds, r.data);
+                  setShipmentInitialData(r.data);
+                  setShipmentOrder(order);
+                } catch (err) {
+                  persistentToastError('获取发货信息失败');
+                } finally {
+                  setShipmentLoading(false);
+                }
+              }}>
+              {shipmentLoading ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <Truck className="w-3 h-3 mr-1" />}
+              {shipmentLoading ? '加载中...' : '通知发货'}
+            </Button>
+            {pendingSplit ? (
+              <span className="inline-flex items-center gap-1 text-xs bg-indigo-100 text-indigo-700 border border-indigo-200 px-1.5 py-0.5 rounded-full font-medium">
+                <Scissors className="w-3 h-3" />拆单审核中
+              </span>
+            ) : allowSplitAfterWarehouse && (
+              <Button size="sm" variant="outline" className="h-7 text-xs text-indigo-600 border-indigo-200 hover:bg-indigo-50"
+                onClick={() => setSplitRequestOrder(order)}>
+                <Scissors className="w-3 h-3 mr-1" />拆单
+              </Button>
+            )}
+          </div>
         );
       })()}
       {order.order_status === "in_storage" && (
@@ -1154,8 +1190,8 @@ export default function MyOrders() {
                 </td>
               </tr>
             ) : pagedFiltered.map(group => {
-              const isPoolGroup = !group.order && (group.pool_orders || []).length > 0;
-              if (!isPoolGroup) {
+              const groupOrders = group.order ? [] : groupOrdersOf(group);
+              if (groupOrders.length === 0) {
                 // 分支①：单商品订单，照原单行
                 const order = group.order;
                 return (
@@ -1177,16 +1213,16 @@ export default function MyOrders() {
                   </tr>
                 );
               }
-              // 分支②：同池多商品，每个 pool_order 一行；checkbox/状态/操作 用 rowspan 纵跨整组并居中
-              const poolOrders = group.pool_orders;
-              const repr = poolOrders[0];
-              const span = poolOrders.length;
-              const allGroupSelected = poolOrders.every(o => selectedIds.includes(o.id));
-              const groupEligible = !showArchived && poolOrders.some(o =>
+              // 分支②：多商品组（同池拼邮 / 拆单），每个订单一行；checkbox/状态/操作 用 rowspan 纵跨整组并居中
+              const isPoolGroup = Array.isArray(group.pool_orders) && group.pool_orders.length > 0;
+              const repr = groupOrders[0];
+              const span = groupOrders.length;
+              const allGroupSelected = groupOrders.every(o => selectedIds.includes(o.id));
+              const groupEligible = !showArchived && groupOrders.some(o =>
                 o.order_status === "in_warehouse" || o.order_status === "in_storage" || bulkDeliverStatuses.includes(o.order_status) ||
                 (o.order_status === "payment_pending" && o.payment_status !== "awaiting_confirmation") ||
                 (o.order_status === "delivered" && !o.is_archived));
-              return poolOrders.map((p, idx) => (
+              return groupOrders.map((p, idx) => (
                 <tr key={p.id} className={`hover:bg-gray-50 cursor-pointer ${allGroupSelected ? "bg-teal-50/50" : ""}`}
                   onClick={() => setSelectedOrder(p)}>
                   {/* checkbox：仅首行渲染，rowspan 纵跨整组，垂直居中 */}
@@ -1216,7 +1252,7 @@ export default function MyOrders() {
                   {/* 操作：仅首行渲染，rowspan 纵跨整组，垂直居中 */}
                   {idx === 0 && (
                     <td className="px-3 py-3 whitespace-nowrap align-middle" rowSpan={span} onClick={e => e.stopPropagation()}>
-                      {renderPoolActions(group)}
+                      {isPoolGroup ? renderPoolActions(group) : renderOrderActions(repr)}
                     </td>
                   )}
                 </tr>
@@ -1235,6 +1271,15 @@ export default function MyOrders() {
         onPageSizeChange={(s) => { setPageSize(s); resetPage(); }}
         className="mt-1"
       />
+
+      {splitRequestOrder && (
+        <SplitAfterWarehouseModal
+          order={splitRequestOrder}
+          currentUser={user}
+          onClose={() => setSplitRequestOrder(null)}
+          onSuccess={() => { setSplitRequestOrder(null); fetchOrders(user); }}
+        />
+      )}
 
       {selectedOrder && user && (
         <OrderDetailPanel

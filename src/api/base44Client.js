@@ -199,9 +199,13 @@ export const base44 = {
     Core: {
       UploadFile: async ({ file, path = "" }) => {
         
-        const formData = new FormData();
-        formData.append('file', file);
-        formData.append('savePath', path);
+        // 每次重试都要重新组装 FormData
+        const buildFormData = () => {
+          const formData = new FormData();
+          formData.append('file', file);
+          formData.append('savePath', path);
+          return formData;
+        };
         const uploadUrl = path
           ? `/globalcart/common/image/upload`
           : '/globalcart/order/info/uploadImage';
@@ -209,7 +213,20 @@ export const base44 = {
           ? `/globalcart/common/image`
           : '/globalcart/order/info/image';
 
-        const res = await api.post(uploadUrl, formData);
+        let res;
+        try {
+          res = await api.post(uploadUrl, buildFormData());
+        } catch (err) {
+          // 上传接口在 URL 层是 permitAll、靠 @PreAuthorize 鉴权，
+          // token 过期时后端返回的是 403（不是 401），不会触发响应拦截器里的自动 refresh，
+          // 这里手动补一次：刷新 token 后重试一次
+          if (err?.response?.status === 403) {
+            await doRefreshToken();
+            res = await api.post(uploadUrl, buildFormData());
+          } else {
+            throw err;
+          }
+        }
 
         const fileName = res.data?.data || res.data;
         const cleanPath = typeof fileName === 'string' ? fileName.replace(/\\/g, '/') : fileName;

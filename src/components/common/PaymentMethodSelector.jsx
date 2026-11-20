@@ -62,7 +62,8 @@ export default function PaymentMethodSelector({ value, onChange, className = "",
   const renderButton = (m) => {
     
     const methodValue = m.provider_key || m.method_name;
-    const isActive = value === m?.id;
+    // 调用方传的 value 可能是支付方式 id（PaymentModal），也可能是 provider_key / method_name（BulkPaymentModal、TierPaymentModal），两种都认
+    const isActive = value != null && (value === m.id || value === methodValue);
     const isDisabled = m.is_active === false;
 
     return (

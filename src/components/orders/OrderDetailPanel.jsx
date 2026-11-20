@@ -844,6 +844,24 @@ export default function OrderDetailPanel({ orderId, onClose, onRefresh, currentU
                       </div>
                     </div>
                   )}
+                  {order.transit_shipped_date && (
+                    <div className="flex items-start gap-3">
+                      <div className="w-2 h-2 rounded-full bg-indigo-500 mt-1.5" />
+                      <div className="flex-1">
+                        <div className="text-sm font-medium text-gray-900">中转发货</div>
+                        <div className="text-xs text-gray-500">{formatDate(order.transit_shipped_date)}</div>
+                      </div>
+                    </div>
+                  )}
+                  {order.expected_arrival_date && (
+                    <div className="flex items-start gap-3">
+                      <div className="w-2 h-2 rounded-full bg-amber-500 mt-1.5" />
+                      <div className="flex-1">
+                        <div className="text-sm font-medium text-gray-900">预计到货</div>
+                        <div className="text-xs text-gray-500">{formatDate(order.expected_arrival_date)}</div>
+                      </div>
+                    </div>
+                  )}
                   {order.cancelled_at && (
                     <div className="flex items-start gap-3">
                       <div className="w-2 h-2 rounded-full bg-red-500 mt-1.5" />

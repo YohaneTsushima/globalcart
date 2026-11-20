@@ -12,6 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import AdminOrderEditModal from "@/components/admin/AdminOrderEditModal";
+import SplitRequestReviewDialog from "@/components/orders/SplitRequestReviewDialog";
 import PreShipmentBadge from "@/components/admin/PreShipmentBadge";
 import ColumnCustomizer from "@/components/orders/ColumnCustomizer";
 import ShippingPoolDetailModal from "@/components/shippingpool/ShippingPoolDetailModal";
@@ -89,6 +90,8 @@ export default function AdminOrders() {
 
   const [itemSizeTemplates, setItemSizeTemplates] = useState([]);
   const [pendingEditRequests, setPendingEditRequests] = useState([]);
+  const [splitRequests, setSplitRequests] = useState([]);
+  const [reviewSplitRequest, setReviewSplitRequest] = useState(null);
   const [userProfileMap, setUserProfileMap] = useState({});
   const [shippingPools, setShippingPools] = useState([]);
   const [shippingMethods, setShippingMethods] = useState([]);
@@ -156,6 +159,14 @@ export default function AdminOrders() {
       setTransitShippingMethods(d.transit_shipping_methods || []);
       setDefaultPackingFeeSingle(d.default_packing_fee_single || 0);
       setDefaultPackingFeeConsolidation(d.default_packing_fee_consolidation || 0);
+
+      // 入库后拆单：待审核申请（用于在订单行上显示审核入口）
+      try {
+        const sr = await base44.functions.invoke('order/split/listPending');
+        setSplitRequests(sr?.data || []);
+      } catch (_) {
+        setSplitRequests([]);
+      }
     } catch (err) {
       console.warn('[AdminOrders] API 请求失败，使用 Mock 数据:', err.message);
       localStorage.removeItem(STORAGE_KEY);
@@ -268,6 +279,26 @@ export default function AdminOrders() {
         return [...prev, { id: id, order_number: orderNumber }];
       }
     });
+  };
+
+  // 整组勾选（拆单组 / 拼邮池组）
+  const toggleGroupSelect = (groupOrders) => {
+    const selectableList = groupOrders.filter(o =>
+      o.order_status !== "shipped" && o.order_status !== "cancelled" && o.order_status !== "payment_pending");
+    if (selectableList.length === 0) return;
+
+    const ids = selectableList.map(o => o.id);
+    const allSelected = ids.every(id => selectedIds.some(item => item.id === id));
+    if (allSelected) {
+      setSelectedIds(prev => prev.filter(item => !ids.includes(item.id)));
+    } else {
+      setSelectedIds(prev => {
+        const existing = new Set(prev.map(item => item.id));
+        return [...prev, ...selectableList
+          .filter(o => !existing.has(o.id))
+          .map(o => ({ id: o.id, order_number: o.order_number }))];
+      });
+    }
   };
 
   const toggleAll = () => {
@@ -738,31 +769,108 @@ export default function AdminOrders() {
               <tr><td colSpan={visibleCols.length + 2} className="text-center py-12 text-gray-400 text-sm">暂无订单</td></tr>
             ) : (() => {
               const renderData = groupBy === "none" ? orders : filtered;
-              const renderOrderRow = (order) => {
+
+              // 入库前都合并成一条拆单组：付款、下单整组操作；purchased 之后才拆开各自入库
+              const SPLIT_GROUP_STATUSES = [
+                "pending_confirmation",
+                "payment_pending",
+                "awaiting_payment_confirmation",
+                "paid",
+                "pending_purchase",
+              ];
+              // 拆单分组 key：子单取 parent_order_id，父单（有标记且 split_index=0）取自身 id
+              const splitParentKey = (o) => (o.parent_order_id != null && o.parent_order_id !== "")
+                ? String(o.parent_order_id)
+                : ((o.has_split_marker && Number(o.split_index) === 0) ? String(o.id) : null);
+
+              /**
+               * 列表分组：普通单 / 拆单组（付款前才合并）/ 拼邮池组
+               */
+              const buildGroupEntries = (list) => {
+                const splitMap = new Map();
+                list.forEach(o => {
+                  const key = splitParentKey(o);
+                  if (key == null) return;
+                  if (!splitMap.has(key)) splitMap.set(key, []);
+                  splitMap.get(key).push(o);
+                });
+
+                const used = new Set();
+                const entries = [];
+                for (const o of list) {
+                  if (used.has(o.id)) continue;
+
+                  const key = splitParentKey(o);
+                  const members = key != null ? splitMap.get(key) : null;
+                  if (members && members.length > 1
+                      && members.every(m => SPLIT_GROUP_STATUSES.includes(m.order_status))) {
+                    const sorted = [...members].sort((a, b) => Number(a.split_index ?? 0) - Number(b.split_index ?? 0));
+                    sorted.forEach(m => used.add(m.id));
+                    entries.push({ kind: "split", orders: sorted });
+                    continue;
+                  }
+
+                  const poolId = o.consolidation_pool_id;
+                  if (poolId != null) {
+                    const poolMembers = list.filter(x => !used.has(x.id) && x.consolidation_pool_id === poolId);
+                    if (poolMembers.length > 1) {
+                      poolMembers.forEach(m => used.add(m.id));
+                      entries.push({ kind: "pool", orders: poolMembers });
+                      continue;
+                    }
+                  }
+
+                  used.add(o.id);
+                  entries.push({ kind: "single", orders: [o] });
+                }
+                return entries;
+              };
+
+              const renderOrderRow = (order, group = null) => {
                 const pendingEdit = pendingEditRequests.find(r => r.order_id === parseInt(order.id));
+                const isFirstOfGroup = !group || group.isFirst;
+                const groupSpan = group?.span || 1;
+                const selectable = (o) => o.order_status !== "shipped" && o.order_status !== "cancelled" && o.order_status !== "payment_pending";
+                const groupSelectable = group ? group.orders.some(selectable) : false;
+                const groupAllSelected = group ? group.orders.every(o => selectedIds.some(item => item.id === o.id)) : false;
                 return (
                   <tr key={order.id} className={`hover:bg-gray-50 cursor-pointer ${pendingEdit ? "bg-orange-50/60" : ""}`} onClick={() => handleStatusClick(order)}>
-                    <td className="px-3 py-3" onClick={e => e.stopPropagation()}>
-                      {order.order_status !== "shipped" && order.order_status !== "cancelled" && order.order_status !== "payment_pending" && (
-                        <Checkbox checked={selectedIds.some(item => item.id === order.id)} onCheckedChange={() => toggleSelect(order.id, order.order_number)} />
+                    {isFirstOfGroup && (
+                    <td className="px-3 py-3 align-middle" rowSpan={groupSpan} onClick={e => e.stopPropagation()}>
+                      {group ? (
+                        groupSelectable && (
+                          <Checkbox checked={groupAllSelected} onCheckedChange={() => toggleGroupSelect(group.orders)} />
+                        )
+                      ) : (
+                        selectable(order) && (
+                          <Checkbox checked={selectedIds.some(item => item.id === order.id)} onCheckedChange={() => toggleSelect(order.id, order.order_number)} />
+                        )
                       )}
                     </td>
-                    {visibleCols.map(col => (
-                      <td key={col.key} className="px-3 py-3 max-w-[220px] overflow-hidden">
-                        {physicalController.renderCell(order, { ...col, _rules: storeTagRules }, {
-                          userAvatars: userProfileMap,
-                          storeTagRules,
-                          matchStoreTagResult,
-                          getStatusLabel,
-                          onOpenFullpaySettlement: (order, data) => {
-                            setSelectedFullpayOrder(order);
-                            setSettlementData(data);
-                            setShowFullpaySettlement(true);
-                          }
-                        })}
-                      </td>
-                    ))}
-                    <td className="px-3 py-3 whitespace-nowrap" onClick={e => e.stopPropagation()}>
+                    )}
+                    {visibleCols.map(col => {
+                      // 分组时状态列只在首行渲染，rowSpan 纵跨整组
+                      if (col.key === "order_status" && group && !isFirstOfGroup) return null;
+                      return (
+                        <td key={col.key}
+                          rowSpan={col.key === "order_status" && group ? groupSpan : undefined}
+                          className="px-3 py-3 max-w-[220px] overflow-hidden">
+                          {physicalController.renderCell(order, { ...col, _rules: storeTagRules }, {
+                            userAvatars: userProfileMap,
+                            storeTagRules,
+                            matchStoreTagResult,
+                            getStatusLabel,
+                            onOpenFullpaySettlement: (order, data) => {
+                              setSelectedFullpayOrder(order);
+                              setSettlementData(data);
+                              setShowFullpaySettlement(true);
+                            }
+                          })}
+                        </td>
+                      );
+                    })}
+                    {isFirstOfGroup && (
+                    <td className="px-3 py-3 whitespace-nowrap align-middle" rowSpan={groupSpan} onClick={e => e.stopPropagation()}>
                       <div className="flex flex-wrap gap-1 items-center">
                         {(order.unread_roles || []).includes("admin") && (
                           <span className="inline-flex items-center gap-1 text-xs bg-red-100 text-red-600 border border-red-200 px-1.5 py-0.5 rounded-full font-medium animate-pulse">
@@ -774,7 +882,7 @@ export default function AdminOrders() {
                             <Scissors className="w-3 h-3" />申请拆单
                           </span>
                         )}
-                        {order.has_split_marker && !order.parent_order_id && order.split_index !== -1 && (
+                        {order.has_split_marker && !order.parent_order_id && order.split_index === -1 && (
                           <span className="inline-flex items-center gap-1 text-xs bg-indigo-100 text-indigo-700 border border-indigo-200 px-1.5 py-0.5 rounded-full font-medium">
                             <span className="text-[10px]">✂</span>待拆分
                           </span>
@@ -797,7 +905,8 @@ export default function AdminOrders() {
                           </Button>
                         )}
                         {(order.order_status === "paid" || order.order_status === "pending_purchase") && canPlaceOrder && (
-                          order.has_split_marker
+                          // 只有「还没拆」的订单才需要进详情页拆分；已拆分的父单/子单各自直接「已下单」
+                          (order.has_split_marker && !order.parent_order_id && order.split_index === -1)
                             ? <Button size="sm" variant="outline" className="h-6 text-xs px-2 text-indigo-600 border-indigo-200"
                                 onClick={() => setSelectedOrder(order)}>
                                 查看详情
@@ -817,6 +926,21 @@ export default function AdminOrders() {
                             入库
                           </Button>
                         )}
+                        {(() => {
+                          const req = splitRequests.find(r => Number(r.order_id) === Number(order.id));
+                          if (!req) return null;
+                          return (
+                            <>
+                              <span className="inline-flex items-center gap-1 text-xs bg-indigo-100 text-indigo-700 border border-indigo-200 px-1.5 py-0.5 rounded-full font-medium">
+                                拆单审核中
+                              </span>
+                              <Button size="sm" variant="outline" className="h-6 text-xs px-2 text-indigo-600 border-indigo-200 hover:bg-indigo-50"
+                                onClick={() => setReviewSplitRequest(req)}>
+                                <Scissors className="w-3 h-3 mr-1" />审核拆单
+                              </Button>
+                            </>
+                          );
+                        })()}
                         {order.order_status === "shipping_fee_pending" && (() => {
                           const pool = getOrderPool(order);
                           if (!pool) return null;
@@ -890,11 +1014,23 @@ export default function AdminOrders() {
                         )}
                       </div>
                     </td>
+                    )}
                   </tr>
                 );
               };
 
-              if (groupBy === "none") return renderData.map(renderOrderRow);
+              if (groupBy === "none") {
+                return buildGroupEntries(renderData).flatMap(entry => (
+                  entry.orders.length > 1
+                    ? entry.orders.map((o, idx) => renderOrderRow(o, {
+                        span: entry.orders.length,
+                        isFirst: idx === 0,
+                        orders: entry.orders,
+                        kind: entry.kind,
+                      }))
+                    : renderOrderRow(entry.orders[0])
+                ));
+              }
 
               // Build groups using controller
               const groups = {};
@@ -988,6 +1124,15 @@ export default function AdminOrders() {
                         
             setSelectedPool({ id: poolId });
           }}
+        />
+      )}
+
+      {reviewSplitRequest && (
+        <SplitRequestReviewDialog
+          request={reviewSplitRequest}
+          order={orders.find(o => Number(o.id) === Number(reviewSplitRequest.order_id))}
+          onClose={() => setReviewSplitRequest(null)}
+          onSuccess={() => { setReviewSplitRequest(null); fetchOrders(); }}
         />
       )}
 

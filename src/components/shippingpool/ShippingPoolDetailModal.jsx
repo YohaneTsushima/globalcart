@@ -1249,24 +1249,6 @@ export default function ShippingPoolDetailModal({ pool: initialPool, isAdmin, cu
 
   const status = STATUS_CONFIG[pool.status] || STATUS_CONFIG.pending;
 
-  // 发货后补付：池子已进入发货流程但运费未确认收款，用户仍可付款（付款只更新付款状态，不影响发货状态）
-  // 一个用户的付款记录算已付，需外层 payment_status 与 payment_method.payment_status 都为 "paid"
-  const isPaymentRecordPaid = (p) =>
-    p?.payment_status === "paid" && p?.payment_method?.payment_status === "paid";
-  // 全员已付清 = fee_breakdown_per_user 里每个用户都有 per_user_payments 记录且都已付（与管理端判定一致）
-  const allParticipantsPaid = () => {
-    const breakdowns = pool.fee_breakdown_per_user || [];
-    const payments = pool.per_user_payments || [];
-    if (breakdowns.length === 0) return false;
-    return breakdowns.every(b => {
-      const rec = payments.find(p => p.user_email === b.user_email);
-      return !!rec && isPaymentRecordPaid(rec);
-    });
-  };
-  const feeNotified = (pool.fee_breakdown_per_user || []).length > 0 || (parseFloat(pool.shipping_fee_jpy) || 0) > 0;
-  const postShipmentUnpaid = !isAdmin && ["ready_to_ship", "shipped", "delivered"].includes(pool.status) &&
-    !allParticipantsPaid() && feeNotified;
-
   const formatDateOnly = (dateString) => {
     if (!dateString) return '';
     const date = new Date(dateString);
@@ -1455,12 +1437,15 @@ export default function ShippingPoolDetailModal({ pool: initialPool, isAdmin, cu
 
           {/* Items list */}
           <div>
-            <details className="group">
-              <summary className="cursor-pointer text-sm font-semibold text-gray-700 flex items-center justify-between select-none">
-                <span>包裹清单 ({(pool.order_ids || []).length} 件)</span>
-                <ChevronDown className="w-4 h-4 text-gray-400 transition-transform group-open:rotate-180" />
+            <details className="group rounded-lg border border-gray-200 overflow-hidden">
+              <summary className="cursor-pointer select-none flex items-center justify-between px-3 py-2 bg-gray-50/60 hover:bg-gray-50 transition-colors">
+                <span className="flex items-center gap-1.5">
+                  <Package className="w-3.5 h-3.5 text-gray-500" />
+                  <span className="text-xs font-medium text-gray-600">包裹清单 ({(pool.order_ids || []).length} 件)</span>
+                </span>
+                <ChevronDown className="w-3.5 h-3.5 text-gray-400 transition-transform group-open:rotate-180" />
               </summary>
-              <div className="mt-2">
+              <div className="p-3 border-t border-gray-200">
             {orders.length > 0 ? (() => {
               // Group orders by user email; single-user pools render flat (no group header)
               const userEmails = [...new Set(orders.map(o => o.user_email || "__unknown__"))];
@@ -2387,19 +2372,14 @@ export default function ShippingPoolDetailModal({ pool: initialPool, isAdmin, cu
             </div>
           )}
 
-          {/* User payment panel — shown when pool is awaiting_payment */}
-          {!isAdmin && (pool.status === "awaiting_payment" || pool.status === "awaiting_payment_confirmation" || postShipmentUnpaid) &&
+          {/* User payment panel — 只在发货前（待付款/待付款确认）显示；已进入发货流程后不再给付款入口 */}
+          {!isAdmin && (pool.status === "awaiting_payment" || pool.status === "awaiting_payment_confirmation") &&
           <div className="border border-orange-200 rounded-xl overflow-hidden">
               <div className="bg-orange-50 px-4 py-2.5 border-b border-orange-200 flex items-center gap-2">
                 <CreditCard className="w-4 h-4 text-orange-600" />
-                <span className="text-sm font-medium text-orange-700">{postShipmentUnpaid ? "包裹已发货 · 运费待补付" : "运费待付款"}</span>
+                <span className="text-sm font-medium text-orange-700">运费待付款</span>
               </div>
               <div className="p-4 space-y-3">
-                {postShipmentUnpaid && (
-                  <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-700">
-                    ⚠️ 包裹已先行发出，运费尚未支付，请尽快补付。补付不影响发货/收货状态。
-                  </div>
-                )}
                 {/* Shipping info filled by admin */}
                 <div className="bg-gray-50 border border-gray-100 rounded-lg p-3 space-y-2.5 text-sm">
                   <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">发货信息</p>
