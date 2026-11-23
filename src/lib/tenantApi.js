@@ -94,9 +94,48 @@ export async function fetchTenantConfig({ force = false } = {}) {
     const cached = getTenantConfigCache();
     if (cached) return cached;
   }
-  // const res = await base44.functions.invoke('getTenantConfigData', {});
-  const res = {};
-  const data = res.data || {};
+  // 基础配置由若干租户级实体拼装（旧的 getTenantConfigData 聚合接口已不存在）
+  const safeList = (entity, filter) =>
+    tenantEntity.list(entity, filter).then((rows) => rows || []).catch(() => []);
+
+  const [layout, siteSettings, shippingMethods, transitMethods, transitLocations, addons] = await Promise.all([
+    tenantEntity.layoutConfig('SiteSettings').catch(() => null),
+    safeList('SiteSettings'),
+    safeList('ShippingMethod'),
+    safeList('TransitMethod'),
+    safeList('TransitLocation'),
+    safeList('AddonOption'),
+  ]);
+
+  // layoutConfig 只返回布局相关的几条，其余开关/费率在 SiteSettings 全量里，按 key 合并（layout 优先）
+  const settingsMap = new Map();
+  (Array.isArray(layout?.settings) ? layout.settings : []).forEach((s) => {
+    if (s?.key) settingsMap.set(s.key, s);
+  });
+  (siteSettings || []).forEach((s) => {
+    if (s?.key && !settingsMap.has(s.key)) settingsMap.set(s.key, s);
+  });
+  // 保持 [{ key, value }] 结构，供调用方自行摊平
+  const settings = Array.from(settingsMap.values());
+
+  // 国家列表存在 SiteSettings 的 tenant_countries_config（JSON 字符串）
+  let countriesConfig = null;
+  const countriesRow = settings.find((s) => s?.key === 'tenant_countries_config');
+  if (countriesRow?.value) {
+    try {
+      const parsed = JSON.parse(countriesRow.value);
+      if (Array.isArray(parsed)) countriesConfig = parsed;
+    } catch { /* 忽略非法 JSON */ }
+  }
+
+  const data = {
+    settings,
+    shippingMethods,
+    transitMethods,
+    transitLocations,
+    addons,
+    countriesConfig,
+  };
   setTenantConfigCache(data);
   return data;
 }

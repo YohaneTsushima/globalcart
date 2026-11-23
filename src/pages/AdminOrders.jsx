@@ -4,11 +4,10 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Package, Ticket } from "lucide-react";
 import AdminTicketOrders from "@/pages/AdminTicketOrders";
 import { orderRegistry } from "@/lib/orderRegistry";
-import { Search, RefreshCw, Filter, ChevronUp, ChevronDown, ChevronsUpDown, Trash2, AlertCircle, Layers, Send, LayoutList, Archive, ArchiveRestore, Scissors, X, Loader2, Truck, ShoppingCart, CreditCard, PackageCheck, CheckCircle, ClipboardCheck } from "lucide-react";
+import { Search, RefreshCw, Filter, ChevronUp, ChevronDown, ChevronsUpDown, Trash2, AlertCircle, Layers, Send, LayoutList, Archive, ArchiveRestore, Scissors, X, Loader2, Truck, ShoppingCart, CreditCard, PackageCheck, ClipboardCheck } from "lucide-react";
 import DateRangeFilter from "@/components/orders/DateRangeFilter";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import AdminOrderEditModal from "@/components/admin/AdminOrderEditModal";
@@ -16,7 +15,6 @@ import SplitRequestReviewDialog from "@/components/orders/SplitRequestReviewDial
 import PreShipmentBadge from "@/components/admin/PreShipmentBadge";
 import ColumnCustomizer from "@/components/orders/ColumnCustomizer";
 import ShippingPoolDetailModal from "@/components/shippingpool/ShippingPoolDetailModal";
-import { getStatusLabel } from "@/lib/orderStatus";
 import { matchStoreTagResult } from "@/lib/onlineStoreTag";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { usePermissions } from "@/hooks/usePermissions";
@@ -916,9 +914,9 @@ export default function AdminOrders() {
                                 已下单
                               </Button>
                         )}
-                        {/* [隐藏预出货] 暂时用 false && 短路隐藏，未删除，恢复时去掉 false && 即可 */}
-                        {false && order.order_status === "purchased" && order.pre_shipment && (
-                          <PreShipmentBadge preShipment={order.pre_shipment} />
+                        {/* 预出货：未付款时提交的显示「待付款」，付款成立后变蓝 */}
+                        {order.pre_shipment && (
+                          <PreShipmentBadge preShipment={order.pre_shipment} status={order.pre_shipment_status} />
                         )}
                         {order.order_status === "purchased" && canWarehouseIn && (
                           <Button size="sm" variant="outline" className="h-6 text-xs px-2 text-teal-600 border-teal-200"

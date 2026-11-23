@@ -4,11 +4,10 @@
  * Covers all status transitions per the new order flow.
  */
 import { useState, useEffect, useMemo, useRef } from "react";
-import ReactMarkdown from "react-markdown";
 import { base44 } from "@/api/base44Client";
 import { updateOrder, tenantEntity, updateTenantOrder } from "@/lib/tenantApi";
 import { usePermissions } from "@/hooks/usePermissions";
-import { X, ExternalLink, Copy, Loader2, CheckCircle, AlertTriangle, MessageCircle, Package, Send, Layers, Scissors, GitBranch, GitPullRequest, Lock, Zap } from "lucide-react";
+import { X, ExternalLink, Copy, Loader2, CheckCircle, MessageCircle, Package, Send, Scissors, GitBranch, GitPullRequest, Lock, Zap } from "lucide-react";
 import ImageUploader from "@/components/common/ImageUploader";
 import { ImageWithViewer } from "@/components/common/ImageViewer";
 import { Button } from "@/components/ui/button";
@@ -328,69 +327,63 @@ export default function AdminOrderEditModal({ order, initialItemSizeTemplates, o
   // purchased → in_warehouse
   const handleMarkInWarehouse = async ({ andOpenPool = false } = {}) => {
     setSaving(true);
-    // const updates = {
-    //   order_status: "in_warehouse",
-    //   storage_time: new Date().toISOString().split("T")[0],
-    //   admin_note: form.admin_note,
-    //   notice_key: 'order_in_warehouse'
-    // };
+
     const selectedTemplate = itemSizeTemplates.find(t => t.id === selectedSizeId);
 
-    const updates = [{
-      id: order.id,
-      data: {
-        admin_note: form.admin_note,
-        storage_image: arrivalPhoto ? arrivalPhoto : '',
-        weight_g: form.weight_g ? parseFloat(form.weight_g) : 0,
-        item_size_template_id: selectedTemplate ? selectedTemplate.id : null,
-        item_size_title: selectedTemplate ? selectedTemplate.title : null,
-        item_size_extra_fee: selectedTemplate ? selectedTemplate.extra_fee : null,
-        item_size_fee_currency: selectedTemplate ? selectedTemplate.fee_currency : null,
-      }
-    }];
+    const data = {
+      admin_note: form.admin_note,
+      storage_image: arrivalPhoto ? arrivalPhoto : '',
+      weight_g: form.weight_g ? parseFloat(form.weight_g) : 0,
+      item_size_template_id: selectedTemplate ? selectedTemplate.id : null,
+      item_size_title: selectedTemplate ? selectedTemplate.title : null,
+      item_size_extra_fee: selectedTemplate ? selectedTemplate.extra_fee : null,
+      item_size_fee_currency: selectedTemplate ? selectedTemplate.fee_currency : null,
+    };
 
-    // if (arrivalPhoto) updates.storage_image = arrivalPhoto;
-    // if (form.weight_g) updates.weight_g = parseFloat(form.weight_g);
-    // if (selectedSizeId) {
-    //   const selectedTemplate = itemSizeTemplates.find(t => t.id === selectedSizeId);
-    //   if (selectedTemplate) {
-    //     updates.item_size_template_id = selectedTemplate.id;
-    //     updates.item_size_title = selectedTemplate.title;
-    //     updates.item_size_extra_fee = selectedTemplate.extra_fee;
-    //     updates.item_size_fee_currency = selectedTemplate.fee_currency;
-    //   }
-    // }
+    try {
+      if (andOpenPool) {
+        // 「确认入库并查看发货申请」：入库 + 按预出货快照建池，后端同一事务，
+        // 任何一步失败都会回滚，订单保持点击前的状态（通常是 purchased）。
+        const res = await base44.functions.invoke('order/info/autoCreatePreShipmentPool', {
+          id: order.id,
+          data
+        });
+        const payload = res?.data || {};
+        const poolId = payload.pool_id || null;
 
-    // console.log(updates)
-    // setSaving(false);
-    // return ;
-    // const result = await updateOrder(order.id, updates);
-    const result = await updateTenantOrder('order/info/handleMarkInWarehouse', updates);
-    if (!result) {
-      setSaving(false);
-      return;
-    }
-
-    // If order has pre_shipment, trigger pool creation
-    if (order.pre_shipment && !order.pre_shipment.pool_created) {
-      const poolRes = await base44.functions.invoke('autoCreatePreShipmentPool', { order_id: order.id });
-      const poolId = poolRes?.data?.pool_id || null;
-      const isOfficialPool = poolRes?.data?.is_official_pool || false;
-      if (andOpenPool && poolId) {
         savedRef.current = true;
-        onSaved();
-        onOpenPool?.(poolId, isOfficialPool);
-        return;
-      }
-      if (poolId) {
-        setWarehouseDone({ poolId, isOfficialPool });
-        setSaving(false);
-        return;
-      }
-    }
 
-    savedRef.current = true;
-    onSaved();
+        if (poolId) {
+          if (onOpenPool) {
+            onSaved();
+            onOpenPool(poolId, payload.is_official_pool || false);
+            return;
+          }
+          setWarehouseDone({ poolId, isOfficialPool: payload.is_official_pool || false });
+          return;
+        }
+
+        onSaved();
+        return;
+      }
+
+      // 普通入库：只入库，不建池（预出货若已提交，会由后端标记为已消费）
+      const result = await updateTenantOrder('order/info/handleMarkInWarehouse', [{ id: order.id, data }]);
+      if (!result) {
+        return;
+      }
+
+      savedRef.current = true;
+      onSaved();
+    } catch (error) {
+      const message = error?.response?.data?.message
+        || error?.data?.message
+        || error?.message
+        || '操作失败，请稍后重试';
+      toast.error(message);
+    } finally {
+      setSaving(false);
+    }
   };
 
   // notified_shipment → shipping_fee_pending
@@ -936,13 +929,21 @@ export default function AdminOrderEditModal({ order, initialItemSizeTemplates, o
                           发货方式：<strong>
                             {order.pre_shipment.consType === 'transit' 
                               ? `中转地发货 (${order.pre_shipment.transit_location_name || '未指定'})`
-                              : order.pre_shipment.consType === 'official'
+                              : order.pre_shipment.consType === 'official_pool'
                               ? '官方拼邮'
                               : '直接发货'}
                           </strong>
                         </div>
                         {order.pre_shipment.shipping_method && <div>运输方式：<strong>{order.pre_shipment.shipping_method}</strong></div>}
-                        {order.pre_shipment.scheduled_ship_date && <div>计划发货：<strong>{order.pre_shipment.scheduled_ship_date}</strong></div>}
+                        {order.pre_shipment.scheduled_ship_date && (
+                          <div>
+                            计划发货：<strong>
+                              {order.pre_shipment.scheduled_ship_date === '__asap__'
+                                ? '尽快'
+                                : order.pre_shipment.scheduled_ship_date}
+                            </strong>
+                          </div>
+                        )}
                         {order.pre_shipment.user_note && <div>备注：{order.pre_shipment.user_note}</div>}
                         {/* Note images */}
                         {(order.pre_shipment.note_image_urls || []).length > 0 && (

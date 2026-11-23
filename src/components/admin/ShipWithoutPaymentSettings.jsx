@@ -69,45 +69,59 @@ export default function ShipWithoutPaymentSettings({ settings, onReload }) {
     return get('default_rewarehouse_fee_jpy')?.value || '0';
   });
 
-  const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
+  const [savingCard, setSavingCard] = useState(null);
+  const [savedCard, setSavedCard] = useState(null);
 
   const toggle = (key) => setValues(prev => ({ ...prev, [key]: !prev[key] }));
 
-  const handleSave = async () => {
-    setSaving(true);
-    const ops = BOOL_KEYS.map(key => {
-      const s = get(key);
-      const value = values[key] ? 'true' : 'false';
-      return s?.id
-        ? tenantEntity.update('SiteSettings', s.id, { value })
-        : tenantEntity.create('SiteSettings', { key, value, description: DESCRIPTIONS[key] || '', category: 'shipping' });
-    });
-
-    // Save tolerance value
-    const tolSetting = get('fullpay_once_tolerance_jpy');
-    const tolValue = String(parseInt(toleranceInput, 10) || 0);
-    ops.push(
-      tolSetting?.id
-        ? tenantEntity.update('SiteSettings', tolSetting.id, { value: tolValue })
-        : tenantEntity.create('SiteSettings', { key: 'fullpay_once_tolerance_jpy', value: tolValue, description: DESCRIPTIONS.fullpay_once_tolerance_jpy, category: 'shipping' })
-    );
-
-    // Save rewarehouse default fee
-    const rwFeeSetting = get('default_rewarehouse_fee_jpy');
-    const rwFeeValue = String(parseInt(rewarehouseFeeInput, 10) || 0);
-    ops.push(
-      rwFeeSetting?.id
-        ? tenantEntity.update('SiteSettings', rwFeeSetting.id, { value: rwFeeValue })
-        : tenantEntity.create('SiteSettings', { key: 'default_rewarehouse_fee_jpy', value: rwFeeValue, description: '再入库默认处理费用（JPY）', category: 'shipping' })
-    );
-
-    await Promise.all(ops);
-    await onReload();
-    setSaving(false);
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
+  // 库里缺省值：预出货默认开，其余默认关
+  const defaultValue = (key) => key === 'pre_shipment_enabled';
+  const storedBool = (key) => {
+    const raw = get(key)?.value;
+    return raw === undefined || raw === null ? defaultValue(key) : raw === 'true';
   };
+
+  const boolOp = (key) => {
+    const s = get(key);
+    const value = values[key] ? 'true' : 'false';
+    return s?.id
+      ? tenantEntity.update('SiteSettings', s.id, { value })
+      : tenantEntity.create('SiteSettings', { key, value, description: DESCRIPTIONS[key] || '', category: 'shipping' });
+  };
+
+  // 数字项：没改动就不发请求
+  const numberOp = (key, input, description, fallback) => {
+    const s = get(key);
+    const value = String(parseInt(input, 10) || 0);
+    const stored = s?.value ?? fallback;
+    if (String(stored) === value) return null;
+    return s?.id
+      ? tenantEntity.update('SiteSettings', s.id, { value })
+      : tenantEntity.create('SiteSettings', { key, value, description, category: 'shipping' });
+  };
+
+  // 点哪张卡就只保存哪张卡的字段，且只发真正改动过的 key
+  const handleSaveCard = async (cardId, boolKeys, extraOps = []) => {
+    setSavingCard(cardId);
+    try {
+      const ops = boolKeys.filter(k => values[k] !== storedBool(k)).map(boolOp);
+      ops.push(...extraOps.filter(Boolean));
+      if (ops.length) await Promise.all(ops);
+      await onReload();
+      setSavedCard(cardId);
+      setTimeout(() => setSavedCard(prev => (prev === cardId ? null : prev)), 2000);
+    } finally {
+      setSavingCard(null);
+    }
+  };
+
+  const renderSaveButton = (cardId, boolKeys, extraOps = [], color = 'bg-purple-600 hover:bg-purple-700') => (
+    <Button size="sm" className={`h-7 text-xs ${color}`} disabled={savingCard === cardId}
+      onClick={() => handleSaveCard(cardId, boolKeys, extraOps)}>
+      <Save className="w-3 h-3 mr-1" />
+      {savedCard === cardId ? '已保存 ✓' : savingCard === cardId ? '保存中...' : '保存'}
+    </Button>
+  );
 
   return (
     <div className="space-y-4">
@@ -118,9 +132,9 @@ export default function ShipWithoutPaymentSettings({ settings, onReload }) {
             <CardTitle className="text-sm font-semibold text-gray-700 flex items-center gap-2">
               <Truck className="w-4 h-4 text-purple-500" />预出货功能设置
             </CardTitle>
-            <Button size="sm" className="h-7 text-xs bg-purple-600 hover:bg-purple-700" onClick={handleSave} disabled={saving}>
-              <Save className="w-3 h-3 mr-1" />{saved ? "已保存 ✓" : saving ? "保存中..." : "保存"}
-            </Button>
+            {renderSaveButton('shipment', ['pre_shipment_enabled', 'fullpay_once_enabled'], [
+              numberOp('fullpay_once_tolerance_jpy', toleranceInput, DESCRIPTIONS.fullpay_once_tolerance_jpy, '500'),
+            ])}
           </div>
           <p className="text-xs text-gray-400 mt-1">用户提交订单后预先填写发货信息，入库后自动生成发货申请</p>
         </CardHeader>
@@ -181,9 +195,7 @@ export default function ShipWithoutPaymentSettings({ settings, onReload }) {
             <CardTitle className="text-sm font-semibold text-gray-700 flex items-center gap-2">
               <Truck className="w-4 h-4 text-teal-500" />用户包裹操作设置
             </CardTitle>
-            <Button size="sm" className="h-7 text-xs bg-teal-600 hover:bg-teal-700" onClick={handleSave} disabled={saving}>
-              <Save className="w-3 h-3 mr-1" />{saved ? "已保存 ✓" : saving ? "保存中..." : "保存"}
-            </Button>
+            {renderSaveButton('instant', [INSTANT_EDIT_KEY], [], 'bg-teal-600 hover:bg-teal-700')}
           </div>
           <p className="text-xs text-gray-400 mt-1">控制用户在发货申请中移动或添加包裹时是否需要管理员审批</p>
         </CardHeader>
@@ -205,9 +217,9 @@ export default function ShipWithoutPaymentSettings({ settings, onReload }) {
             <CardTitle className="text-sm font-semibold text-gray-700 flex items-center gap-2">
               <RotateCcw className="w-4 h-4 text-orange-500" />用户再入库申请设置
             </CardTitle>
-            <Button size="sm" className="h-7 text-xs bg-orange-600 hover:bg-orange-700" onClick={handleSave} disabled={saving}>
-              <Save className="w-3 h-3 mr-1" />{saved ? "已保存 ✓" : saving ? "保存中..." : "保存"}
-            </Button>
+            {renderSaveButton('rewarehouse', [REWAREHOUSE_KEY], [
+              numberOp('default_rewarehouse_fee_jpy', rewarehouseFeeInput, '再入库默认处理费用（JPY）', '0'),
+            ], 'bg-orange-600 hover:bg-orange-700')}
           </div>
           <p className="text-xs text-gray-400 mt-1">允许用户在收到运费通知后申请取消发货并重新入库</p>
         </CardHeader>
@@ -270,9 +282,12 @@ export default function ShipWithoutPaymentSettings({ settings, onReload }) {
       {/* Ship without payment */}
       <Card className="border-blue-200">
         <CardHeader className="pb-3">
-          <CardTitle className="text-sm font-semibold text-gray-700 flex items-center gap-2">
-            <Truck className="w-4 h-4 text-blue-500" />发货付款控制
-          </CardTitle>
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+              <Truck className="w-4 h-4 text-blue-500" />发货付款控制
+            </CardTitle>
+            {renderSaveButton('ship_without_payment', ['allow_ship_without_payment', ...SUB_KEYS.map(s => s.key)], [], 'bg-blue-600 hover:bg-blue-700')}
+          </div>
           <p className="text-xs text-gray-400 mt-1">控制管理员是否可在用户未付运费的情况下直接发货</p>
         </CardHeader>
         <CardContent className="space-y-3">

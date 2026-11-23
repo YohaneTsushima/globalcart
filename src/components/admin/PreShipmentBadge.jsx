@@ -5,8 +5,13 @@ import { Zap, X } from "lucide-react";
 /**
  * Shows a "预出货" badge on orders with pre_shipment data.
  * On click, shows a small popover with a brief summary.
+ *
+ * status 为后端 pre_shipment_status：
+ * - pending_payment：未付款时提交，等付款成立后才生效（橙色）
+ * - submitted：已生效（蓝色）
+ * - consumed：已随入库生成发货申请
  */
-export default function PreShipmentBadge({ preShipment }) {
+export default function PreShipmentBadge({ preShipment, status }) {
   const [open, setOpen] = useState(false);
   const [popoverPos, setPopoverPos] = useState({ top: 0, left: 0 });
   const buttonRef = useRef(null);
@@ -14,6 +19,8 @@ export default function PreShipmentBadge({ preShipment }) {
   if (!preShipment) return null;
 
   const ps = preShipment;
+  const isPendingPayment = status === "pending_payment";
+  const isConsumed = status === "consumed";
 
   // Determine shipping mode label
   let modeLabel = "";
@@ -31,10 +38,25 @@ export default function PreShipmentBadge({ preShipment }) {
   }
 
   const lines = [];
+  lines.push({
+    label: "状态",
+    value: isPendingPayment ? "待付款生效（未付款时不生效）" : isConsumed ? "已随入库生成发货申请" : "已生效"
+  });
   if (ps.shipping_method) lines.push({ label: "运输方式", value: ps.shipping_method });
-  if (ps.scheduled_ship_date) lines.push({ label: "计划发货", value: ps.scheduled_ship_date });
-  if ((ps.selected_addons || []).length > 0)
-    lines.push({ label: "增值服务", value: (ps.selected_addons || []).map(a => a.name || a.id).join("、") });
+  if (ps.scheduled_ship_date) {
+    // 表单里「尽快」用哨兵值 __asap__ 存，直接展示会变成英文标记
+    lines.push({ label: "计划发货", value: ps.scheduled_ship_date === "__asap__" ? "尽快" : ps.scheduled_ship_date });
+  }
+  if ((ps.selected_addons || []).length > 0) {
+    // 后端 OrderAddon 只有 service_name，没有 name 字段；老数据可能两者都为空
+    const addonNames = (ps.selected_addons || [])
+      .map(a => a.service_name || a.name)
+      .filter(Boolean);
+    lines.push({
+      label: "增值服务",
+      value: addonNames.length > 0 ? addonNames.join("、") : `${ps.selected_addons.length} 项`
+    });
+  }
   else if ((ps.selected_addon_ids || []).length > 0)
     lines.push({ label: "增值服务", value: `${ps.selected_addon_ids.length} 项` });
   if (ps.user_note) lines.push({ label: "备注", value: ps.user_note });
@@ -54,9 +76,16 @@ export default function PreShipmentBadge({ preShipment }) {
           }
           setOpen(v => !v); 
         }}
-        className="inline-flex items-center gap-1 text-xs bg-blue-100 text-blue-700 border border-blue-200 px-1.5 py-0.5 rounded-full font-medium hover:bg-blue-200 transition-colors"
+        className={`inline-flex items-center gap-1 text-xs border px-1.5 py-0.5 rounded-full font-medium transition-colors ${
+          isPendingPayment
+            ? "bg-amber-100 text-amber-700 border-amber-200 hover:bg-amber-200"
+            : isConsumed
+              ? "bg-gray-100 text-gray-600 border-gray-200 hover:bg-gray-200"
+              : "bg-blue-100 text-blue-700 border-blue-200 hover:bg-blue-200"
+        }`}
       >
-        <Zap className="w-2.5 h-2.5" />预出货
+        <Zap className="w-2.5 h-2.5" />
+        {isPendingPayment ? "预出货·待付款" : isConsumed ? "预出货已生效" : "预出货"}
       </button>
 
       {open && createPortal(

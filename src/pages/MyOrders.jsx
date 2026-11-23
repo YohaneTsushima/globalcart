@@ -662,12 +662,18 @@ export default function MyOrders() {
           );
         })()
       )}
-      {pageData?.preShipmentEnabled && ["paid", "pending_purchase", "purchased", "in_warehouse"].includes(order.order_status) && (
-        order.pre_shipment_status === "submitted" ? (
+      {pageData?.preShipmentEnabled && ["payment_pending", "paid", "pending_purchase", "purchased", "in_warehouse"].includes(order.order_status) && (
+        (["submitted", "pending_payment", "consumed"].includes(order.pre_shipment_status)) ? (
           <div className="flex flex-col items-start gap-1">
-            <span className="inline-flex items-center gap-1 text-xs bg-purple-100 text-purple-700 border border-purple-200 px-1.5 py-0.5 rounded-full font-medium">
-              <Truck className="w-3 h-3" />已预出货
-            </span>
+            {order.pre_shipment_status === "pending_payment" ? (
+              <span className="inline-flex items-center gap-1 text-xs bg-amber-100 text-amber-700 border border-amber-200 px-1.5 py-0.5 rounded-full font-medium">
+                <Truck className="w-3 h-3" />预出货待付款生效
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1 text-xs bg-purple-100 text-purple-700 border border-purple-200 px-1.5 py-0.5 rounded-full font-medium">
+                <Truck className="w-3 h-3" />已预出货
+              </span>
+            )}
             <Button size="sm" variant="outline" className="h-7 text-xs text-purple-700 border-purple-200 hover:bg-purple-50"
               onClick={() => navigate(createPageUrl("PreShipmentForm") + `?order_id=${order.id}`)}>
               修改预出货

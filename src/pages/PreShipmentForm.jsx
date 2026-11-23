@@ -20,9 +20,9 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Truck, Package, MapPin, Check, ChevronLeft, PlusCircle, Zap, Search, Image, X } from "lucide-react";
+import { Truck, Package, MapPin, Check, ChevronLeft, PlusCircle, Zap, Search } from "lucide-react";
 import PaymentMethodSelector from "@/components/common/PaymentMethodSelector";
-import { ImageWithViewer } from "@/components/common/ImageViewer";
+import MultiImageUploader from "@/components/common/MultiImageUploader";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import PreShipmentFormFullPayOnce from "@/components/PreShipmentFormFullPayOnce";
@@ -37,6 +37,9 @@ export default function PreShipmentForm() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  // 是否需要接着付款：由后端返回（order.pre_shipment_need_payment 或保存结果里的 need_payment）
+  const [needPayment, setNeedPayment] = useState(false);
+  const [paymentTarget, setPaymentTarget] = useState(null);
 
   // Config data
   const [shippingMethods, setShippingMethods] = useState([]);
@@ -54,8 +57,7 @@ export default function PreShipmentForm() {
   const [shippingMethod, setShippingMethod] = useState("");
   const [scheduledDate, setScheduledDate] = useState("");
   const [userNote, setUserNote] = useState("");
-  const [noteImages, setNoteImages] = useState([]); // Images for note section
-  const [uploadingImages, setUploadingImages] = useState(false);
+  const [noteImages, setNoteImages] = useState([]); // 备注图片（上传路径 pre_ship_note）
   const [transitLocationId, setTransitLocationId] = useState("");
   const [transitShippingMethodId, setTransitShippingMethodId] = useState("");
   const [selectedAddonIds, setSelectedAddonIds] = useState([]);
@@ -142,6 +144,8 @@ export default function PreShipmentForm() {
         if (!isMounted) return;
 
         setOrder(ord || null);
+        // 是否需要付款由后端给出（未付款订单保存后仍可继续去付款）
+        setNeedPayment(ord?.pre_shipment_need_payment === true);
 
         // Pre-fill form if order already has pre_shipment data (edit mode)
         if (ord?.pre_shipment) {
@@ -154,7 +158,16 @@ export default function PreShipmentForm() {
           setConsType(savedConsType);
           if (ps.transit_location_id) setTransitLocationId(ps.transit_location_id);
           if (ps.transit_shipping_method_id) setTransitShippingMethodId(ps.transit_shipping_method_id);
-          if (ps.selected_addon_ids) setSelectedAddonIds(ps.selected_addon_ids);
+          // addon id 在 JSON 里是字符串、后端实体里是数字，统一转成字符串比较，否则勾选态会丢
+          if (ps.selected_addon_ids) setSelectedAddonIds(ps.selected_addon_ids.map(String));
+          // 恢复用户自定义过的增值服务金额（selected_addons 里存了当时的 fee）
+          if (Array.isArray(ps.selected_addons) && ps.selected_addons.length > 0) {
+            const savedFees = {};
+            ps.selected_addons.forEach((sa) => {
+              if (sa && sa.id != null && sa.fee != null) savedFees[String(sa.id)] = String(sa.fee);
+            });
+            if (Object.keys(savedFees).length > 0) setAddonCustomFees(savedFees);
+          }
           // Restore the specific pool selection (use target_pool_id, NOT pool_created which is an automation flag)
           if (savedConsType === "official_pool") {
             setJoinOfficialPool(true);
@@ -230,8 +243,8 @@ export default function PreShipmentForm() {
         });
 
         setPaymentMethods((prev) => {
-          const prevIds = prev.map((m) => m.id || m.name).join(',');
-          const newIds = (methods || []).map((m) => m.id || m.name).join(',');
+          const prevIds = prev.map((m) => m.id || m.method_name).join(',');
+          const newIds = (methods || []).map((m) => m.id || m.method_name).join(',');
           return prevIds === newIds ? prev : methods || [];
         });
 
@@ -323,71 +336,25 @@ export default function PreShipmentForm() {
     }
   };
 
-  // Note image upload handlers
-  const handleNoteImageUpload = async (files) => {
-    if (files.length === 0) return;
-    
-    setUploadingImages(true);
-    try {
-      const uploadPromises = Array.from(files).map(file => 
-        base44.integrations.Core.UploadFile({ file }).then(r => r.file_url)
-      );
-      const urls = await Promise.all(uploadPromises);
-      setNoteImages(prev => [...prev, ...urls]);
-    } catch (error) {
-      console.error('Note image upload failed:', error);
-      alert('图片上传失败：' + error.message);
-    } finally {
-      setUploadingImages(false);
-    }
-  };
-
-  const handleNoteImagePaste = async (e) => {
-    const items = e.clipboardData?.items;
-    if (!items) return;
-    
-    const files = [];
-    for (let i = 0; i < items.length; i++) {
-      if (items[i].type.startsWith('image/')) {
-        const file = items[i].getAsFile();
-        if (file) files.push(file);
-      }
-    }
-    
-    if (files.length > 0) {
-      e.preventDefault();
-      await handleNoteImageUpload(files);
-    }
-  };
-
-  const handleNoteImageDrop = async (e) => {
-    e.preventDefault();
-    const files = e.dataTransfer?.files;
-    if (!files || files.length === 0) return;
-    
-    const imageFiles = Array.from(files).filter(f => f.type.startsWith('image/'));
-    if (imageFiles.length > 0) {
-      await handleNoteImageUpload(imageFiles);
-    }
-  };
-
-  const handleRemoveNoteImage = (url) => {
-    setNoteImages(prev => prev.filter(u => u !== url));
-  };
+  // 备注图片统一交给 MultiImageUploader 处理（上传/粘贴/拖拽/删除）
 
   // Filter addons based on selected transit location's disabled_addon_ids
   const selectedTransitLocation = transitLocations.find((l) => l.id === transitLocationId);
   const disabledAddonIds = consType === "transit" && selectedTransitLocation?.disabled_addon_ids ?
   selectedTransitLocation.disabled_addon_ids :
   [];
-  const availableAddons = shippingAddons.filter((a) => !disabledAddonIds.includes(a.id));
+  const disabledAddonIdStrings = disabledAddonIds.map(String);
+  const availableAddons = shippingAddons.filter((a) => !disabledAddonIdStrings.includes(String(a.id)));
 
   // Remove any selected addons that are now disabled when transit location changes
-  const effectiveSelectedAddonIds = selectedAddonIds.filter((id) => !disabledAddonIds.includes(id));
-  const selectedAddons = availableAddons.filter((a) => effectiveSelectedAddonIds.includes(a.id));
+  const effectiveSelectedAddonIds = selectedAddonIds.map(String).filter((id) => !disabledAddonIdStrings.includes(id));
+  const selectedAddons = availableAddons.filter((a) => effectiveSelectedAddonIds.includes(String(a.id)));
 
   // When user picks a specific official pool (not "default"), shipping method is not required
   const specificPoolSelected = consType === "official_pool" && !!selectedPoolId;
+
+  // 订单是否还欠款：由后端下发（order/info/orderDetail 里的 pre_shipment_need_payment），前端不自行判断状态
+  const orderNeedsPayment = order?.pre_shipment_need_payment === true;
 
   const canSubmit = () => {
     // If joining existing pool, shipping method is inherited - no need to select
@@ -497,8 +464,14 @@ export default function PreShipmentForm() {
       settlement_status: "pending"
     } : null;
 
+    // 运输方式主键：入库自动建池时直接使用，避免后端再按名称反查
+    const selectedShippingMethodRecord = (shippingMethods || []).find((m) => m.code === shippingMethod)
+      || (shippingMethods || []).find((m) => m.name === shippingMethod)
+      || null;
+
     const preShipment = {
       shipping_method: shippingMethod,
+      shipping_method_id: selectedShippingMethodRecord?.id || null,
       scheduled_ship_date: scheduledDate,
       user_note: userNote,
       note_image_urls: noteImages,
@@ -521,8 +494,9 @@ export default function PreShipmentForm() {
         const isCustomizable = a.is_user_customizable;
         return {
           id: a.id,
-          name: a.name,
-          service_name: a.name,
+          name: a.service_name || a.name,
+          // AddonOption 的展示名在 service_name 上，name 可能不存在
+          service_name: a.service_name || a.name,
           fee: isCustomizable && customFee !== undefined ? customFee : a.fee,
           fee_currency: a.fee_currency
         };
@@ -541,27 +515,42 @@ export default function PreShipmentForm() {
       pre_shipment: preShipment
     };
 
-    const res = await base44.functions.invoke('order/info/updatePreShipment', updatePayload);
+    // 「保存」与「保存并付款」是两个后端方法，是否需要付款由后端返回的 need_payment 决定
+    const endpoint = goToPayment
+      ? 'order/info/submitPreShipmentForPayment'
+      : 'order/info/savePreShipment';
+
+    let res;
+    try {
+      res = await base44.functions.invoke(endpoint, updatePayload);
+    } catch (error) {
+      setSubmitting(false);
+      const message = error?.response?.data?.message || error?.data?.message || error?.message || '保存预出货信息失败，请稍后重试';
+      alert(message);
+      return;
+    }
+
+    const result = res?.data || {};
+    const savedOrder = result.order || null;
 
     // Update local order state so subsequent edits in the same session see fresh data
-    if (res?.data) {
-      setOrder(res.data);
+    if (savedOrder) {
+      setOrder(savedOrder);
     } else {
       setOrder((prev) => ({ ...prev, pre_shipment: preShipment, pre_shipment_status: 'submitted' }));
     }
 
     setSubmitting(false);
+    setNeedPayment(!!result.need_payment);
+    setPaymentTarget(result.need_payment ? {
+      pmId: result.payment_method_id || paymentMethod || "other",
+      currency: result.currency || "JPY"
+    } : null);
 
-    // Use updated order state for payment redirect decision
-    const latestOrder = res?.data?.order || order;
-    // Needs payment if: awaiting payment OR fullpay_once just enabled (need to pay product+shipping together)
-    const needsPayment = latestOrder.payment_status === "awaiting_payment" ||
-                         latestOrder.order_status === "payment_pending";
-    if (goToPayment && needsPayment) {
-      const m = paymentMethods.find((pm) => (pm.provider_key || pm.name) === paymentMethod || pm.value === paymentMethod);
-      const cur = m?.payment_currency || "JPY";
-      const method = paymentMethod || "other";
-      navigate(`/Payment?order_id=${orderId}&pm_id=${method}&pay_currency=${cur}`);
+    if (goToPayment && result.need_payment) {
+      const pmId = result.payment_method_id || paymentMethod || "other";
+      const currency = result.currency || "JPY";
+      navigate(`/Payment?order_id=${orderId}&pm_id=${pmId}&pay_currency=${currency}`);
       return;
     }
 
@@ -619,12 +608,11 @@ export default function PreShipmentForm() {
           <Button variant="outline" className="flex-1" onClick={() => navigate(createPageUrl("MyOrders"))}>
             查看我的订单
           </Button>
-          {(order.payment_status === "awaiting_payment" || order.order_status === "payment_pending") &&
+          {needPayment &&
           <Button className="flex-1 bg-red-600 hover:bg-red-700"
           onClick={() => {
-            const m = paymentMethods.find((pm) => (pm.provider_key || pm.name) === paymentMethod);
-            const cur = m?.payment_currency || "JPY";
-            navigate(`/Payment?order_id=${orderId}&pm_id=${paymentMethod || "other"}&pay_currency=${cur}`);
+            const target = paymentTarget || { pmId: paymentMethod || "other", currency: "JPY" };
+            navigate(`/Payment?order_id=${orderId}&pm_id=${target.pmId}&pay_currency=${target.currency}`);
           }}>
               前往付款
             </Button>
@@ -635,7 +623,7 @@ export default function PreShipmentForm() {
   }
 
   return (
-    <div className="max-w-2xl mx-auto space-y-5">
+    <div className="max-w-6xl mx-auto space-y-5">
       <div className="flex items-center gap-3">
         <button onClick={() => navigate(createPageUrl("MyOrders"))} className="text-gray-400 hover:text-gray-600">
           <ChevronLeft className="w-5 h-5" />
@@ -645,6 +633,10 @@ export default function PreShipmentForm() {
           <p className="text-sm text-gray-400 mt-0.5">预先填写，入库后自动生成发货申请</p>
         </div>
       </div>
+
+      <div className="grid gap-5 lg:grid-cols-2 lg:items-start">
+        {/* 左列：预出货信息 → 运输方式 */}
+        <div className="space-y-5">
 
       {/* Order card */}
       <Card className="border-gray-200">
@@ -1370,6 +1362,11 @@ export default function PreShipmentForm() {
         </CardContent>
       </Card>
 
+        </div>
+
+        {/* 右列：收货地址 → 操作按钮 */}
+        <div className="space-y-5">
+
       {/* Address (only for direct shipment) */}
       {consType === "" &&
       <Card className={`border-gray-200 transition-opacity ${joinExistingPool && selectedExistingPoolId ? "opacity-40 pointer-events-none" : ""}`}>
@@ -1424,24 +1421,24 @@ export default function PreShipmentForm() {
           </CardHeader>
           <CardContent className="space-y-2">
             {availableAddons.map((a) => {
-            const isSelected = effectiveSelectedAddonIds.includes(a.id);
+            const isSelected = effectiveSelectedAddonIds.includes(String(a.id));
             const isCustomizable = a.is_user_customizable;
             return (
               <div key={a.id} className={`rounded-lg border p-2.5 transition-colors ${isSelected ? "border-yellow-400 bg-yellow-50" : "border-gray-200 hover:bg-gray-50"}`}>
                   <label className="flex items-center justify-between gap-3 cursor-pointer">
                     <div className="flex items-center gap-2 flex-1">
                       <Checkbox checked={isSelected}
-                    onCheckedChange={(v) => setSelectedAddonIds((prev) => v ? [...prev, a.id] : prev.filter((id) => id !== a.id))} />
+                    onCheckedChange={(v) => setSelectedAddonIds((prev) => v ? [...prev.map(String), String(a.id)] : prev.filter((id) => String(id) !== String(a.id)))} />
                       <div className="flex flex-col gap-0.5">
                         <div className="flex items-center gap-2 flex-wrap">
-                          <span className="text-sm font-medium text-gray-800">{a.name}</span>
+                          <span className="text-sm font-medium text-gray-800">{a.service_name}</span>
                           {isCustomizable &&
                         <Badge className="text-[10px] bg-green-100 text-green-700 border-green-200">用户可自定义</Badge>
                         }
                           {a.description && <span className="text-xs text-gray-400">{a.description}</span>}
                         </div>
                         {isCustomizable &&
-                      <span className="text-[10px] text-gray-500">区间：{a.fee_currency || "JPY"} {a.min_fee} - {a.max_fee} · 默认：{Number(a.fee || 0).toLocaleString()}</span>
+                      <span className="text-[10px] text-gray-500">区间：{a.fee_currency || "JPY"} {a.fee_min} - {a.fee_max} · 默认：{Number(a.fee || 0).toLocaleString()}</span>
                       }
                       </div>
                     </div>
@@ -1517,60 +1514,20 @@ export default function PreShipmentForm() {
           <CardTitle className="text-sm font-semibold text-gray-700">备注（可选）</CardTitle>
         </CardHeader>
         <CardContent>
-          <div
-            onDrop={handleNoteImageDrop}
-            onDragOver={(e) => e.preventDefault()}
-            onPaste={handleNoteImagePaste}
-          >
-            <Textarea 
-              rows={2} 
-              className="text-sm" 
-              placeholder="特殊要求、包装说明...（支持粘贴或拖拽上传图片）"
-              value={userNote} 
-              onChange={(e) => setUserNote(e.target.value)} 
-            />
-            
-            {/* Image upload button */}
-            <div className="mt-2 flex items-center gap-2">
-              <input
-                type="file"
-                id="note-image-upload"
-                accept="image/*"
-                multiple
-                className="hidden"
-                onChange={(e) => handleNoteImageUpload(e.target.files)}
-              />
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="h-7 text-xs"
-                onClick={() => document.getElementById('note-image-upload').click()}
-                disabled={uploadingImages}
-              >
-                <Image className="w-3.5 h-3.5 mr-1" />
-                {uploadingImages ? '上传中...' : '上传图片'}
-              </Button>
-            </div>
-            
-            {/* Uploaded images preview */}
-            {noteImages.length > 0 && (
-              <div className="mt-3 flex flex-wrap gap-2">
-                {noteImages.map((url) => (
-                  <div key={url} className="relative group">
-                    <ImageWithViewer src={url} alt="Note attachment" thumbClassName="w-20 h-20 object-cover rounded border" />
-                    <button
-                      type="button"
-                      onClick={() => handleRemoveNoteImage(url)}
-                      className="absolute -top-1.5 -right-1.5 bg-red-500 text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
-                    >
-                      <X className="w-3 h-3" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+          <Textarea
+            rows={2}
+            className="text-sm"
+            placeholder="特殊要求、包装说明..."
+            value={userNote}
+            onChange={(e) => setUserNote(e.target.value)}
+          />
+          <MultiImageUploader
+            id="pre-ship-note-images"
+            className="mt-2"
+            uploadPath="pre_ship_note"
+            value={noteImages}
+            onChange={setNoteImages}
+          />
         </CardContent>
       </Card>
 
@@ -1591,21 +1548,26 @@ export default function PreShipmentForm() {
         </Card>
       }
 
-      {/* Actions */}
+      {/* Actions：已付款订单只保留「保存预出货信息」，欠款订单才显示「保存信息并付款」 */}
       <div className="flex gap-3 pb-4">
         <Button
-          variant="outline"
-          className="flex-1"
+          variant={orderNeedsPayment ? "outline" : "default"}
+          className={`flex-1 ${orderNeedsPayment ? "" : "bg-red-600 hover:bg-red-700"}`}
           disabled={!canSubmit() || submitting}
           onClick={() => handleSubmit(false)}>
           {submitting ? "保存中..." : "保存预出货信息"}
         </Button>
+        {orderNeedsPayment &&
         <Button
           className="flex-1 bg-red-600 hover:bg-red-700"
           disabled={!canSubmit() || submitting}
           onClick={() => handleSubmit(true)}>
           {submitting ? "保存中..." : "保存信息并付款"}
         </Button>
+        }
+      </div>
+
+        </div>
       </div>
     </div>);
 
