@@ -6,6 +6,7 @@ import { useCurrentUser } from "@/hooks/useCurrentUser";
 
 import { Package, RefreshCw, Search, CreditCard, Truck, CheckCircle, ChevronUp, ChevronDown, ChevronsUpDown, AlertCircle, Archive, ArchiveRestore, RotateCcw, Zap, X, Loader2, Scissors } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { createPageUrl } from "@/utils";
 import { usePermissions } from "@/hooks/usePermissions";
 import { Textarea } from "@/components/ui/textarea";
 import { ImageWithViewer } from "@/components/common/ImageViewer";
@@ -443,6 +444,24 @@ export default function MyOrders() {
    * 申请发货
    * @param {*} order 
    */
+  const handleCancelSplitRequest = async (requestId) => {
+    if (!requestId || actionLoading) return;
+    setActionLoading(true);
+    try {
+      const res = await base44.functions.invoke('order/split/cancel', { request_id: requestId });
+      const code = res?.code;
+      if (code !== 0 && code !== 200) {
+        throw new Error(res?.data?.msg || '取消失败');
+      }
+      toast.success('已取消拆单申请');
+      fetchOrders(user);
+    } catch (err) {
+      persistentToastError(err?.response?.data?.message || err?.message || '取消失败');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
   const handleConfirmDelivered = async (orders) => {
     setActionLoading(true);
     try {
@@ -617,7 +636,7 @@ export default function MyOrders() {
   };
 
   const renderOrderActions = (order) => (
-    <div className="flex flex-col gap-1">
+    <div className="flex flex-col items-start gap-1">
       {(order.unread_roles || []).includes("user") && (
         <span className="inline-flex items-center gap-1 text-xs bg-red-100 text-red-600 border border-red-200 px-1.5 py-0.5 rounded-full font-medium animate-pulse w-fit">
           <span className="w-1.5 h-1.5 rounded-full bg-red-500" />新消息
@@ -643,6 +662,24 @@ export default function MyOrders() {
           );
         })()
       )}
+      {pageData?.preShipmentEnabled && ["paid", "pending_purchase", "purchased", "in_warehouse"].includes(order.order_status) && (
+        order.pre_shipment_status === "submitted" ? (
+          <div className="flex flex-col items-start gap-1">
+            <span className="inline-flex items-center gap-1 text-xs bg-purple-100 text-purple-700 border border-purple-200 px-1.5 py-0.5 rounded-full font-medium">
+              <Truck className="w-3 h-3" />已预出货
+            </span>
+            <Button size="sm" variant="outline" className="h-7 text-xs text-purple-700 border-purple-200 hover:bg-purple-50"
+              onClick={() => navigate(createPageUrl("PreShipmentForm") + `?order_id=${order.id}`)}>
+              修改预出货
+            </Button>
+          </div>
+        ) : (
+          <Button size="sm" variant="outline" className="h-7 text-xs text-purple-700 border-purple-200 hover:bg-purple-50"
+            onClick={() => navigate(createPageUrl("PreShipmentForm") + `?order_id=${order.id}`)}>
+            <Truck className="w-3 h-3 mr-1" />预出货
+          </Button>
+        )
+      )}
       {order.order_status === "in_warehouse" && canNotifyShipment && (() => {
         const editRequest = order.edit_request;
         const orderId = String(order.id);
@@ -658,9 +695,10 @@ export default function MyOrders() {
           r => Number(r.order_id) === Number(order.id)
         );
         return (
-          <div className="flex items-center gap-1">
-            <Button size="sm" className="h-7 text-xs bg-teal-600 hover:bg-teal-700"
-              disabled={shipmentLoading}
+          <div className="flex flex-col items-start gap-1">
+            <Button size="sm" className="h-7 text-xs bg-teal-600 hover:bg-teal-700 shrink-0"
+              disabled={shipmentLoading || !!pendingSplit}
+              title={pendingSplit ? "有拆单申请在审核中，暂时不能通知发货" : undefined}
               onClick={async () => {
                 const orderIds = [order.id];
                 const cached = getNotifyShipmentCache(orderIds);
@@ -681,10 +719,17 @@ export default function MyOrders() {
               {shipmentLoading ? '加载中...' : '通知发货'}
             </Button>
             {pendingSplit ? (
-              <span className="inline-flex items-center gap-1 text-xs bg-indigo-100 text-indigo-700 border border-indigo-200 px-1.5 py-0.5 rounded-full font-medium">
-                <Scissors className="w-3 h-3" />拆单审核中
-              </span>
-            ) : allowSplitAfterWarehouse && (
+              <>
+                <span className="inline-flex items-center gap-1 text-xs bg-indigo-100 text-indigo-700 border border-indigo-200 px-1.5 py-0.5 rounded-full font-medium">
+                  <Scissors className="w-3 h-3" />拆单审核中
+                </span>
+                <Button size="sm" variant="outline" className="h-7 text-xs text-red-600 border-red-200 hover:bg-red-50"
+                  disabled={actionLoading}
+                  onClick={() => handleCancelSplitRequest(pendingSplit.id)}>
+                  <X className="w-3 h-3 mr-1" />取消拆单
+                </Button>
+              </>
+            ) : (allowSplitAfterWarehouse && !order.parent_order_id && !order.has_split_marker) && (
               <Button size="sm" variant="outline" className="h-7 text-xs text-indigo-600 border-indigo-200 hover:bg-indigo-50"
                 onClick={() => setSplitRequestOrder(order)}>
                 <Scissors className="w-3 h-3 mr-1" />拆单
@@ -869,7 +914,7 @@ export default function MyOrders() {
     const pool = repr.pool || {};
     const status = repr.order_status;
     return (
-      <div className="flex flex-col gap-1">
+      <div className="flex flex-col items-start gap-1">
         {status === "in_storage" && (
           <div className="flex flex-col gap-1 items-start">
             <span className="inline-flex items-center gap-1 text-xs bg-indigo-100 text-indigo-700 border border-indigo-200 px-1.5 py-0.5 rounded-full font-medium">
@@ -1162,7 +1207,7 @@ export default function MyOrders() {
               </th>
               {visibleCols.map(col => (
                 <th key={col.key}
-                  className={`px-3 py-2 text-left text-xs font-medium text-gray-500 whitespace-nowrap ${col.sortable ? "cursor-pointer select-none hover:text-gray-800" : ""}`}
+                  className={`px-3 py-2 text-left text-xs font-medium text-gray-500 whitespace-nowrap ${col.key === "order_status" ? "w-[132px]" : ""} ${col.sortable ? "cursor-pointer select-none hover:text-gray-800" : ""}`}
                   onClick={() => col.sortable && handleSort(col.key)}>
                   <div className="flex items-center gap-1">
                     {col.label}
@@ -1174,7 +1219,7 @@ export default function MyOrders() {
                   </div>
                 </th>
               ))}
-              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">操作</th>
+              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 w-[168px] whitespace-nowrap">操作</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">

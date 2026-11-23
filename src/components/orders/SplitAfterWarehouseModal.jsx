@@ -117,12 +117,8 @@ export default function SplitAfterWarehouseModal({ order, onClose, onSuccess }) 
         })),
       };
 
-      console.log(payload)
-
-      return;
-
       const res = await base44.functions.invoke("order/split/create", payload);
-      const code = res?.data?.code;
+      const code = res?.code;
       if (code !== 0 && code !== 200) {
         throw new Error(res?.data?.msg || "提交失败");
       }

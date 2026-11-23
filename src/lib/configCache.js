@@ -25,3 +25,11 @@ export function invalidateTenantConfigCache() {
   // Notify Layout (and any other listeners) to reload tenant config
   try { window.dispatchEvent(new CustomEvent('tenantConfigInvalidated')); } catch { /* noop */ }
 }
+
+/**
+ * 公告数据变更（发布/编辑/删除/上下架）后通知 Layout 重新拉取公告列表。
+ * 公告走独立的 list 接口（不在 layoutConfig 里），所以不能复用上面的 config 失效事件。
+ */
+export function invalidateAnnouncementsCache() {
+  try { window.dispatchEvent(new CustomEvent('announcementsInvalidated')); } catch { /* noop */ }
+}

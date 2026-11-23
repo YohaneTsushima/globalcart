@@ -44,7 +44,7 @@ export default function SplitRequestReviewDialog({ request, order, onClose, onSu
         admin_note: adminNote.trim(),
         items: items.map((it, i) => ({ ...it, image_url: images[i] || "" })),
       });
-      const code = res?.data?.code;
+      const code = res?.code;
       if (code !== 0 && code !== 200) {
         throw new Error(res?.data?.msg || "操作失败");
       }

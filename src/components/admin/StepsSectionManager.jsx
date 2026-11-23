@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { tenantEntity } from "@/lib/tenantApi";
 import { base44 } from "@/api/base44Client";
 import { invalidateTenantConfigCache } from "@/lib/configCache";
@@ -7,7 +7,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Save, List, Plus, Trash2, GripVertical, ChevronDown, ChevronUp, ImagePlus, X, Loader2, HelpCircle } from "lucide-react";
+import { Save, List, Plus, Trash2, GripVertical, ChevronDown, ChevronUp, HelpCircle } from "lucide-react";
+import { toast } from "sonner";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { STEP_ICON_OPTIONS } from "@/lib/stepIcons";
+import ImageUploader from "@/components/common/ImageUploader.jsx";
 import FaqItemPicker from "@/components/admin/FaqItemPicker.jsx";
 
 const AUDIENCE_TABS = [
@@ -63,87 +67,74 @@ function migrateConfig(raw) {
   return def();
 }
 
-// ─── DescEditor: textarea + image integrated ───
-function DescEditor({ desc, imageUrl, onDescChange, onUpload, onRemove }) {
-  const [dragging, setDragging] = useState(false);
+// ─── DescEditor: 卡片描述 + 图片（图片统一走 ImageUploader，上传目录 homeSteps） ───
+function DescEditor({ desc, imageUrl, onDescChange, onUpload, onRemove, uploadId }) {
   const [uploading, setUploading] = useState(false);
-  const fileInputRef = useRef();
-  const dragCounter = useRef(0); // fix: dragLeave fires on child elements
 
-  const uploadFile = async (file) => {
-    if (!file || !file.type.startsWith("image/")) return;
+  const handleImageChange = async (fileOrUrl) => {
+    // ImageUploader 里手动填 URL 时直接给字符串
+    if (typeof fileOrUrl === "string") {
+      onUpload(fileOrUrl);
+      return;
+    }
+    if (!fileOrUrl) return;
+
     setUploading(true);
     try {
-      const { file_url } = await base44.integrations.Core.UploadFile({ file });
+      const { file_url } = await base44.integrations.Core.UploadFile({ file: fileOrUrl, path: "homeSteps" });
       onUpload(file_url);
+    } catch (e) {
+      console.error("主页代购流程图片上传失败", e);
+      toast.error("图片上传失败，请重试");
     } finally {
       setUploading(false);
     }
   };
 
-  const handleDragEnter = (e) => { e.preventDefault(); dragCounter.current++; setDragging(true); };
-  const handleDragLeave = (e) => { e.preventDefault(); dragCounter.current--; if (dragCounter.current === 0) setDragging(false); };
-  const handleDrop = (e) => {
-    e.preventDefault();
-    dragCounter.current = 0;
-    setDragging(false);
-    const file = e.dataTransfer.files[0];
-    if (file) uploadFile(file);
-  };
-
-  const handlePaste = (e) => {
-    const item = Array.from(e.clipboardData.items).find(it => it.type.startsWith("image/"));
-    if (item) uploadFile(item.getAsFile());
-  };
-
   return (
-    <div
-      className={`mt-0.5 rounded-md border bg-background shadow-sm transition-colors ${dragging ? "border-indigo-400 ring-1 ring-indigo-300" : "border-input"}`}
-      onDragOver={e => e.preventDefault()}
-      onDragEnter={handleDragEnter}
-      onDragLeave={handleDragLeave}
-      onDrop={handleDrop}
-    >
-      {/* Textarea */}
+    <div className="mt-0.5 space-y-1.5">
       <textarea
-        className="w-full text-xs bg-transparent px-2 py-1.5 resize-none focus:outline-none"
+        className="w-full text-xs rounded-md border border-input bg-background shadow-sm px-2 py-1.5 resize-none focus:outline-none focus:ring-1 focus:ring-indigo-300"
         rows={2}
         value={desc || ""}
         onChange={e => onDescChange(e.target.value)}
-        onPaste={handlePaste}
-        placeholder="输入描述，或粘贴 / 拖拽图片…"
+        placeholder="输入卡片描述…"
       />
-
-      {/* Divider + toolbar + image preview */}
-      <div className="border-t border-input px-2 py-1 flex items-center gap-2">
-        {/* Upload button */}
-        <button
-          type="button"
-          onClick={() => fileInputRef.current?.click()}
-          className="text-gray-400 hover:text-indigo-500 transition-colors"
-          title="上传图片"
-        >
-          {uploading ? <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-400" /> : <ImagePlus className="w-3.5 h-3.5" />}
-        </button>
-        <span className="text-xs text-gray-300 flex-1">{dragging ? "松开鼠标上传" : "可拖拽或 Ctrl+V 粘贴图片"}</span>
-
-        {/* Thumbnail */}
-        {imageUrl && (
-          <div className="relative flex-shrink-0">
-            <img src={imageUrl} alt="" className="h-8 w-auto rounded border border-gray-200 object-contain" />
-            <button
-              type="button"
-              onClick={onRemove}
-              className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full p-0.5 hover:bg-red-600"
-            >
-              <X className="w-2 h-2" />
-            </button>
-          </div>
-        )}
-
-        <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={e => uploadFile(e.target.files[0])} />
-      </div>
+      <ImageUploader
+        id={uploadId}
+        value={imageUrl || ""}
+        uploading={uploading}
+        onChange={handleImageChange}
+        onDelete={() => onRemove()}
+      />
     </div>
+  );
+}
+
+// ─── StepIconSelect: 选择卡片图标（默认 = 按卡片顺序回退） ───
+function StepIconSelect({ value, onChange }) {
+  return (
+    <Select value={value || "default"} onValueChange={(v) => onChange(v === "default" ? "" : v)}>
+      <SelectTrigger className="mt-0.5 h-7 text-xs px-2">
+        <SelectValue placeholder="默认" />
+      </SelectTrigger>
+      <SelectContent className="max-h-72">
+        <SelectItem value="default">
+          <span className="flex items-center gap-1.5">
+            <List className="w-3.5 h-3.5 text-gray-400" />
+            默认（按顺序）
+          </span>
+        </SelectItem>
+        {STEP_ICON_OPTIONS.map(({ key, label, Icon }) => (
+          <SelectItem key={key} value={key}>
+            <span className="flex items-center gap-1.5">
+              <Icon className="w-3.5 h-3.5 text-indigo-500" />
+              {label}
+            </span>
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
   );
 }
 
@@ -241,15 +232,22 @@ function SectionEditor({ section, sectionIdx, total, onChange, onDelete, onMoveU
                       <Trash2 className="w-3 h-3" />
                     </button>
                   </div>
-                  <div>
-                    <Label className="text-xs text-gray-400">标题</Label>
-                    <Input className="mt-0.5 h-7 text-xs" value={step.title || ""} onChange={e => updateStep(i, "title", e.target.value)} />
+                  <div className="grid grid-cols-[1fr_124px] gap-1.5">
+                    <div>
+                      <Label className="text-xs text-gray-400">标题</Label>
+                      <Input className="mt-0.5 h-7 text-xs" value={step.title || ""} onChange={e => updateStep(i, "title", e.target.value)} />
+                    </div>
+                    <div>
+                      <Label className="text-xs text-gray-400">图标</Label>
+                      <StepIconSelect value={step.icon} onChange={v => updateStep(i, "icon", v)} />
+                    </div>
                   </div>
                   <div>
                     <Label className="text-xs text-gray-400">描述</Label>
                     <DescEditor
                       desc={step.desc || ""}
                       imageUrl={step.image_url || ""}
+                      uploadId={`step-image-${sectionIdx}-${step._id || i}`}
                       onDescChange={val => updateStep(i, "desc", val)}
                       onUpload={url => updateStep(i, "image_url", url)}
                       onRemove={() => updateStep(i, "image_url", "")}

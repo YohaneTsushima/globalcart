@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
 import { mergeNavTree, DEFAULT_NAV_TREES } from "@/lib/navRegistry";
+import { tenantEntity } from "@/lib/tenantApi";
 import { invalidateTenantConfigCache } from "@/lib/configCache";
 import NavbarSettingsManager from "@/components/admin/NavbarSettingsManager";
 import NavbarExchangeRateManager from "@/components/admin/NavbarExchangeRateManager";
@@ -18,43 +18,55 @@ export default function AdminNavbarSettings() {
   const [settings, setSettings] = useState([]);
 
   useEffect(() => {
-    Promise.all([
-      base44.functions.invoke("manageNavbarSettings", { action: "get" }),
-      base44.functions.invoke("getTenantSettings", {}),
-    ]).then(([navRes, settingsRes]) => {
-      const s = navRes.data?.settings;
-      setAdminTree(mergeNavTree(s?.admin_nav, "admin"));
-      setUserTree(mergeNavTree(s?.user_nav, "user"));
-      setSettings(settingsRes.data?.raw || []);
-      setLoading(false);
-    }).catch(() => {
-      toast.error("加载导航设置失败");
-      setLoading(false);
-    });
+    let alive = true;
+    // 导航布局与汇率配置都存放在租户级 site_settings 中，一次 layoutConfig 即可全部取回
+    tenantEntity.layoutConfig("SiteSettings")
+      .then((cfg) => {
+        if (!alive) return;
+        const nav = cfg?.navbarSettings;
+        setAdminTree(mergeNavTree(nav?.admin_nav, "admin"));
+        setUserTree(mergeNavTree(nav?.user_nav, "user"));
+        setSettings(cfg?.settings || []);
+      })
+      .catch(() => {
+        if (alive) toast.error("加载导航设置失败");
+      })
+      .finally(() => {
+        if (alive) setLoading(false);
+      });
+    return () => { alive = false; };
   }, []);
 
   const handleReload = async () => {
-    const settingsRes = await base44.functions.invoke("getTenantSettings", {});
-    setSettings(settingsRes.data?.raw || []);
+    const cfg = await tenantEntity.layoutConfig("SiteSettings");
+    setSettings(cfg?.settings || []);
     invalidateTenantConfigCache();
   };
 
   const handleSave = async () => {
     setSaving(true);
     try {
-      const res = await base44.functions.invoke("manageNavbarSettings", {
-        action: "save",
-        admin_nav: adminTree,
-        user_nav: userTree,
-      });
-      if (res.data?.success) {
-        invalidateTenantConfigCache();
-        toast.success("导航栏设置已保存，刷新页面后生效");
+      const nav = { admin_nav: adminTree, user_nav: userTree };
+      const value = JSON.stringify(nav);
+      // 保存到租户级 SiteSettings: key = navbar_layout_config（与 navbar_exchange_rate_config 同一套读写方式）
+      const existingList = await tenantEntity.list("SiteSettings", { key: "navbar_layout_config" });
+      const existing = (existingList || []).find(s => s?.key === "navbar_layout_config");
+
+      if (existing?.id) {
+        await tenantEntity.update("SiteSettings", existing.id, { value });
       } else {
-        toast.error(res.data?.error || "保存失败");
+        await tenantEntity.create("SiteSettings", {
+          key: "navbar_layout_config",
+          value,
+          description: "导航栏布局配置（JSON）",
+          category: "layout",
+        });
       }
+
+      invalidateTenantConfigCache();
+      toast.success("导航栏设置已保存");
     } catch (e) {
-      toast.error(e.response?.data?.error || e.message);
+      toast.error(e.response?.data?.message || e.response?.data?.error || e.message || "保存失败");
     } finally {
       setSaving(false);
     }

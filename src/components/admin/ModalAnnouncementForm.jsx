@@ -1,5 +1,9 @@
 import { useState, useRef, useCallback } from "react";
-import { X, Image as ImageIcon, Loader2 } from "lucide-react";
+import { Bold, Italic, Link2, Image as ImageIcon, Loader2, Eye, Pencil } from "lucide-react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import remarkSoftBreaks from "@/lib/remarkSoftBreaks";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -17,35 +21,100 @@ const EMPTY_FORM = {
   display_position: "modal", image_urls: [],
 };
 
-// 内容输入框 + 图片上传集成
-function ContentEditor({ value, onChange, onImageUrlsChange }) {
+// 内容输入框：Markdown 编辑 / 实时预览，支持工具栏、粘贴与拖拽上传图片
+function ContentEditor({ value, onChange }) {
   const [uploading, setUploading] = useState(false);
   const [dragging, setDragging] = useState(false);
+  const [mode, setMode] = useState("edit"); // edit | preview
   const textareaRef = useRef();
   const fileInputRef = useRef();
 
-  // 在光标位置插入文本
-  const insertAtCursor = (text) => {
+  // 在光标位置插入文本；有选中内容时包裹选中部分
+  const insertMarkup = (before, after = "") => {
     const el = textareaRef.current;
     if (!el) return;
     const start = el.selectionStart;
     const end = el.selectionEnd;
-    const newVal = value.slice(0, start) + text + value.slice(end);
-    onChange(newVal);
-    // 恢复光标
+    const selected = value.slice(start, end);
+    const text = before + selected + after;
+    onChange(value.slice(0, start) + text + value.slice(end));
     requestAnimationFrame(() => {
-      el.selectionStart = el.selectionEnd = start + text.length;
       el.focus();
+      el.selectionStart = start + before.length;
+      el.selectionEnd = start + before.length + selected.length;
     });
   };
 
+  // 加粗 / 斜体：再点一次取消包裹（toggle），避免重复点击叠出 ****
+  const toggleWrap = (marker) => {
+    const el = textareaRef.current;
+    if (!el) return;
+    const start = el.selectionStart;
+    const end = el.selectionEnd;
+    const selected = value.slice(start, end);
+    const len = marker.length;
+    const before = value.slice(Math.max(0, start - len), start);
+    const after = value.slice(end, end + len);
+    // 斜体 "*" 不能把加粗的 "**" 误判成斜体标记
+    const italicConflict = marker === "*" && value.slice(start - 2, start) === "**";
+
+    if (before === marker && after === marker && !italicConflict) {
+      // 已包裹 → 去掉前后标记
+      onChange(value.slice(0, start - len) + selected + value.slice(end + len));
+      requestAnimationFrame(() => {
+        el.focus();
+        el.selectionStart = start - len;
+        el.selectionEnd = start - len + selected.length;
+      });
+      return;
+    }
+    insertMarkup(marker, marker);
+  };
+
+  // 链接：有选中文字就作为链接文字，并把 URL 占位符选中方便直接粘贴
+  const insertLink = () => {
+    const el = textareaRef.current;
+    if (!el) return;
+    const start = el.selectionStart;
+    const end = el.selectionEnd;
+    const selected = value.slice(start, end) || "链接文字";
+    const url = "https://";
+    const text = `[${selected}](${url})`;
+    onChange(value.slice(0, start) + text + value.slice(end));
+    requestAnimationFrame(() => {
+      el.focus();
+      const urlStart = start + selected.length + 3;
+      el.selectionStart = urlStart;
+      el.selectionEnd = urlStart + url.length;
+    });
+  };
+
+  // Ctrl/Cmd + B 加粗、Ctrl/Cmd + I 斜体
+  const handleKeyDown = (e) => {
+    if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
+    const key = e.key.toLowerCase();
+    if (key === "b") {
+      e.preventDefault();
+      toggleWrap("**");
+    } else if (key === "i") {
+      e.preventDefault();
+      toggleWrap("*");
+    }
+  };
+
   const uploadAndInsert = async (file) => {
-    if (!file.type.startsWith("image/")) return;
+    if (!file || !file.type.startsWith("image/")) return;
     setUploading(true);
-    const { file_url } = await base44.integrations.Core.UploadFile({ file });
-    insertAtCursor(`![图片](${file_url})`);
-    onImageUrlsChange(prev => [...prev, file_url]);
-    setUploading(false);
+    try {
+      // path=announcement → 落到 uploads/announcement/{userId}/{date}/announcement_pic_*，游客可读
+      const { file_url } = await base44.integrations.Core.UploadFile({ file, path: "announcement" });
+      insertMarkup(`\n![图片](${file_url})\n`);
+    } catch (e) {
+      console.error(e);
+      toast.error("图片上传失败，请重试");
+    } finally {
+      setUploading(false);
+    }
   };
 
   const handlePaste = useCallback(async (e) => {
@@ -71,39 +140,75 @@ function ContentEditor({ value, onChange, onImageUrlsChange }) {
     e.target.value = "";
   };
 
+  const toolButton = "flex items-center gap-1 px-2 py-1 text-xs text-gray-600 hover:bg-gray-200 rounded transition-colors disabled:opacity-50";
+
   return (
-    <div className={`border rounded-lg overflow-hidden transition-colors ${dragging ? "border-blue-400 ring-2 ring-blue-200" : "border-input"}`}
+    <div className={`relative border rounded-lg overflow-hidden transition-colors ${dragging ? "border-blue-400 ring-2 ring-blue-200" : "border-input"}`}
       onDrop={handleDrop}
       onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
       onDragLeave={() => setDragging(false)}
     >
       {/* Toolbar */}
       <div className="flex items-center gap-1 px-2 py-1.5 bg-gray-50 border-b border-gray-200">
-        <span className="text-xs text-gray-400 mr-1">支持 Markdown</span>
-        <div className="flex-1" />
+        <button type="button" title="加粗（Ctrl+B）" onClick={() => toggleWrap("**")} className={toolButton}>
+          <Bold className="w-3.5 h-3.5" />
+        </button>
+        <button type="button" title="斜体（Ctrl+I）" onClick={() => toggleWrap("*")} className={toolButton}>
+          <Italic className="w-3.5 h-3.5" />
+        </button>
+        <button type="button" title="链接" onClick={insertLink} className={toolButton}>
+          <Link2 className="w-3.5 h-3.5" />
+        </button>
         <button
           type="button"
-          title="上传图片（将插入 Markdown 图片语法）"
+          title="上传图片（插入 Markdown 图片语法）"
           onClick={() => fileInputRef.current?.click()}
           disabled={uploading}
-          className="flex items-center gap-1 px-2 py-1 text-xs text-gray-600 hover:bg-gray-200 rounded transition-colors disabled:opacity-50"
+          className={toolButton}
         >
           {uploading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ImageIcon className="w-3.5 h-3.5" />}
           {uploading ? "上传中..." : "插入图片"}
         </button>
         <input ref={fileInputRef} type="file" accept="image/*" multiple className="hidden" onChange={handleFileInput} />
+
+        <div className="flex-1" />
+
+        {/* 编辑 / 预览 切换 */}
+        <div className="flex rounded-md border border-gray-200 bg-white overflow-hidden">
+          <button
+            type="button"
+            onClick={() => setMode("edit")}
+            className={`flex items-center gap-1 px-2 py-1 text-xs transition-colors ${mode === "edit" ? "bg-gray-100 text-gray-800 font-medium" : "text-gray-500 hover:bg-gray-50"}`}
+          >
+            <Pencil className="w-3 h-3" />编辑
+          </button>
+          <button
+            type="button"
+            onClick={() => setMode("preview")}
+            className={`flex items-center gap-1 px-2 py-1 text-xs transition-colors ${mode === "preview" ? "bg-gray-100 text-gray-800 font-medium" : "text-gray-500 hover:bg-gray-50"}`}
+          >
+            <Eye className="w-3 h-3" />预览
+          </button>
+        </div>
       </div>
 
-      {/* Textarea */}
-      <textarea
-        ref={textareaRef}
-        rows={6}
-        value={value}
-        onChange={e => onChange(e.target.value)}
-        onPaste={handlePaste}
-        placeholder={"支持 **加粗**、*斜体*、[链接](url) 等 Markdown 语法\n可直接粘贴截图或拖拽图片到此处自动上传插入"}
-        className="w-full px-3 py-2 text-sm font-mono bg-white resize-y outline-none min-h-[140px]"
-      />
+      {/* 编辑区 / 预览区 */}
+      {mode === "edit" ? (
+        <textarea
+          ref={textareaRef}
+          rows={6}
+          value={value}
+          onChange={e => onChange(e.target.value)}
+          onPaste={handlePaste}
+          onKeyDown={handleKeyDown}
+          placeholder={"支持 **加粗**、*斜体*、[链接](url) 等 Markdown 语法\n可直接粘贴截图或拖拽图片到此处自动上传插入"}
+          className="w-full px-3 py-2 text-sm font-mono bg-white resize-y outline-none min-h-[140px]"
+        />
+      ) : (
+        <div className="w-full px-3 py-2 min-h-[140px] bg-white prose prose-sm max-w-none">
+          <ReactMarkdown remarkPlugins={[remarkGfm, remarkSoftBreaks]}>{value || "*暂无内容*"}</ReactMarkdown>
+        </div>
+      )}
 
       {/* Drag hint */}
       {dragging && (
@@ -147,7 +252,6 @@ export default function ModalAnnouncementForm({ editing, onSave, onCancel, savin
               <ContentEditor
                 value={form.content}
                 onChange={v => f("content", v)}
-                onImageUrlsChange={(updater) => setForm(p => ({ ...p, image_urls: typeof updater === "function" ? updater(p.image_urls) : updater }))}
               />
             </div>
           </div>

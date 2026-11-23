@@ -38,7 +38,8 @@ export default function Layout({ children, currentPageName }) {
   const [announcements, setAnnouncements] = useState([]);
   const [navbarSettings, setNavbarSettings] = useState(null);
   const [navbarRateCurrencies, setNavbarRateCurrencies] = useState([]);
-  const [transitLocations, setTransitLocations] = useState([]);
+  // 中转发货点暂无接口下发，保留空数组给 isTransitManager 推导
+  const [transitLocations] = useState([]);
   const [bannerConfig, setBannerConfig] = useState(null);
   const [locale, setLocale] = useState(getLocale());
   const location = useLocation();
@@ -69,9 +70,9 @@ export default function Layout({ children, currentPageName }) {
   }, [tenant?.favicon_url, tenant?.branding_name]);
 
   const applyTenantConfig = (cfg) => {
-    setAnnouncements(cfg.announcements || []);
+    // 公告 / 中转发货点由各自接口负责（reloadAnnouncements），
+    // 这里不能再写 announcements，否则 layoutConfig 后到会把公告列表清空（与 list 请求竞态）。
     setNavbarSettings(cfg.navbarSettings || null);
-    setTransitLocations(cfg.transitLocations || []);
     const bannerSetting = (cfg.settings || []).find(s => s.key === "home_banner_config");
     if (bannerSetting?.value) {
       try { setBannerConfig(JSON.parse(bannerSetting.value)); } catch { setBannerConfig(null); }
@@ -91,22 +92,34 @@ export default function Layout({ children, currentPageName }) {
     }
   };
 
+  const reloadAnnouncements = () => {
+    tenantEntity.list('Announcement')
+    .then(data => setAnnouncements((data || []).filter(a => a.is_active)))
+    .catch(() => {});
+  };
+
   useEffect(() => {
     if (!user) return;
     // fetchTenantConfig().then(applyTenantConfig).catch(() => {});
     tenantEntity.layoutConfig('SiteSettings').then(applyTenantConfig).catch(() => {});
 
     // 单独获取公告
-    tenantEntity.list('Announcement')
-    .then(data => setAnnouncements((data || []).filter(a => a.is_active)))
-    .catch(() => {});
+    reloadAnnouncements();
+  }, [user?.email]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 公告被发布/编辑/删除/上下架后，Layout 里的公告快照已过期，需要重新拉取
+  useEffect(() => {
+    if (!user) return;
+    const handler = () => reloadAnnouncements();
+    window.addEventListener('announcementsInvalidated', handler);
+    return () => window.removeEventListener('announcementsInvalidated', handler);
   }, [user?.email]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Re-fetch when any part of the app invalidates the config cache (e.g. after saving navbar rate settings)
   useEffect(() => {
     if (!user) return;
     const handler = () => {
-      // fetchTenantConfig({ force: true }).then(applyTenantConfig).catch(() => {});
+      tenantEntity.layoutConfig('SiteSettings').then(applyTenantConfig).catch(() => {});
     };
     window.addEventListener('tenantConfigInvalidated', handler);
     return () => window.removeEventListener('tenantConfigInvalidated', handler);

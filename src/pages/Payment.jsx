@@ -6,19 +6,14 @@ import { ExternalLink, Copy, CheckCircle, AlertCircle, ArrowLeft, Loader2, Calcu
 import { ImageWithViewer } from "@/components/common/ImageViewer";
 import { usePermissions } from "@/hooks/usePermissions";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { useLocale } from "@/lib/LocaleContext";
-import { t } from "@/lib/i18n";
 import PaymentMethodSelector from "@/components/common/PaymentMethodSelector";
 import ImageUploader from "@/components/common/ImageUploader";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { toast } from "sonner";
-import ConfirmDialog from "@/components/common/ConfirmDialog";
-import { openAlipayPopup } from "@/lib/alipayUtils";
+import { openAlipayBlankPopup, openAlipayPopup } from "@/lib/alipayUtils";
 import { updateTenantOrder } from "@/lib/tenantApi";
 
 const IS_DEV_MOCK = import.meta.env.VITE_DEV_MOCK === 'true';
@@ -91,8 +86,6 @@ export default function Payment() {
   const [copied, setCopied] = useState(false);
   const [loading, setLoading] = useState(true);
   const [generatingLink, setGeneratingLink] = useState(false);
-  const [showAlipayConfirm, setShowAlipayConfirm] = useState(false);
-  const [alipayFormData, setAlipayFormData] = useState(null);
 
   const methodId = parseInt(selectedMethod )|| null;
   // const methodKey = order?.payment_method || "alipay";
@@ -197,6 +190,8 @@ export default function Payment() {
   }, [orderId]);
 
   const handleGenerateAlipayLink = async () => {
+    // 必须在 await 之前同步开窗：等接口返回再 window.open 会被浏览器当成非用户操作而拦截
+    const alipayWindow = openAlipayBlankPopup();
     setGeneratingLink(true);
     // 在 await 之前打开新窗口，保留用户手势上下文，否则 Edge 会拦截弹窗
 
@@ -242,6 +237,7 @@ export default function Payment() {
     const res = await base44.functions.invoke('alipay/pay', payParam);
     
     if(!res?.data?.success) {
+      if (alipayWindow && !alipayWindow.closed) alipayWindow.close();
       toast.error(`下单失败: ${res?.data?.result}`);
       setGeneratingLink(false);
       return;
@@ -251,15 +247,12 @@ export default function Payment() {
     setGeneratingLink(false);
 
     if (formData && typeof formData === 'string') {
-      setAlipayFormData(formData);
-      setShowAlipayConfirm(true);
+      // 直接提交到刚打开的支付窗口，不再弹「确认支付」对话框
+      openAlipayPopup(formData, { targetWindow: alipayWindow });
+    } else if (alipayWindow && !alipayWindow.closed) {
+      alipayWindow.close();
+      toast.error("支付宝下单失败，请重试");
     }
-  };
-
-  const submitToAlipay = () => {
-    openAlipayPopup(alipayFormData);
-    setShowAlipayConfirm(false);
-    setAlipayFormData(null);
   };
 
   const handleCopy = (text) => {
@@ -675,16 +668,6 @@ export default function Payment() {
           </Alert>
         )
       )}
-
-      <ConfirmDialog
-        open={showAlipayConfirm}
-        onOpenChange={setShowAlipayConfirm}
-        title="确认支付"
-        description="点击下方按钮将跳转到支付宝完成付款"
-        confirmText="前往支付宝付款"
-        onConfirm={submitToAlipay}
-        onCancel={() => setAlipayFormData(null)}
-      />
     </div>
   );
 }

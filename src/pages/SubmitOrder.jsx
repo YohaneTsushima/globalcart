@@ -1,5 +1,4 @@
 import { useState, useEffect } from "react";
-import { parseNaturalPrice } from "@/lib/naturalNumber";
 import { detectPrimaryStoreTagResult } from "@/lib/onlineStoreTag";
 import { base44 } from "@/api/base44Client";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
@@ -7,7 +6,7 @@ import { useAuth } from "@/lib/AuthContext";
 import { timePage } from "@/lib/timing";
 import { useNavigate } from "react-router-dom";
 import { createPageUrl } from "@/utils";
-import { ShoppingBag, Info, Upload, Plus, X, HelpCircle, AlertTriangle, Lock, Truck, ChevronDown, Scissors } from "lucide-react";
+import { ShoppingBag, Info, Plus, X, HelpCircle, AlertTriangle, Lock, Truck, ChevronDown, Scissors } from "lucide-react";
 import { usePermissions } from "@/hooks/usePermissions";
 import FeeCalculator from "@/components/orders/FeeCalculator";
 import PaymentSection from "@/components/orders/PaymentSection";
@@ -583,16 +582,16 @@ export default function SubmitOrder() {
           .map(id => ({ id, fee: addonCustomFees[id] })),
       };
 
-      await base44.functions.invoke('createTenantOrder', payload);
+      const res = await base44.functions.invoke('order/info/createTenantOrder', payload);
       setSubmitting(false);
-      
+
       if (res.data?.error) {
         toast.error(t('提交失败：', locale) + res.data.error);
         return;
       }
-      
-      if (res.data?.order) {
-        navigate(createPageUrl(`PreShipmentForm`, { order_id: res.data.order.id }));
+
+      if (res.data?.id) {
+        navigate(createPageUrl(`PreShipmentForm`, { order_id: res.data.id }));
       } else {
         toast.error(t('订单创建失败：服务器未返回订单信息', locale));
       }

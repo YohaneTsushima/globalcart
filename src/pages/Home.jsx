@@ -1,16 +1,17 @@
 import { useState, useEffect } from "react";
+import { Link } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import { base44 } from "@/api/base44Client";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { useTenantBranding } from "@/hooks/useTenantBranding";
 import { timePage } from "@/lib/timing";
-import { Truck, Package, CheckCircle } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
-import { getStatusLabel, getStatusColor } from "@/lib/orderStatus";
+import { resolveStepIcon } from "@/lib/stepIcons";
+import { HelpCircle } from "lucide-react";
 import { getTenantConfigCache, setTenantConfigCache } from "@/lib/configCache";
 import { useLocale } from "@/lib/LocaleContext";
 import { t } from "@/lib/i18n";
-// Badge/getStatus* kept for future use; LogisticsStatusBoard handles order display now
+// 订单状态展示已由 LogisticsStatusBoard 负责
 import QuickActionsGrid from "@/components/home/QuickActionsGrid";
 import LogisticsStatusBoard from "@/components/home/LogisticsStatusBoard";
 import HeroSection from "@/components/home/HeroSection";
@@ -77,6 +78,17 @@ export default function Home() {
         faqCategories,
       };
 
+      // homeConfig 只返回 settings，不含 FAQ 分类；流程区块里的 FAQ 卡片需要 items 才能渲染
+      if (!faqCategories.length && user) {
+        try {
+          const cats = await tenantEntity.list('FaqCategory');
+          faqCategories = (cats || []).filter(c => c.is_active !== false);
+          values = { ...values, faqCategories };
+        } catch (err) {
+          console.error('[Home] 加载 FAQ 分类失败:', err);
+        }
+      }
+
       return values;
     };
 
@@ -115,7 +127,6 @@ export default function Home() {
       { title: t("提交发货需求", locale), desc: t("填写收货地址，选运输方式，余额自动抵扣运费", locale) },
     ],
   }];
-  const STEP_ICONS = [Package, CheckCircle, Package, Truck];
 
   // resolve steps audience config — supports both old {heading,steps} and new {sections:[]}
   const resolveSteps = () => {
@@ -151,6 +162,13 @@ export default function Home() {
     ? rc.positions
     : rc?.position ? [rc.position] : ["hero_right"];
   const hasPos = (pos) => rateEnabled && ratePositions.includes(pos);
+
+  // 流程区块的 FAQ 卡片：把选中的 item id 映射成实际问答
+  const faqItemsById = (faqCategories || []).flatMap(c =>
+    (c.items || [])
+      .filter(it => it.is_active !== false)
+      .map(it => ({ ...it, _catId: c.id }))
+  );
 
   return (
     <div className="space-y-8">
@@ -188,7 +206,40 @@ export default function Home() {
           )}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             {(section.steps || []).map((step, i) => {
-              const Icon = STEP_ICONS[i] || Package;
+              if (step.type === "faq") {
+                const faqItems = (step.faq_item_ids || [])
+                  .map(id => faqItemsById.find(it => it._id === id))
+                  .filter(Boolean);
+                return (
+                  <Card key={i} className="border-teal-200">
+                    <CardContent className="p-4">
+                      <div className="flex items-center gap-2 mb-2">
+                        <div className="w-6 h-6 bg-teal-50 rounded flex items-center justify-center">
+                          <HelpCircle className="w-3.5 h-3.5 text-teal-600" />
+                        </div>
+                        <span className="text-xs text-gray-400">{step.title || t("常见问题", locale)}</span>
+                      </div>
+                      {faqItems.length === 0 ? (
+                        <div className="text-xs text-gray-400">{t("暂无常见问题", locale)}</div>
+                      ) : (
+                        <div className="space-y-1.5">
+                          {faqItems.map(item => (
+                            <Link
+                              key={item._id}
+                              to={`${createPageUrl("helpcenter/faq")}${item._catId ? `?cat=${item._catId}` : ""}`}
+                              className="flex items-start gap-1.5 text-xs text-gray-600 hover:text-teal-600 transition-colors"
+                            >
+                              <HelpCircle className="w-3 h-3 mt-0.5 flex-shrink-0 text-teal-400" />
+                              <span className="line-clamp-2">{item.question}</span>
+                            </Link>
+                          ))}
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                );
+              }
+              const Icon = resolveStepIcon(step.icon, i);
               return (
                 <Card key={i} className="border-gray-200">
                   <CardContent className="p-4">

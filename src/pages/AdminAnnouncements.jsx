@@ -12,6 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import ModalAnnouncementForm from "@/components/admin/ModalAnnouncementForm";
+import { invalidateAnnouncementsCache } from "@/lib/configCache";
 
 const TYPE_LABELS = { info: "一般", warning: "警告", success: "成功", urgent: "紧急" };
 const TYPE_COLORS = { info: "bg-blue-100 text-blue-700", warning: "bg-yellow-100 text-yellow-700", success: "bg-green-100 text-green-700", urgent: "bg-red-100 text-red-700" };
@@ -133,6 +134,7 @@ export default function AdminAnnouncements() {
         toast.success("弹窗公告已发布");
       }
       await load();
+      invalidateAnnouncementsCache();
       setShowModalForm(false);
       setEditingModal(null);
     } catch (err) {
@@ -155,6 +157,7 @@ export default function AdminAnnouncements() {
         toast.success("公告已发布");
       }
       await load();
+      invalidateAnnouncementsCache();
       setShowForm(false);
       setEditing(null);
       setForm(EMPTY_FORM);
@@ -171,6 +174,7 @@ export default function AdminAnnouncements() {
       await tenantEntity.delete('Announcement', id);
       toast.success("公告已删除");
       await load();
+      invalidateAnnouncementsCache();
     } catch (err) {
       console.error("删除公告失败:", err);
       toast.error("删除失败：" + (err?.message || "未知错误"));
@@ -185,6 +189,7 @@ export default function AdminAnnouncements() {
     }
     await tenantEntity.update('Announcement', a.id, update);
     await load();
+    invalidateAnnouncementsCache();
   };
 
   // Manually re-publish: bump dismissed_version to force all users to see it again
@@ -194,6 +199,7 @@ export default function AdminAnnouncements() {
       is_active: true,
     });
     await load();
+    invalidateAnnouncementsCache();
   };
 
   const f = (k, v) => setForm(p => ({ ...p, [k]: v }));

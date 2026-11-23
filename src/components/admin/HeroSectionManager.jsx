@@ -6,10 +6,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Save, Layout, Plus, Trash2 } from "lucide-react";
+import { Save, Layout, Plus, Trash2, Crop } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { DEFAULT_HERO } from "@/components/home/HeroSection";
-import ImageEffectsPanel, { SliderField } from "@/components/admin/ImageEffectsPanel";
+import { ImageEditModal, SliderField } from "@/components/admin/ImageEffectsPanel";
+import ImageUploader from "@/components/common/ImageUploader";
+import { base44 } from "@/api/base44Client";
+import { toast } from "sonner";
 
 const VARIANT_OPTIONS = [
   { value: "primary", label: "实心按钮" },
@@ -127,6 +130,27 @@ function ButtonEditor({ buttons, onChange }) {
 function AudiencePanel({ form, onChange }) {
   const f = (k, v) => onChange({ ...form, [k]: v });
 
+  const [uploadingBg, setUploadingBg] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+
+  // 背景图上传：File → 先上传拿 URL；字符串（粘贴/手填 URL）→ 直接用
+  const handleBgImage = async (next) => {
+    if (typeof next === "string") {
+      f("bgImageUrl", next);
+      return;
+    }
+    if (!next) return;
+    setUploadingBg(true);
+    try {
+      const { file_url } = await base44.integrations.Core.UploadFile({ file: next, path: "heroBg" });
+      onChange({ ...form, bgMode: "image", bgImageUrl: file_url });
+    } catch {
+      toast.error("图片上传失败，请重试");
+    } finally {
+      setUploadingBg(false);
+    }
+  };
+
   return (
     <div className="space-y-4">
       {/* Text fields */}
@@ -175,19 +199,62 @@ function AudiencePanel({ form, onChange }) {
 
       {/* Image mode */}
       {form.bgMode === "image" && (
-        <div className="p-3 bg-gray-50 rounded-lg border border-gray-200">
-          <ImageEffectsPanel
-            imageUrl={form.bgImageUrl}
-            blurAmount={form.blurAmount ?? 0}
-            brightness={form.brightness ?? 100}
-            overlayColor={form.overlayColor || "#000000"}
-            overlayOpacity={form.overlayOpacity ?? 0}
-            previewTitle={form.title || "标题预览"}
-            aspect={3}
-            cropHint="拖动选区以裁切图片（推荐宽高比 3:1）"
-            onChange={patch => onChange({ ...form, ...patch, bgMode: "image" })}
-            onRemove={() => onChange({ ...form, bgImageUrl: "", bgMode: "white" })}
-          />
+        <div className="space-y-3 p-3 bg-gray-50 rounded-lg border border-gray-200">
+          <div>
+            <Label className="text-xs text-gray-500 mb-1.5 block">背景图片</Label>
+            <ImageUploader
+              id="hero-bg-image"
+              value={form.bgImageUrl || ""}
+              uploading={uploadingBg}
+              onChange={handleBgImage}
+              onDelete={() => onChange({ ...form, bgImageUrl: "", bgMode: "white" })}
+            />
+          </div>
+
+          {form.bgImageUrl && (
+            <>
+              <div className="flex items-center justify-between">
+                <Label className="text-xs text-gray-500">图片效果</Label>
+                <Button size="sm" variant="outline" className="h-6 text-xs"
+                  onClick={() => setEditOpen(true)}>
+                  <Crop className="w-3 h-3 mr-1" />裁切 / 预览
+                </Button>
+              </div>
+              <SliderField label="模糊度" value={form.blurAmount ?? 0} min={0} max={20} unit="px" onChange={v => f("blurAmount", v)} />
+              <SliderField label="明度" value={form.brightness ?? 100} min={30} max={150} unit="%" onChange={v => f("brightness", v)} />
+              <div>
+                <Label className="text-xs text-gray-500">遮罩颜色 / 透明度</Label>
+                <div className="flex items-center gap-2 mt-1">
+                  <input type="color" value={form.overlayColor || "#000000"}
+                    onChange={e => f("overlayColor", e.target.value)}
+                    className="w-8 h-8 rounded border border-gray-200 cursor-pointer p-0.5" />
+                  <Input className="h-7 text-xs font-mono w-24" value={form.overlayColor || "#000000"}
+                    onChange={e => f("overlayColor", e.target.value)} />
+                  <Input type="number" min={0} max={80} className="h-7 text-xs w-20"
+                    value={form.overlayOpacity ?? 0}
+                    onChange={e => f("overlayOpacity", Number(e.target.value))} />
+                  <span className="text-xs text-gray-400">%</span>
+                </div>
+              </div>
+              <p className="text-[11px] text-gray-400">推荐宽高比 3:1；裁切后可回到本页调整模糊度与遮罩。</p>
+            </>
+          )}
+
+          {editOpen && form.bgImageUrl && (
+            <ImageEditModal
+              imageUrl={form.bgImageUrl}
+              initialMode="edit"
+              blurAmount={form.blurAmount ?? 0}
+              brightness={form.brightness ?? 100}
+              overlayColor={form.overlayColor || "#000000"}
+              overlayOpacity={form.overlayOpacity ?? 0}
+              previewTitle={form.title || "标题预览"}
+              aspect={3}
+              uploadPath="heroBg"
+              onChange={patch => onChange({ ...form, ...patch, bgMode: "image" })}
+              onClose={() => setEditOpen(false)}
+            />
+          )}
         </div>
       )}
 

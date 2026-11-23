@@ -2,6 +2,9 @@ import { useState, useEffect } from "react";
 import { X, Check, Megaphone } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import remarkSoftBreaks from "@/lib/remarkSoftBreaks";
+import { base44 } from "@/api/base44Client";
 
 const TYPE_STYLES = {
   urgent:  { header: "bg-red-600",    icon: "text-red-100", title: "text-white" },
@@ -26,6 +29,9 @@ function setDismissedStorage(id, version) {
 }
 function isDismissed(ann) {
   if (!ann.dismissible) return false;
+  // 服务端记录优先：换浏览器 / 换设备也能保持已读
+  if (ann.dismissed === true) return true;
+  // 兼容旧数据的本地兜底（服务端接口异常时依然能不打扰用户）
   const d = getDismissed();
   return d[ann.id] === (ann.dismissed_version || "1");
 }
@@ -53,6 +59,9 @@ export default function AnnouncementModal({ announcements = [] }) {
 
   const style = TYPE_STYLES[ann.type] || TYPE_STYLES.info;
   const label = TYPE_LABELS[ann.type] || "公告";
+  // 新公告的图片直接写在正文 Markdown 里；只有老数据（图片存在 image_urls、正文无图）才走画廊，避免同一张图显示两遍
+  const hasImagesInContent = /!\[[^\]]*\]\(/.test(ann.content || "");
+  const hasLegacyImages = Array.isArray(ann.image_urls) && ann.image_urls.length > 0 && !hasImagesInContent;
 
   const closeOrNext = () => {
     if (current < queue.length - 1) {
@@ -63,6 +72,15 @@ export default function AnnouncementModal({ announcements = [] }) {
   };
 
   const handleDismiss = () => {
+    // 服务端落库，失败不阻塞关闭（本地兜底已生效）
+    base44.functions
+      .invoke("mutateTenantEntity/Announcement/dismiss", {
+        entity: "Announcement",
+        action: "dismiss",
+        id: String(ann.id),
+        data: { version: ann.dismissed_version || "1" },
+      })
+      .catch((e) => console.warn("记录公告已读失败", e));
     setDismissedStorage(ann.id, ann.dismissed_version || "1");
     closeOrNext();
   };
@@ -87,19 +105,17 @@ export default function AnnouncementModal({ announcements = [] }) {
 
         {/* Body */}
         <div className="px-5 py-5 space-y-4">
-          {/* Images */}
-          {ann.image_urls && ann.image_urls.length > 0 && (
+          {/* 历史公告的独立图片 */}
+          {hasLegacyImages && (
             <div className="space-y-2">
               {ann.image_urls.map((url, idx) => (
                 <img key={idx} src={url} alt="" className="w-full rounded-lg object-contain max-h-64" />
               ))}
             </div>
           )}
-          <ReactMarkdown
-            className="text-gray-700 text-sm leading-relaxed prose prose-sm max-w-none prose-a:text-blue-600 prose-a:underline prose-img:rounded-lg prose-img:max-h-64 prose-img:object-contain"
-          >
-            {ann.content}
-          </ReactMarkdown>
+          <div className="text-gray-700 text-sm leading-relaxed prose prose-sm max-w-none prose-a:text-blue-600 prose-a:underline prose-img:rounded-lg prose-img:max-h-64 prose-img:object-contain">
+            <ReactMarkdown remarkPlugins={[remarkGfm, remarkSoftBreaks]}>{ann.content}</ReactMarkdown>
+          </div>
         </div>
 
         {/* Footer */}

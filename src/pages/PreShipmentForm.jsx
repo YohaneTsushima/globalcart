@@ -8,7 +8,7 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import { base44 } from "@/api/base44Client";
-import { fetchTenantConfig, tenantEntity } from "@/lib/tenantApi";
+import { fetchTenantConfig, tenantEntity, shippingPoolApi } from "@/lib/tenantApi";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import AddressForm, { EMPTY_ADDRESS_FORM, serializeAddressToText, isAddressFormValid } from "@/components/common/AddressForm";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -20,8 +20,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Switch } from "@/components/ui/switch";
-import { Truck, Package, MapPin, Check, ChevronLeft, PlusCircle, Zap, Search, Calculator, AlertTriangle, Image, X } from "lucide-react";
+import { Truck, Package, MapPin, Check, ChevronLeft, PlusCircle, Zap, Search, Image, X } from "lucide-react";
 import PaymentMethodSelector from "@/components/common/PaymentMethodSelector";
 import { ImageWithViewer } from "@/components/common/ImageViewer";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
@@ -95,15 +94,29 @@ export default function PreShipmentForm() {
 
     const loadData = async () => {
       try {
-        const [ord, cfg, prefs, methods, poolsRes, tenantSettingsRes] = await Promise.all([
-        base44.functions.invoke('getTenantOrders', {}).then((r) => (r.data?.orders || []).find((o) => o.id === orderId)),
-        fetchTenantConfig(),
-        tenantEntity.list('UserPreference', { user_email: user.email }).catch(() => []),
-        base44.functions.invoke('managePaymentMethod', { action: 'list' }).then((r) => r.data?.methods || []).catch(() => []),
-        base44.functions.invoke('getTenantShippingPools', { status: 'pending' }).catch(() => ({ data: { pools: [] } })),
-        base44.functions.invoke('getTenantSettings', {}).catch(() => ({ data: { settings: {}, raw: [] } })),
+        const [orderDetail, cfg, prefs, methods, poolPage] = await Promise.all([
+          // 订单详情：order/info/orderDetail 返回 OrderDetailDto，含 pre_shipment / pre_shipment_status
+          base44.functions.invoke('order/info/orderDetail', { id: String(orderId) })
+            .then((r) => r.data || null)
+            .catch(() => null),
+          fetchTenantConfig(),
+          tenantEntity.list('UserPreference', { user_email: user.email }).catch(() => []),
+          // 支付方式与提交订单页共用同一份配置
+          base44.functions
+            .invoke('config/page/getSubmitOrderPageData', {})
+            .then((r) => r?.data?.payment_methods || [])
+            .catch(() => []),
+          // 可加入的官方拼邮池（看板数据）
+          shippingPoolApi
+            .page(null, { page: 1, page_size: 200, tab: 'official_kanban', status: 'all', show_archived: false })
+            .catch(() => ({ pools: [] })),
         ]);
-        const tenantSettings = tenantSettingsRes?.data?.settings || {};
+        const ord = orderDetail;
+        // fetchTenantConfig 返回的 settings 是 [{ key, value }] 数组，这里摊平成对象方便按键读取
+        const tenantSettings = Array.isArray(cfg?.settings)
+          ? cfg.settings.reduce((acc, s) => { if (s?.key) acc[s.key] = s.value; return acc; }, {})
+          : (cfg?.settings || {});
+        const poolsRes = { data: { pools: poolPage?.pools || [] } };
         // Feature gate + allowed shipping methods whitelist
         if (tenantSettings['pre_shipment_enabled'] === 'false') setPreShipmentEnabled(false);
         // fullpay_once_enabled defaults to false — only enabled when explicitly set to 'true'
@@ -509,6 +522,7 @@ export default function PreShipmentForm() {
         return {
           id: a.id,
           name: a.name,
+          service_name: a.name,
           fee: isCustomizable && customFee !== undefined ? customFee : a.fee,
           fee_currency: a.fee_currency
         };
@@ -526,22 +540,14 @@ export default function PreShipmentForm() {
       order_id: orderId,
       pre_shipment: preShipment
     };
-    
-    // Also update order-level fields for one-time payment
-    if (fullPayOnceConfig) {
-      updatePayload.user_estimated_weight_g = fullPayOnceConfig.user_estimated_weight_g;
-      updatePayload.shipping_method = fullPayOnceConfig.shipping_method_code;
-      updatePayload.destination_country = fullPayOnceConfig.destination_country;
-      updatePayload.fullpay_once_config = fullPayOnceConfig;
-    }
-    
-    const res = await base44.functions.invoke('updateTenantOrder', updatePayload);
+
+    const res = await base44.functions.invoke('order/info/updatePreShipment', updatePayload);
 
     // Update local order state so subsequent edits in the same session see fresh data
-    if (res?.data?.order) {
-      setOrder(res.data.order);
+    if (res?.data) {
+      setOrder(res.data);
     } else {
-      setOrder((prev) => ({ ...prev, pre_shipment: preShipment }));
+      setOrder((prev) => ({ ...prev, pre_shipment: preShipment, pre_shipment_status: 'submitted' }));
     }
 
     setSubmitting(false);
