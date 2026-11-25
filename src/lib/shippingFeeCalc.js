@@ -108,10 +108,32 @@ export function calcFeeBreakdownPerUser({
     // 发货增值服务：中转拼邮按该用户的**每个批次**计费，累加所有批次的 selected_addons；
     // 同一批次内按 addon id/name 去重，不同批次即使同一服务也分别收费。
     const userAddons = [];
-    if (isTransit) {
-      for (const rec of transitRecordsByEmail[email] || []) {
+    const userTransitRecords = transitRecordsByEmail[email] || [];
+    if (isTransit && userTransitRecords.length > 0) {
+      for (const rec of userTransitRecords) {
         const seenAddonKeys = new Set();
         for (const a of rec.selected_addons || []) {
+          const key = a.id || a.service_name;
+          if (key && seenAddonKeys.has(key)) continue;
+          if (key) seenAddonKeys.add(key);
+          userAddons.push(a);
+        }
+      }
+    } else if (isTransit) {
+      // 官方拼邮池没有中转记录：增值服务只存在订单的预出货快照里，按订单兜底计费，
+      // 否则预出货时勾选的增值服务在池费用明细里会漏掉。
+      const snapshotAddons = userOrders.flatMap(o => o.pre_shipment_addons || o.pre_shipment?.selected_addons || []);
+      if (snapshotAddons.length > 0) {
+        const seenAddonKeys = new Set();
+        for (const a of snapshotAddons) {
+          const key = a.id || a.service_name || a.name;
+          if (key && seenAddonKeys.has(key)) continue;
+          if (key) seenAddonKeys.add(key);
+          userAddons.push(a);
+        }
+      } else {
+        const seenAddonKeys = new Set();
+        for (const a of pool.selected_addons || []) {
           const key = a.id || a.service_name;
           if (key && seenAddonKeys.has(key)) continue;
           if (key) seenAddonKeys.add(key);
@@ -186,7 +208,7 @@ export function calcFeeBreakdownPerUser({
     if (userAddonFeeJpy > 0) {
       const hasCustomAddon = userAddons.some(a => a.custom_fee != null);
       const originalAddonFee = userAddons.reduce((s, a) => s + (parseFloat(a.fee) || 0), 0);
-      const addonNames = [...new Set(userAddons.map(a => a.service_name).filter(Boolean))].join("、");
+      const addonNames = [...new Set(userAddons.map(a => a.service_name || a.name).filter(Boolean))].join("、");
       items.push({ 
         label: `发货增值服务（${addonNames}）`, 
         amount_jpy: userAddonFeeJpy,

@@ -662,8 +662,22 @@ export default function MyOrders() {
           );
         })()
       )}
-      {pageData?.preShipmentEnabled && ["payment_pending", "paid", "pending_purchase", "purchased", "in_warehouse"].includes(order.order_status) && (
-        (["submitted", "pending_payment", "consumed"].includes(order.pre_shipment_status)) ? (
+      {pageData?.preShipmentEnabled && ["payment_pending", "paid", "pending_purchase", "purchased", "in_warehouse"].includes(order.order_status) && (() => {
+        const inOfficialPoolPlan = order.pre_shipment?.consType === "official_pool"
+          && !order.consolidation_pool_id
+          && ["submitted", "pending_payment", "staged", "consumed"].includes(order.pre_shipment_status);
+        if (inOfficialPoolPlan) {
+          // 已进入官方拼邮计划（用户提交或管理员拉进看板）：只展示状态，不再给「修改预出货」入口
+          const waitingPayment = order.pre_shipment_status === "pending_payment";
+          return (
+            <span className={`inline-flex items-center gap-1 text-xs border px-1.5 py-0.5 rounded-full font-medium ${waitingPayment
+              ? "bg-amber-100 text-amber-700 border-amber-200"
+              : "bg-teal-100 text-teal-700 border-teal-300"}`}>
+              <Truck className="w-3 h-3" />{waitingPayment ? "预出货待付款生效" : "等待拼邮完成"}
+            </span>
+          );
+        }
+        return (["submitted", "pending_payment", "consumed"].includes(order.pre_shipment_status)) ? (
           <div className="flex flex-col items-start gap-1">
             {order.pre_shipment_status === "pending_payment" ? (
               <span className="inline-flex items-center gap-1 text-xs bg-amber-100 text-amber-700 border border-amber-200 px-1.5 py-0.5 rounded-full font-medium">
@@ -684,8 +698,8 @@ export default function MyOrders() {
             onClick={() => navigate(createPageUrl("PreShipmentForm") + `?order_id=${order.id}`)}>
             <Truck className="w-3 h-3 mr-1" />预出货
           </Button>
-        )
-      )}
+        );
+      })()}
       {order.order_status === "in_warehouse" && canNotifyShipment && (() => {
         const editRequest = order.edit_request;
         const orderId = String(order.id);
@@ -700,6 +714,12 @@ export default function MyOrders() {
         const pendingSplit = (pageData?.split_requests || []).find(
           r => Number(r.order_id) === Number(order.id)
         );
+        // 官方拼邮计划中的订单：状态已在预出货那块统一展示，这里不再给「通知发货」入口
+        if (order.pre_shipment?.consType === "official_pool"
+          && ["submitted", "pending_payment", "staged", "consumed"].includes(order.pre_shipment_status)
+          && !order.consolidation_pool_id) {
+          return null;
+        }
         return (
           <div className="flex flex-col items-start gap-1">
             <Button size="sm" className="h-7 text-xs bg-teal-600 hover:bg-teal-700 shrink-0"

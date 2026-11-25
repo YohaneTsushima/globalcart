@@ -4,7 +4,7 @@
  * Admin can edit tracking number, actual fee.
  */
 import { useState, useEffect, useMemo, useRef } from "react";
-import { X, Package, Edit2, Save, MoreVertical, ArrowRight, RotateCcw, Loader2, Search, Trash2, AlertCircle, CheckCircle, XCircle, CreditCard, ExternalLink, Upload, Truck, MapPin, PlusCircle, MoveRight, Star, ChevronDown, ChevronUp, Layers, Tag } from "lucide-react";
+import { X, Package, Edit2, Save, MoreVertical, ArrowRight, RotateCcw, Loader2, Search, Trash2, AlertCircle, CheckCircle, XCircle, CreditCard, ExternalLink, Truck, MapPin, PlusCircle, MoveRight, Star, ChevronDown, Layers } from "lucide-react";
 import { base44 } from "@/api/base44Client";
 import { openAlipayPopup, openAlipayBlankPopup } from "@/lib/alipayUtils";
 import { usePermissions } from "@/hooks/usePermissions";
@@ -24,8 +24,6 @@ import CustomsDeclarationDisplay from "@/components/shippingpool/CustomsDeclarat
 import { ImageWithViewer } from "@/components/common/ImageViewer";
 import PaymentMethodSelector from "@/components/common/PaymentMethodSelector";
 import ImageUploader from "@/components/common/ImageUploader";
-import PaymentProofUploader from "@/components/shippingpool/PaymentProofUploader";
-import OrderDetailCard from "@/components/shippingpool/OrderDetailCard";
 import OrderDetailPanel from "@/components/shippingpool/OrderDetailPanel";
 import TransitShippedPanel from "@/components/shippingpool/TransitShippedPanel";
 import UserGroupHeader from "@/components/shippingpool/UserGroupHeader";
@@ -458,6 +456,22 @@ export default function ShippingPoolDetailModal({ pool: initialPool, isAdmin, cu
 
   const submitAddOrder = async (orderId) => {
     setAddingOrderId(orderId);
+
+    // 官方拼邮池（管理员建的空池）：走看板的入池接口，由后端同步订单状态与预出货快照
+    if (isAdmin && pool.is_admin_created && pool.consolidation_type === "transit") {
+      try {
+        await shippingPoolApi.officialMove({ pool_id: Number(pool.id), order_ids: [Number(orderId)] });
+        toast.success("已加入官方拼邮池");
+      } catch (err) {
+        persistentToastError(err?.response?.data?.message || "加入失败，请稍后重试");
+      } finally {
+        setAddingOrderId(null);
+        setShowAddOrder(false);
+        await refreshPool();
+        onUpdated?.();
+      }
+      return;
+    }
 
     const order = addableOrders.find(o => o.id === orderId);
 
@@ -1870,7 +1884,7 @@ export default function ShippingPoolDetailModal({ pool: initialPool, isAdmin, cu
           </div>
 
           {/* Add more orders to this pool — users on their own pending pools; admins on any pending pool they created or that is non-private */}
-          {pool.status === "pending" && (isAdmin ? (!pool.is_private || pool.creator_email === currentUser?.email) : true) && (
+          {pool.status === "pending" && (isAdmin ? (pool.is_admin_created || !pool.is_private || pool.creator_email === currentUser?.email) : pool.consolidation_type !== "transit") && (
             <div>
               {/* Address/addon notice for non-admin users */}
               {!isAdmin && !showAddOrder && (() => {
@@ -1889,7 +1903,7 @@ export default function ShippingPoolDetailModal({ pool: initialPool, isAdmin, cu
                   );
                 }
               })()}
-              {pool.consolidation_type !== "transit" && (!showAddOrder ? (
+              {(isAdmin || pool.consolidation_type !== "transit") && (!showAddOrder ? (
                 <button
                   onClick={openAddOrder}
                   className="flex items-center gap-1.5 text-xs text-blue-600 hover:text-blue-800 border border-dashed border-blue-200 hover:border-blue-400 rounded-lg px-3 py-2 w-full justify-center transition-colors bg-blue-50/30 hover:bg-blue-50">
@@ -2151,17 +2165,24 @@ export default function ShippingPoolDetailModal({ pool: initialPool, isAdmin, cu
               const hasTransitAddr = pool.transit_location_name || (transitLoc && (transitLoc.address || transitLoc.province || transitLoc.country));
 
               // 按当前用户（管理员看全部）过滤 transit_shipping 记录
-              const visibleTransitRecords = (pool.transit_shipping || []).filter(t => t && (isAdmin || (currentUser?.email && t.user_email === currentUser.email)));
+              const visibleTransitRecords = (pool.transit_shipping || []).filter(
+                t => t && t.status !== 'cancelled' && (isAdmin || (currentUser?.email && t.user_email === currentUser.email))
+              );
 
               // 每条记录按自己的 transit_shipping_method 判断类型
               const isPickupOrStorageMethod = (m) => m === '__pickup__' || m === 'pickup' || m === '__storage__' || m === 'storage';
               const isStorageMethodOf = (m) => m === '__storage__' || m === 'storage';
-              // 普通快递记录：有 final_address 的显示"最终收货地址"
-              const transitRecords = visibleTransitRecords.filter(t => t.final_address && t.final_address.recipient_name);
+              // 普通快递记录：有 final_address 的显示"最终收货地址"（老订单预出货地址只有 label/country，也保留一块占位）
+              const transitRecords = visibleTransitRecords.filter(
+                t => t.final_address && !isPickupOrStorageMethod(t.transit_shipping_method)
+              );
               // 自取/暂存记录：transit_shipping_method 是 pickup/storage
               const pickupStorageRecords = visibleTransitRecords.filter(t => isPickupOrStorageMethod(t.transit_shipping_method));
 
-              if (!hasTransitAddr && transitRecords.length === 0 && pickupStorageRecords.length === 0) return null;
+              // 官方拼邮池没有 transit_shipping 记录，最终收货地址存在池本身（建池时填写）
+              const hasPoolAddress = !!(pool.recipient_name || pool.address_line1 || pool.city || pool.state || pool.country);
+
+              if (!hasTransitAddr && transitRecords.length === 0 && pickupStorageRecords.length === 0 && !hasPoolAddress) return null;
               return (
                 <div className="space-y-2">
                   {hasTransitAddr && (
@@ -2173,6 +2194,21 @@ export default function ShippingPoolDetailModal({ pool: initialPool, isAdmin, cu
                           {transitLoc.country ? `\n${transitLoc.country}` : ""}
                         </p>
                       )}
+                    </AddressCard>
+                  )}
+                  {hasPoolAddress && transitRecords.length === 0 && pickupStorageRecords.length === 0 && (
+                    <AddressCard title="最终收货地址">
+                      {pool.recipient_name && <p className="font-medium">{pool.recipient_name}</p>}
+                      {pool.recipient_phone && <p className="text-xs">{pool.recipient_phone}</p>}
+                      <p className="whitespace-pre-wrap">
+                        {pool.address_line1}{pool.address_line2 ? ` ${pool.address_line2}` : ""}
+                        {pool.address_line3 ? ` ${pool.address_line3}` : ""}<br />
+                        {pool.city && `${pool.city} `}
+                        {pool.state && `${pool.state} `}
+                        {pool.postal_code && `${pool.postal_code}`}<br />
+                        {pool.country}
+                      </p>
+                      {pool.shipping_method && <p className="text-xs text-blue-700">发货方式：{pool.shipping_method}</p>}
                     </AddressCard>
                   )}
                   {pickupStorageRecords.map((t, i) => {
@@ -2213,6 +2249,9 @@ export default function ShippingPoolDetailModal({ pool: initialPool, isAdmin, cu
                             <p className="text-xs text-blue-700">发货方式：{t.transit_shipping_method}</p>
                           )}
                           {renderFinalAddress(t.final_address)}
+                          {!t.final_address?.recipient_name && !t.final_address?.addr1 && (
+                            <p className="text-xs text-blue-500">用户预出货时未填写收件人 / 详细地址</p>
+                          )}
                         </div>
                       </details>
                     );

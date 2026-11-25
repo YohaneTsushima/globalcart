@@ -363,6 +363,12 @@ export default function AdminOrderEditModal({ order, initialItemSizeTemplates, o
           return;
         }
 
+        if (payload.is_official_pool) {
+          toast.success('已入库，订单已进入官方拼邮暂存区');
+          onSaved();
+          return;
+        }
+
         onSaved();
         return;
       }

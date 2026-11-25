@@ -52,6 +52,7 @@ export default function PreShipmentForm() {
   const [consType, setConsType] = useState(""); // "" = direct, "transit" = transit
   const [joinOfficialPool, setJoinOfficialPool] = useState(false); // Join official shipping pool
   const [selectedPoolId, setSelectedPoolId] = useState(""); // Specific pool selection
+  const [poolPickerOpen, setPoolPickerOpen] = useState(false);
   const [joinExistingPool, setJoinExistingPool] = useState(false); // Join existing pool (direct or transit)
   const [selectedExistingPoolId, setSelectedExistingPoolId] = useState(""); // Selected existing pool
   const [shippingMethod, setShippingMethod] = useState("");
@@ -108,17 +109,17 @@ export default function PreShipmentForm() {
             .invoke('config/page/getSubmitOrderPageData', {})
             .then((r) => r?.data?.payment_methods || [])
             .catch(() => []),
-          // 可加入的官方拼邮池（看板数据）
+          // 可加入的官方拼邮池：后端按订单所属租户筛选，前端不再二次过滤
           shippingPoolApi
-            .page(null, { page: 1, page_size: 200, tab: 'official_kanban', status: 'all', show_archived: false })
-            .catch(() => ({ pools: [] })),
+            .officialList(orderId)
+            .catch(() => []),
         ]);
         const ord = orderDetail;
         // fetchTenantConfig 返回的 settings 是 [{ key, value }] 数组，这里摊平成对象方便按键读取
         const tenantSettings = Array.isArray(cfg?.settings)
           ? cfg.settings.reduce((acc, s) => { if (s?.key) acc[s.key] = s.value; return acc; }, {})
           : (cfg?.settings || {});
-        const poolsRes = { data: { pools: poolPage?.pools || [] } };
+        const poolsRes = { data: { pools: Array.isArray(poolPage) ? poolPage : [] } };
         // Feature gate + allowed shipping methods whitelist
         if (tenantSettings['pre_shipment_enabled'] === 'false') setPreShipmentEnabled(false);
         // fullpay_once_enabled defaults to false — only enabled when explicitly set to 'true'
@@ -171,7 +172,7 @@ export default function PreShipmentForm() {
           // Restore the specific pool selection (use target_pool_id, NOT pool_created which is an automation flag)
           if (savedConsType === "official_pool") {
             setJoinOfficialPool(true);
-            setSelectedPoolId(ps.target_pool_id || "");
+            setSelectedPoolId(ps.target_pool_id ? String(ps.target_pool_id) : "");
           }
           // Restore join existing pool selection (for both direct and transit)
           if (ps.join_existing_pool && ps.target_pool_id) {
@@ -248,19 +249,8 @@ export default function PreShipmentForm() {
           return prevIds === newIds ? prev : methods || [];
         });
 
-        // Set all available pools for user to join
-        const allPools = poolsRes.data?.pools || [];
-        
-        // Filter pools that user can join:
-        // - All admin-created official pools (any status)
-        // - User's own pools (direct shipping or transit consolidation, pending/processing status)
-        // - Other users' non-private transit pools (pending status)
-        const availablePools = allPools.filter((p) =>
-        p.is_admin_created || (
-          (p.status === "pending" || p.status === "processing") && (p.creator_email === user.email || p.consolidation_type === 'transit')
-        )
-        );
-        setOfficialPools(availablePools);
+        // 可加入的官方拼邮池由后端按订单所属租户返回，前端不再过滤
+        setOfficialPools(poolsRes.data.pools);
 
         const pref = prefs[0];
         const addrs = (pref?.saved_addresses || []).map((a) => ({ ...EMPTY_ADDRESS_FORM, ...a }));
@@ -425,7 +415,7 @@ export default function PreShipmentForm() {
     const transitLoc = transitLocations.find((l) => l.id === transitLocationId);
 
     // Handle official pool selection
-    const selectedPool = officialPools.find((p) => p.id === selectedPoolId);
+    const selectedPool = officialPools.find((p) => String(p.id) === String(selectedPoolId));
     const poolCode = selectedPool?.pool_code || "";
 
     // Handle existing pool selection (direct or transit)
@@ -1204,7 +1194,7 @@ export default function PreShipmentForm() {
               <p className="text-[10px] text-gray-500 mt-0.5">管理员创建 · 优惠运费</p>
             </div>
             <div className="p-2">
-              <Popover>
+              <Popover open={poolPickerOpen} onOpenChange={setPoolPickerOpen}>
                 <PopoverTrigger asChild>
                   <Button
                     variant="outline"
@@ -1213,7 +1203,7 @@ export default function PreShipmentForm() {
                     {selectedPoolId ?
                       <span className="truncate">
                         {(() => {
-                          const pool = adminPools.find(p => p.id === selectedPoolId);
+                          const pool = adminPools.find(p => String(p.id) === String(selectedPoolId));
                           return pool ? `${pool.pool_code} · ${pool.title || ''}` : '选择拼邮池';
                         })()}
                       </span> :
@@ -1230,7 +1220,7 @@ export default function PreShipmentForm() {
                       <CommandGroup>
                         <CommandItem
                           value="default"
-                          onSelect={() => setSelectedPoolId("")}
+                          onSelect={() => { setSelectedPoolId(""); setPoolPickerOpen(false); }}
                           className="flex items-center gap-2"
                         >
                           <div className={`w-4 h-4 rounded-full border flex items-center justify-center ${!selectedPoolId ? 'border-blue-600' : 'border-gray-300'}`}>
@@ -1245,11 +1235,11 @@ export default function PreShipmentForm() {
                           <CommandItem
                             key={pool.id}
                             value={`${pool.pool_code} ${pool.title || ''} ${pool.shipping_method || ''}`}
-                            onSelect={() => setSelectedPoolId(pool.id)}
+                            onSelect={() => { setSelectedPoolId(String(pool.id)); setPoolPickerOpen(false); }}
                             className="flex items-center gap-2"
                           >
-                            <div className={`w-4 h-4 rounded-full border flex items-center justify-center ${selectedPoolId === pool.id ? 'border-blue-600' : 'border-gray-300'}`}>
-                              {selectedPoolId === pool.id && <div className="w-2 h-2 rounded-full bg-blue-600" />}
+                            <div className={`w-4 h-4 rounded-full border flex items-center justify-center ${String(selectedPoolId) === String(pool.id) ? 'border-blue-600' : 'border-gray-300'}`}>
+                              {String(selectedPoolId) === String(pool.id) && <div className="w-2 h-2 rounded-full bg-blue-600" />}
                             </div>
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center gap-1.5">

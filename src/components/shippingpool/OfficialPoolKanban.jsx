@@ -8,22 +8,20 @@
  */
 import { useState, useEffect, useCallback } from "react";
 import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd";
-import { base44 } from "@/api/base44Client";
 import { shippingPoolApi, tenantEntity, fetchTenantConfig } from "@/lib/tenantApi";
 import { EMPTY_ADDRESS_FORM } from "@/components/common/AddressForm";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Users, Package, Scale, Plus, ChevronDown, ChevronRight,
-  Settings2, Edit2, MapPin, Layers, Calendar, ArrowUpDown,
-  Inbox, GripVertical, Clock, Warehouse, ArrowRight, X, CheckCircle2, Loader2, CheckSquare, MessageSquare, User
+  Edit2, MapPin, Layers, Calendar, ArrowUpDown,
+  Inbox, GripVertical, Clock, Warehouse, ArrowRight, X, Loader2, CheckSquare, MessageSquare, User
 } from "lucide-react";
 import JoinOfficialPoolModal from "@/components/shippingpool/JoinOfficialPoolModal";
 import OrderDetailDrawer from "@/components/orders/OrderDetailDrawer";
-import OfficialPoolUserGroupModal from "@/components/shippingpool/OfficialPoolUserGroupModal";
+import { toast } from "sonner";
 import OfficialPoolOrderDetailModal from "@/components/shippingpool/OfficialPoolOrderDetailModal";
 import CreateOfficialPoolModal from "@/components/shippingpool/CreateOfficialPoolModal";
-import PendingPoolManager from "@/components/shippingpool/PendingPoolManager";
 import PrivacyAwareOrderInfo from "@/components/shippingpool/PrivacyAwareOrderInfo";
 
 const STATUS_COLORS = {
@@ -215,7 +213,6 @@ function DraggableStagingCard({ draggableId, index, order, officialPools, isAdmi
 // ─── Draggable Group Card ─────────────────────────────────────────────────────
 function DraggableGroupCard({ draggableId, index, group, allOrders, pool, currentUser, isAdmin, shippingAddons, savedAddresses, onRefresh, selected, onSelect, selectedIds, onSelectEntry, autoExpandOnDrop, userPrefsMap }) {
   const [expanded, setExpanded] = useState(false);
-  const [editGroupOpen, setEditGroupOpen] = useState(false);
   const [editOrderEntry, setEditOrderEntry] = useState(null);
 
   const orderEntries = group.order_entries || [];
@@ -230,9 +227,18 @@ function DraggableGroupCard({ draggableId, index, group, allOrders, pool, curren
   
   const resolvedOrders = orderEntries.map(entry => ({
     entry,
-    order: allOrders.find(o => o.id === entry.order_id) || null,
+    order: allOrders.find(o => String(o.id) === String(entry.order_id)) || null,
   }));
   const totalWeight = resolvedOrders.reduce((s, { order }) => s + (order?.weight_g || 0), 0);
+  
+  // 官方池的最终收货地址直接取订单预出货快照（不再维护任务组地址）
+  const groupFinalAddress = (() => {
+    for (const { order } of resolvedOrders) {
+      const addr = order?.pre_shipment?.address;
+      if (addr && (addr.recipient_name || addr.addr1 || addr.phone)) return addr;
+    }
+    return group.group_final_address || null;
+  })();
   
   // Count group-level note (not individual entries)
   const hasGroupNote = !!group.note;
@@ -256,7 +262,7 @@ function DraggableGroupCard({ draggableId, index, group, allOrders, pool, curren
 
   const handleCardClick = (e) => {
     if (e.shiftKey) { e.preventDefault(); onSelect?.(draggableId); return; }
-    canEdit && !editGroupOpen && setEditGroupOpen(true);
+    setExpanded(v => !v);
   };
 
   return (
@@ -304,17 +310,12 @@ function DraggableGroupCard({ draggableId, index, group, allOrders, pool, curren
                   </Badge>
                 )}
                 <span className="text-xs text-gray-400">{totalWeight}g</span>
-                {canEdit && (
-                  <button onClick={e => { e.stopPropagation(); setEditGroupOpen(true); }} className="p-1 rounded hover:bg-blue-100 text-gray-400 hover:text-blue-600 transition-colors">
-                    <Edit2 className="w-3 h-3" />
-                  </button>
-                )}
               </div>
             </div>
-            {group.group_final_address?.recipient_name && (
+            {groupFinalAddress?.recipient_name && (
               <div className="px-3 py-1.5 flex items-center gap-1.5 text-xs text-gray-400 border-b border-gray-100">
                 <MapPin className="w-3 h-3" />
-                <span className="truncate">{group.group_final_address.recipient_name}{group.group_final_address.state ? ` · ${group.group_final_address.state}` : ""}</span>
+                <span className="truncate">{groupFinalAddress.recipient_name}{groupFinalAddress.state ? ` · ${groupFinalAddress.state}` : ""}</span>
               </div>
             )}
             {expanded && (
@@ -361,10 +362,6 @@ function DraggableGroupCard({ draggableId, index, group, allOrders, pool, curren
           </div>
         )}
       </Draggable>
-      {editGroupOpen && (
-        <OfficialPoolUserGroupModal pool={pool} group={group} shippingAddons={shippingAddons} savedAddresses={savedAddresses}
-          onClose={() => setEditGroupOpen(false)} onSuccess={() => { setEditGroupOpen(false); onRefresh?.(); }} />
-      )}
       {editOrderEntry && (
         <OfficialPoolOrderDetailModal pool={pool} group={group} orderEntry={editOrderEntry.entry} order={editOrderEntry.order}
           shippingAddons={shippingAddons} savedAddresses={savedAddresses}
@@ -375,7 +372,7 @@ function DraggableGroupCard({ draggableId, index, group, allOrders, pool, curren
 }
 
 // ─── Add-to-Staging Modal ─────────────────────────────────────────────────────
-function AddToStagingModal({ allOrders, officialPools, currentUser, stagedOrderIds, onClose, onSuccess }) {
+function AddToStagingModal({ allOrders, availableOrders = null, officialPools, currentUser, stagedOrderIds, onClose, onSuccess }) {
   const [selectedOrderIds, setSelectedOrderIds] = useState([]);
   const [selectedPoolId, setSelectedPoolId] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -383,7 +380,10 @@ function AddToStagingModal({ allOrders, officialPools, currentUser, stagedOrderI
   // Only show real (non-pending) pools as join targets
   const realOfficialPools = officialPools.filter(p => !p.is_pending_pool);
 
-  const eligibleOrders = allOrders.filter(o => {
+  // 候选订单优先用后端返回的 available_orders（已入库、未挂池、不在暂存区）；
+  // 后端没给时退回前端过滤，保证弹窗不为空。
+  const candidateOrders = availableOrders != null ? availableOrders : allOrders;
+  const eligibleOrders = candidateOrders.filter(o => {
     if (["shipped", "delivered", "cancelled"].includes(o.order_status)) return false;
     const alreadyInPool = officialPools.some(p => !p.is_pending_pool && (p.order_ids || []).some(id => String(id) === String(o.id)));
     if (alreadyInPool) return false;
@@ -394,23 +394,13 @@ function AddToStagingModal({ allOrders, officialPools, currentUser, stagedOrderI
   const handleSubmit = async () => {
     if (selectedOrderIds.length === 0) return;
     setSubmitting(true);
-    const targetPool = officialPools.find(p => p.id === selectedPoolId);
-    await Promise.all(selectedOrderIds.map(orderId => {
-      const order = allOrders.find(o => o.id === orderId);
-      if (!order) return Promise.resolve();
-      const newPre = {
-        ...(order.pre_shipment || {}),
-        consType: "official_pool",
-        target_pool_id: selectedPoolId || "",
-        target_pool_code: targetPool?.pool_code || "",
-        target_pool_title: targetPool ? (targetPool.title || targetPool.pool_code) : "",
-        pool_created: false,
-        _manually_staged: true,
-        _staged_by: currentUser?.email,
-        _staged_at: new Date().toISOString(),
-      };
-      return base44.functions.invoke('updateTenantOrder', { order_id: orderId, pre_shipment: newPre });
-    }));
+    try {
+      await shippingPoolApi.officialStage({ order_ids: selectedOrderIds.map(Number) });
+    } catch (err) {
+      toast.error(err?.response?.data?.message || '加入暂存区失败，请重试');
+      setSubmitting(false);
+      return;
+    }
     setSubmitting(false);
     onSuccess?.();
   };
@@ -486,10 +476,28 @@ function AddToStagingModal({ allOrders, officialPools, currentUser, stagedOrderI
 }
 
 // ─── Pool Column (Droppable) ──────────────────────────────────────────────────
+function buildGroupsFromOrders(pool, allOrders) {
+  const ids = (pool.order_ids || []).map(String);
+  const orders = ids
+    .map(id => (allOrders || []).find(o => String(o.id) === id))
+    .filter(Boolean);
+  const groups = new Map();
+  orders.forEach(o => {
+    const email = o.user_email || "";
+    if (!groups.has(email)) {
+      groups.set(email, { user_email: email, user_name: o.user_name, order_entries: [] });
+    }
+    groups.get(email).order_entries.push({ order_id: o.id, user_email: email });
+  });
+  return [...groups.values()];
+}
+
 function PoolColumn({ pool, allOrders, currentUser, isAdmin, shippingAddons, savedAddresses, onPoolClick, onRefresh, columnDragHandleProps, selectedIds, onSelectItem, lastDropTarget, userPrefsMap }) {
   const [joinOpen, setJoinOpen] = useState(false);
 
-  const perUserGroups = pool.per_user_groups || [];
+  const perUserGroups = (pool.per_user_groups && pool.per_user_groups.length > 0)
+    ? pool.per_user_groups
+    : buildGroupsFromOrders(pool, allOrders);
   const totalWeight = pool.total_weight_g || 0;
   const minWeight = pool.consolidation_min_weight_g || 0;
   const progressPct = minWeight > 0 ? Math.min(100, (totalWeight / minWeight) * 100) : 0;
@@ -653,7 +661,7 @@ function PoolColumn({ pool, allOrders, currentUser, isAdmin, shippingAddons, sav
 // The staging column acts as the "待拼邮" (pending pool) area — it collects all
 // pre-shipment orders awaiting admin assignment to an official pool.
 // Orders are grouped by intended shipping method for easy batch assignment.
-function StagingColumn({ allOrders, officialPools, pendingPools, currentUser, isAdmin, onRefresh, onManagePendingPools, selectedIds, onSelectItem, shippingMethods }) {
+function StagingColumn({ allOrders, stagingOrders = null, availableOrders = null, officialPools, pendingPools, currentUser, isAdmin, onRefresh, selectedIds, onSelectItem, shippingMethods }) {
   const [addModalOpen, setAddModalOpen] = useState(false);
 
   // Collect order IDs already in real (non-pending) official pools
@@ -661,7 +669,8 @@ function StagingColumn({ allOrders, officialPools, pendingPools, currentUser, is
   // Orders in pending pools are also shown in staging (they're awaiting admin assignment)
   const pendingPoolOrderIds = new Set(pendingPools.flatMap(p => p.order_ids || []));
 
-  const stagedOrders = allOrders.filter(o => {
+  // 暂存区订单由后端给（入库 + 已填官方拼邮 + 未入池），不再前端猜状态
+  const stagedOrders = stagingOrders != null ? stagingOrders : allOrders.filter(o => {
     // Skip if already in a real official pool
     if (realPoolOrderIds.has(o.id)) return false;
     const pre = o.pre_shipment;
@@ -704,20 +713,11 @@ function StagingColumn({ allOrders, officialPools, pendingPools, currentUser, is
   const methodGroups = groupByShippingMethod(stagedOrders);
 
   const handleRemove = async (order) => {
-    // If order is in a pending pool, remove from that pool first
-    const pendingPool = pendingPools.find(p => (p.order_ids || []).some(id => String(id) === String(order.id)));
-    if (pendingPool) {
-      await base44.functions.invoke('updateTenantOrder', {
-        order_id: order.id,
-        consolidation_pool_id: "",
-        pre_shipment: { ...(order.pre_shipment || {}), consType: "", target_pool_id: "", target_pool_code: "", pool_created: false, pool_id: "" },
-      });
-    } else {
-      const pre = order.pre_shipment || {};
-      await base44.functions.invoke('updateTenantOrder', {
-        order_id: order.id,
-        pre_shipment: { ...pre, consType: "", target_pool_id: "", target_pool_code: "" },
-      });
+    try {
+      await shippingPoolApi.officialUnstage({ order_ids: [Number(order.id)] });
+    } catch (err) {
+      toast.error(err?.response?.data?.message || '移出暂存区失败，请重试');
+      return;
     }
     onRefresh?.();
   };
@@ -740,9 +740,6 @@ function StagingColumn({ allOrders, officialPools, pendingPools, currentUser, is
           <div className="flex items-center gap-1 flex-shrink-0">
             <button onClick={() => setAddModalOpen(true)} className="p-1.5 rounded-lg hover:bg-amber-50 text-gray-400 hover:text-amber-600 transition-colors" title="手动添加任务">
               <Plus className="w-3.5 h-3.5" />
-            </button>
-            <button onClick={onManagePendingPools} className="p-1.5 rounded-lg hover:bg-amber-50 text-gray-400 hover:text-amber-600 transition-colors" title="管理待拼邮看板">
-              <Settings2 className="w-3.5 h-3.5" />
             </button>
           </div>
         )}
@@ -852,6 +849,7 @@ function StagingColumn({ allOrders, officialPools, pendingPools, currentUser, is
       {addModalOpen && (
         <AddToStagingModal
           allOrders={allOrders}
+          availableOrders={availableOrders}
           officialPools={officialPools}
           currentUser={currentUser}
           stagedOrderIds={stagedOrderIds}
@@ -864,12 +862,11 @@ function StagingColumn({ allOrders, officialPools, pendingPools, currentUser, is
 }
 
 // ─── Main Kanban ──────────────────────────────────────────────────────────────
-export default function OfficialPoolKanban({ pools, allOrders, currentUser, isAdmin, showPoolSorter, setShowPoolSorter, onPoolClick, onRefresh, onLocalUpdate, shippingMethods }) {
+export default function OfficialPoolKanban({ pools, allOrders, stagingOrders = null, availableOrders = null, currentUser, isAdmin, showPoolSorter, setShowPoolSorter, onPoolClick, onRefresh, onLocalUpdate, shippingMethods }) {
   const [shippingAddons, setShippingAddons] = useState([]);
   const [savedAddresses, setSavedAddresses] = useState([]);
   const [userPrefsMap, setUserPrefsMap] = useState({});
   const [createPoolOpen, setCreatePoolOpen] = useState(false);
-  const [pendingPoolManagerOpen, setPendingPoolManagerOpen] = useState(false);
   // Separate pending pools (staging) from regular official pool columns
   const pendingPools = pools.filter(p => p.is_pending_pool);
   // Regular (non-pending) pools only for kanban columns
@@ -896,7 +893,9 @@ export default function OfficialPoolKanban({ pools, allOrders, currentUser, isAd
       fetchTenantConfig(),
       tenantEntity.list('UserPreference', {}).catch(() => []),
     ]).then(([cfg, prefs]) => {
-      setShippingAddons((cfg.addons || []).filter(a => a.addon_type === "shipping" && a.is_active !== false));
+      setShippingAddons((cfg.addons || [])
+        .filter(a => a.addon_type === "shipping" && a.is_active !== false)
+        .map(a => ({ ...a, name: a.service_name || a.name || "", fee: a.fee ?? a.fee_min ?? 0 })));
       // Build a map of user_email -> preference for quick lookup
       const prefsMap = {};
       prefs.forEach(p => {
@@ -946,6 +945,12 @@ export default function OfficialPoolKanban({ pools, allOrders, currentUser, isAd
     return null;
   };
 
+  // 拖拽时订单可能来自池内、暂存区或可选列表，统一按 id 查找
+  const findOrderById = (id) =>
+    (allOrders || []).find(o => String(o.id) === String(id)) ||
+    (stagingOrders || []).find(o => String(o.id) === String(id)) ||
+    (availableOrders || []).find(o => String(o.id) === String(id)) ||
+    null;
   // ─── Drag end handler ───────────────────────────────────────────────────────
   const handleDragEnd = async (result) => {
     const { source, destination, draggableId, type } = result;
@@ -966,9 +971,8 @@ export default function OfficialPoolKanban({ pools, allOrders, currentUser, isAd
     if (source.droppableId === destination.droppableId) return;
 
     const dstId = destination.droppableId;
-    // Only route to real (non-pending) pools; pending pools are absorbed into staging
-    const destPool = dstId.startsWith("pool-") ? regularPools.find(p => p.id === dstId.slice("pool-".length)) : null;
-    const toStaging = dstId === "staging";
+    // Only route to real (non-pending) pools; 拖回暂存区 = 从来源池移出，订单状态回退后会自动出现在暂存区
+    const destPool = dstId.startsWith("pool-") ? regularPools.find(p => String(p.id) === dstId.slice("pool-".length)) : null;
 
     // Collect all draggableIds to move
     const idsToMove = selectedIds.has(draggableId) ? [...selectedIds] : [draggableId];
@@ -984,17 +988,18 @@ export default function OfficialPoolKanban({ pools, allOrders, currentUser, isAd
           // srcPool is null for staging items (pending pool cleanup handled separately in order update)
           items.push({ orderId: parsed.orderId, srcPool: null, originalEntry: null });
         } else if (parsed.type === "pool-order") {
-          const srcPool = pools.find(p => p.id === parsed.srcPoolId);
+          const srcPool = pools.find(p => String(p.id) === String(parsed.srcPoolId));
           if (!srcPool) continue;
           // Skip if same pool
-          if (destPool && parsed.srcPoolId === destPool.id) continue;
-          const entry = srcPool.per_user_groups?.flatMap(g => g.order_entries || []).find(e => e.order_id === parsed.orderId) || null;
+          if (destPool && String(parsed.srcPoolId) === String(destPool.id)) continue;
+          const entry = srcPool.per_user_groups?.flatMap(g => g.order_entries || [])
+            .find(e => String(e.order_id) === String(parsed.orderId)) || null;
           items.push({ orderId: parsed.orderId, srcPool, originalEntry: entry });
         } else if (parsed.type === "pool-group") {
-          const srcPool = pools.find(p => p.id === parsed.srcPoolId);
+          const srcPool = pools.find(p => String(p.id) === String(parsed.srcPoolId));
           if (!srcPool) continue;
           // Skip if same pool
-          if (destPool && parsed.srcPoolId === destPool.id) continue;
+          if (destPool && String(parsed.srcPoolId) === String(destPool.id)) continue;
           const group = srcPool.per_user_groups?.find(g => g.user_email === parsed.userEmail);
           if (!group) continue;
           for (const entry of (group.order_entries || [])) {
@@ -1045,7 +1050,7 @@ export default function OfficialPoolKanban({ pools, allOrders, currentUser, isAd
       const existingGroupIdx = destPatch.per_user_groups.findIndex(g => g.user_email === order.user_email);
       if (existingGroupIdx >= 0) {
         const g = destPatch.per_user_groups[existingGroupIdx];
-        if (!(g.order_entries || []).some(e => e.order_id === order.id)) {
+        if (!(g.order_entries || []).some(e => String(e.order_id) === String(order.id))) {
           g.order_entries = [...(g.order_entries || []), newEntry];
         }
       } else {
@@ -1056,8 +1061,8 @@ export default function OfficialPoolKanban({ pools, allOrders, currentUser, isAd
           group_final_address: null, order_entries: [newEntry],
         });
       }
-      if (!destPatch.order_ids.includes(order.id)) {
-        destPatch.order_ids.push(order.id);
+      if (!destPatch.order_ids.some(id => String(id) === String(order.id))) {
+        destPatch.order_ids.push(String(order.id));
         destPatch.total_weight_g += (order.weight_g || 0);
       }
     };
@@ -1066,16 +1071,16 @@ export default function OfficialPoolKanban({ pools, allOrders, currentUser, isAd
     const destPatch = destPool ? getPoolPatch(destPool) : null;
 
     for (const { orderId, srcPool, originalEntry } of orderItems) {
-      const order = allOrders.find(o => o.id === orderId);
+      const order = findOrderById(orderId);
       if (!order) continue;
 
       // Remove from srcPool patch
       if (srcPool) {
         const srcPatch = getPoolPatch(srcPool);
-        srcPatch.order_ids = srcPatch.order_ids.filter(id => id !== orderId);
+        srcPatch.order_ids = srcPatch.order_ids.filter(id => String(id) !== String(orderId));
         srcPatch.total_weight_g = Math.max(0, srcPatch.total_weight_g - (order.weight_g || 0));
         srcPatch.per_user_groups = srcPatch.per_user_groups
-          .map(g => ({ ...g, order_entries: (g.order_entries || []).filter(e => e.order_id !== orderId) }))
+          .map(g => ({ ...g, order_entries: (g.order_entries || []).filter(e => String(e.order_id) !== String(orderId)) }))
           .filter(g => (g.order_entries || []).length > 0);
       }
 
@@ -1097,7 +1102,7 @@ export default function OfficialPoolKanban({ pools, allOrders, currentUser, isAd
     
     // Track drop target for auto-expand (if dropped to a user group)
     if (destPool && orderItems.length > 0) {
-      const firstOrder = allOrders.find(o => o.id === orderItems[0].orderId);
+      const firstOrder = findOrderById(orderItems[0].orderId);
       if (firstOrder) {
         setLastDropTarget({ poolId: destPool.id, userEmail: firstOrder.user_email, timestamp: Date.now() });
       }
@@ -1105,59 +1110,29 @@ export default function OfficialPoolKanban({ pools, allOrders, currentUser, isAd
     
     setSelectedIds(new Set());
 
-    // Commit pool patches to backend in background (non-blocking)
-    const poolUpdatePromises = [];
-    for (const [poolId, patch] of poolPatches.entries()) {
-      poolUpdatePromises.push(shippingPoolApi.update(poolId, patch));
-    }
-    Promise.all(poolUpdatePromises).catch(err => {
-      console.error('Pool update failed:', err);
-      // Optionally revert UI on failure
-    });
-
-    // Update order records in background (non-blocking)
-    const orderUpdatePromises = orderItems.map(({ orderId, srcPool }) => {
-      const order = allOrders.find(o => o.id === orderId);
-      if (!order) return Promise.resolve();
-      // Check if this order was in a pending pool (for proper cleanup)
-      const srcPendingPool = !srcPool ? pendingPools.find(p => (p.order_ids || []).includes(orderId)) : null;
-      if (destPool) {
-        // Moving from staging (or pending pool) → real pool
-        // If the order was in a pending pool, also remove it from the pending pool via pool update
-        if (srcPendingPool) {
-          shippingPoolApi.update(srcPendingPool.id, {
-            order_ids: (srcPendingPool.order_ids || []).filter(id => id !== orderId),
-            total_weight_g: Math.max(0, (srcPendingPool.total_weight_g || 0) - (order.weight_g || 0)),
-            per_user_groups: (srcPendingPool.per_user_groups || [])
-              .map(g => ({ ...g, order_entries: (g.order_entries || []).filter(e => e.order_id !== orderId) }))
-              .filter(g => (g.order_entries || []).length > 0),
-          }).catch(() => {});
-        }
-        return base44.functions.invoke('updateTenantOrder', {
-          order_id: orderId,
-          order_status: ((!srcPool || srcPendingPool) && order.order_status === "in_warehouse") ? "notified_shipment" : order.order_status,
-          consolidation_pool_id: destPool.id,
-          pre_shipment: { ...(order.pre_shipment || {}), pool_created: true, pool_id: destPool.id, consType: "official_pool", target_pool_id: destPool.id },
-        });
-      } else if (toStaging) {
-        // Moving from real pool → staging (back to pending)
-        const sPool = srcPool || pools.find(p => (p.order_ids || []).includes(orderId));
-        return base44.functions.invoke('updateTenantOrder', {
-          order_id: orderId,
-          consolidation_pool_id: "",
-          pre_shipment: {
-            ...(order.pre_shipment || {}),
-            consType: "official_pool", pool_created: false, pool_id: "",
-            target_pool_id: sPool?.id || "", target_pool_code: sPool?.pool_code || "",
-            target_pool_title: sPool?.title || sPool?.pool_code || "",
-          },
-        });
+    // 真正落库：放入目标池、从来源池移出
+    const orderIdsToMove = orderItems.map(item => item.orderId);
+    const sourcePoolIds = [...new Set(orderItems.filter(item => item.srcPool).map(item => item.srcPool.id))];
+    try {
+      // 先从来源池移出（订单回到入库态），再放入目标池——否则跨池拖拽会被「还未入库」拦住
+      for (const srcPoolId of sourcePoolIds) {
+        if (destPool && String(srcPoolId) === String(destPool.id)) continue;
+        const idsFromPool = orderItems
+          .filter(item => item.srcPool && String(item.srcPool.id) === String(srcPoolId))
+          .map(item => item.orderId);
+        if (idsFromPool.length === 0) continue;
+        await shippingPoolApi.officialRemove({ pool_id: srcPoolId, order_ids: idsFromPool });
       }
-      return Promise.resolve();
-    });
-    Promise.all(orderUpdatePromises).catch(err => {
-      console.error('Order update failed:', err);
-    });
+      if (destPool) {
+        await shippingPoolApi.officialMove({ pool_id: destPool.id, order_ids: orderIdsToMove });
+      }
+    } catch (err) {
+      console.error('Move orders failed:', err);
+      toast.error(err?.response?.data?.message || '移动订单失败，请刷新后重试');
+    }
+    onRefresh?.();
+
+    // 订单状态 / consolidation_pool_id / 预出货快照由后端 officialMove、officialRemove 统一维护
   };
 
   // No empty-state early return — StagingColumn always renders as the left-most column
@@ -1186,12 +1161,13 @@ export default function OfficialPoolKanban({ pools, allOrders, currentUser, isAd
             {/* Staging column — always fixed at the left, acts as 待拼邮 area */}
             <StagingColumn
               allOrders={allOrders}
+              stagingOrders={stagingOrders}
+              availableOrders={availableOrders}
               officialPools={pools}
               pendingPools={pendingPools}
               currentUser={currentUser}
               isAdmin={isAdmin}
               onRefresh={onRefresh}
-              onManagePendingPools={isAdmin ? () => setPendingPoolManagerOpen(true) : undefined}
               selectedIds={selectedIds}
               onSelectItem={handleSelectItem}
               shippingMethods={shippingMethods || []}
@@ -1284,13 +1260,6 @@ export default function OfficialPoolKanban({ pools, allOrders, currentUser, isAd
         />
       )}
 
-      {pendingPoolManagerOpen && (
-        <PendingPoolManager
-          shippingMethods={shippingMethods || []}
-          onClose={() => setPendingPoolManagerOpen(false)}
-          onSuccess={() => { setPendingPoolManagerOpen(false); onRefresh?.(); }}
-        />
-      )}
 
     </>
   );

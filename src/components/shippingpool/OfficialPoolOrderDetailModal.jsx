@@ -4,23 +4,16 @@
  * Notes are stored as an array of message objects: { text, image_urls, created_at }
  * Legacy single `note` + `image_urls` fields are migrated on first open.
  */
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useMemo } from "react";
 import { base44 } from "@/api/base44Client";
 import { shippingPoolApi } from "@/lib/tenantApi";
+import { getStatusLabel, getStatusColor } from "@/lib/orderStatus";
 import { EMPTY_ADDRESS_FORM } from "@/components/common/AddressForm";
-import AddressForm from "@/components/common/AddressForm";
 import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { X, Package, MapPin, Loader2, Link as LinkIcon, PlusCircle, Upload, Send, MessageSquare, User } from "lucide-react";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-
-const ORDER_STATUS_LABELS = {
-  in_warehouse: "已入库", pending_purchase: "待购买", purchased: "已购买",
-  shipped: "已发货", delivered: "已签收",
-};
+import { X, Package, MapPin, Loader2, Link as LinkIcon, Upload, Send, MessageSquare, User } from "lucide-react";
 
 // Migrate legacy note/image_urls to notes array
 function initNotes(entry) {
@@ -32,12 +25,28 @@ function initNotes(entry) {
 }
 
 export default function OfficialPoolOrderDetailModal({ pool, group, orderEntry, order, shippingAddons = [], savedAddresses = [], onClose, onSuccess }) {
+  // AddonOption 的后端字段是 service_name / fee_min / fee_max，这里统一成组件内使用的 name / min_fee / max_fee
+  const addons = useMemo(() => (shippingAddons || []).map((a) => ({
+    ...a,
+    name: a.service_name || a.name || "",
+    min_fee: a.fee_min ?? a.min_fee,
+    max_fee: a.fee_max ?? a.max_fee,
+  })), [shippingAddons]);
+
+  // 最终收货地址直接展示用户预出货的快照，不再允许在池里改
+  const finalAddress = order?.pre_shipment?.address || null;
+
   const [notes, setNotes] = useState(() => initNotes(orderEntry));
   const [draftText, setDraftText] = useState("");
   const [draftImages, setDraftImages] = useState([]);
-  const [selectedAddonIds, setSelectedAddonIds] = useState(orderEntry.selected_addon_ids || []);
+  const [selectedAddonIds, setSelectedAddonIds] = useState(() => (
+    orderEntry.selected_addon_ids ||
+    order?.pre_shipment?.selected_addon_ids ||
+    order?.selected_addon_ids ||
+    []
+  ).map(String));
   const [addonCustomFees, setAddonCustomFees] = useState(() => {
-    // Initialize custom fees from saved data or default to fee
+    // Initialize custom fees from saved data, fallback to the fees recorded on the pre-shipment snapshot
     const fees = {};
     const addonFees = orderEntry.addon_custom_fees;
     if (Array.isArray(addonFees)) {
@@ -45,9 +54,17 @@ export default function OfficialPoolOrderDetailModal({ pool, group, orderEntry, 
         fees[cf.addon_id] = cf.custom_fee;
       });
     }
+    const snapshotAddons = order?.pre_shipment?.selected_addons;
+    if (Array.isArray(snapshotAddons)) {
+      snapshotAddons.forEach(sa => {
+        if (sa?.id != null && sa?.fee != null) fees[sa.id] = sa.fee;
+      });
+    }
     return fees;
   });
   const [addonFeeErrors, setAddonFeeErrors] = useState({});
+  // 订单详情只读展示，底部保存/取消暂时隐藏（代码保留，需要时改回 true）
+  const SHOW_ORDER_ACTIONS = false;
   const [useGroupAddress, setUseGroupAddress] = useState(orderEntry.use_group_address !== false);
   const [overrideAddress, setOverrideAddress] = useState(orderEntry.override_final_address || { ...EMPTY_ADDRESS_FORM });
   const [selectedSavedId, setSelectedSavedId] = useState("");
@@ -152,7 +169,7 @@ export default function OfficialPoolOrderDetailModal({ pool, group, orderEntry, 
   const handleSave = async () => {
     // Validate custom fees are within range before saving
     const validationErrors = [];
-    shippingAddons.filter(a => selectedAddonIds.includes(a.id)).forEach(a => {
+    addons.filter(a => selectedAddonIds.includes(String(a.id))).forEach(a => {
       if (a.is_user_customizable) {
         const customFee = addonCustomFees[a.id];
         if (customFee !== undefined && customFee !== '') {
@@ -172,7 +189,7 @@ export default function OfficialPoolOrderDetailModal({ pool, group, orderEntry, 
     
     setSaving(true);
     // Build selected addons with custom fees if applicable
-    const selectedAddons = shippingAddons.filter(a => selectedAddonIds.includes(a.id))
+    const selectedAddons = addons.filter(a => selectedAddonIds.includes(String(a.id)))
       .map(a => {
         const customFee = addonCustomFees[a.id];
         const finalFee = (a.is_user_customizable && customFee !== undefined) ? customFee : a.fee;
@@ -272,7 +289,7 @@ export default function OfficialPoolOrderDetailModal({ pool, group, orderEntry, 
               )}
               <div className="flex items-center justify-between">
                 <span className="text-gray-500">状态</span>
-                <Badge className="bg-blue-100 text-blue-700 text-xs">{ORDER_STATUS_LABELS[order.order_status] || order.order_status}</Badge>
+                <Badge className={`${getStatusColor(order.order_status, "admin")} text-xs`}>{getStatusLabel(order.order_status, "admin")}</Badge>
               </div>
               {order.weight_g > 0 && (
                 <div className="flex items-center justify-between"><span className="text-gray-500">重量</span><span className="font-medium">{order.weight_g}g</span></div>
@@ -296,28 +313,31 @@ export default function OfficialPoolOrderDetailModal({ pool, group, orderEntry, 
           )}
 
           {/* Addons */}
-          {shippingAddons.length > 0 && (
+          {addons.length > 0 && (
             <div>
               <p className="text-xs font-medium text-gray-500 mb-2">此订单的增值服务</p>
               <div className="space-y-2">
-                {shippingAddons.map(a => {
-                  const isSelected = selectedAddonIds.includes(a.id);
+                {addons.filter(a => selectedAddonIds.includes(String(a.id))).map(a => {
+                  const isSelected = selectedAddonIds.includes(String(a.id));
                   const isCustomizable = a.is_user_customizable && a.min_fee !== undefined && a.max_fee !== undefined && a.max_fee > 0;
                   // For customizable addons, show the saved custom fee or default to the addon's default fee
                   // For non-customizable, show the default fee
                   const customFee = isCustomizable && isSelected ? (addonCustomFees[a.id] ?? a.fee) : a.fee;
                   
                   return (
-                    <div key={a.id} className={`rounded-lg border p-2.5 transition-colors ${isSelected ? "border-yellow-400 bg-yellow-50" : "border-gray-200"}`}>
-                      <label className="flex items-center justify-between gap-3 cursor-pointer">
+                    <div key={a.id} className="rounded-lg border border-yellow-200 bg-yellow-50/60 p-2.5 transition-colors">
+                      <label className="flex items-center justify-between gap-3">
                         <div className="flex items-center gap-2 flex-1">
+                          {/* 订单详情只读展示，勾选框暂时隐藏（保留代码备用） */}
+                          <span className="hidden">
                           <Checkbox checked={isSelected} onCheckedChange={v => {
                             if (v) {
-                              setSelectedAddonIds(prev => [...prev, a.id]);
+                              setSelectedAddonIds(prev => [...prev, String(a.id)]);
                             } else {
-                              setSelectedAddonIds(prev => prev.filter(id => id !== a.id));
+                              setSelectedAddonIds(prev => prev.filter(id => id !== String(a.id)));
                             }
                           }} />
+                          </span>
                           <div>
                             <span className="text-sm font-medium text-gray-800">{a.name}</span>
                             {isCustomizable && isSelected && (
@@ -384,37 +404,22 @@ export default function OfficialPoolOrderDetailModal({ pool, group, orderEntry, 
               <MapPin className="w-3.5 h-3.5 text-gray-400" />最终收货地址
             </p>
 
-            <label className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${useGroupAddress ? "border-blue-300 bg-blue-50" : "border-gray-200 hover:bg-gray-50"}`}>
-              <input type="radio" checked={useGroupAddress} onChange={() => setUseGroupAddress(true)} className="mt-0.5 accent-blue-600" />
-              <div>
-                <p className="text-sm font-medium text-gray-800">使用任务组地址</p>
-                {groupAddress && (
-                  <p className="text-xs text-gray-400 mt-0.5 truncate max-w-xs">
-                    {groupAddress.recipient_name}{groupAddress.state ? ` · ${groupAddress.state}` : ""}
+            <div className="p-3 rounded-lg border border-blue-200 bg-blue-50/60 text-sm text-blue-900 space-y-0.5">
+              {finalAddress ? (
+                <>
+                  <p className="font-medium">{finalAddress.recipient_name || "未填写收件人"}</p>
+                  {finalAddress.phone && <p className="text-xs">{finalAddress.phone}</p>}
+                  <p className="text-xs whitespace-pre-wrap">
+                    {[finalAddress.state, finalAddress.city, finalAddress.addr1, finalAddress.addr2, finalAddress.addr3]
+                      .filter(Boolean).join(" ")}
                   </p>
-                )}
-              </div>
-            </label>
-
-            <label className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${!useGroupAddress ? "border-blue-300 bg-blue-50" : "border-gray-200 hover:bg-gray-50"}`}>
-              <input type="radio" checked={!useGroupAddress} onChange={() => setUseGroupAddress(false)} className="mt-0.5 accent-blue-600" />
-              <span className="text-sm font-medium text-gray-800">为此订单指定独立地址</span>
-            </label>
-
-            {!useGroupAddress && (
-              <div className="space-y-3 ml-2">
-                {savedAddresses.length > 0 && (
-                  <Select value={selectedSavedId || "__new__"} onValueChange={handleSavedAddressSelect}>
-                    <SelectTrigger className="h-8 text-sm bg-white"><SelectValue placeholder="从地址簿选择" /></SelectTrigger>
-                    <SelectContent>
-                      {savedAddresses.map(a => <SelectItem key={a.id} value={a.id}>{a.label}</SelectItem>)}
-                      <SelectItem value="__new__"><span className="flex items-center gap-1.5 text-blue-600"><PlusCircle className="w-3.5 h-3.5" />手动填写</span></SelectItem>
-                    </SelectContent>
-                  </Select>
-                )}
-                <AddressForm value={overrideAddress} onChange={v => setOverrideAddress(p => ({ ...p, ...v }))} />
-              </div>
-            )}
+                  {finalAddress.postal_code && <p className="text-xs">{finalAddress.postal_code} {finalAddress.country || ""}</p>}
+                </>
+              ) : (
+                <p className="text-xs text-blue-600">该订单还没有预出货地址</p>
+              )}
+              <p className="text-[11px] text-blue-500 pt-1">地址来自用户预出货填写，如需修改请让用户重新提交预出货</p>
+            </div>
           </div>
 
           {/* Notes / Messages */}
@@ -528,13 +533,15 @@ export default function OfficialPoolOrderDetailModal({ pool, group, orderEntry, 
           </div>
         </div>
 
-        {/* Footer */}
+        {/* Footer：订单详情当前只读，保存/取消暂时隐藏（代码保留） */}
+        {SHOW_ORDER_ACTIONS && (
         <div className="px-5 py-3.5 border-t border-gray-100 flex items-center justify-between">
           <Button variant="outline" size="sm" onClick={onClose}>取消</Button>
           <Button size="sm" className="bg-blue-600 hover:bg-blue-700" disabled={saving} onClick={handleSave}>
             {saving ? <><Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />保存中...</> : "保存"}
           </Button>
         </div>
+        )}
       </div>
     </div>
     </>

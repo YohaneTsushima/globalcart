@@ -82,6 +82,8 @@ export default function ShippingPool() {
   const [fullpayOnceToleranceJpy, setFullpayOnceToleranceJpy] = useState(500);
   const [transitHandlingFeeSplit, setTransitHandlingFeeSplit] = useState(false);
   const [allOrders, setAllOrders] = useState([]);
+  const [stagingOrders, setStagingOrders] = useState([]);
+  const [availableOrders, setAvailableOrders] = useState([]);
   const { pageSize: poolPageSize, setPageSize: setPoolPageSize, currentPage: poolPage, setCurrentPage: setPoolPage, resetPage: resetPoolPage, PAGE_SIZES } = usePageSize("admin_shipping_pool_page_size", 20);
 
   const [poolsCount, setPoolsCount] = useState(0);
@@ -120,6 +122,8 @@ export default function ShippingPool() {
     setFullpayOnceToleranceJpy(data.fullpayOnceToleranceJpy ?? 500);
     setTransitHandlingFeeSplit(data.transitHandlingFeeSplit || false);
     setAllOrders(data.orders || []);
+    setStagingOrders(data.staging_orders || []);
+    setAvailableOrders(data.available_orders || []);
     setLoading(false);
     t.done('data ready');
   };
@@ -418,6 +422,8 @@ export default function ShippingPool() {
             <OfficialPoolKanban
               pools={pools}
               allOrders={allOrders}
+              stagingOrders={stagingOrders}
+              availableOrders={availableOrders}
               currentUser={user}
               isAdmin={isAdmin}
               showPoolSorter={isAdmin && showPoolSorter}

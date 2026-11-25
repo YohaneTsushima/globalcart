@@ -291,6 +291,9 @@ export default function AdminShippingInfoPanel({
   const [finalWeightG, setFinalWeightG] = useState(pool.final_weight_g || 0);
   const [totalWeightG, setTotalWeightG] = useState(pool.total_weight_g || 0);
   const [shippingFeeJpy, setShippingFeeJpy] = useState(pool.shipping_fee_jpy?.toString() || "");
+  // 官方拼邮池：按费率自动预填国际运费（仅首次，管理员改过就不再覆盖）
+  const [feeSuggest, setFeeSuggest] = useState(null);
+  const feeSuggestAppliedRef = useRef(false);
   const [feeAutoCalced, setFeeAutoCalced] = useState(false);
   const [shippingCalcResult, setShippingCalcResult] = useState(null);
   const [basePackingFee, setBasePackingFee] = useState(() => {
@@ -329,6 +332,22 @@ export default function AdminShippingInfoPanel({
       if (calc) setShippingCalcResult(calc);
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  // 官方拼邮池：按费率算出建议运费；池里还没填过就自动预填，填过则只提示、由管理员决定是否套用
+  useEffect(() => {
+    if (!isOfficialPool || feeSuggestAppliedRef.current) return;
+    if (!initialPool?.id) return;
+    feeSuggestAppliedRef.current = true;
+    shippingPoolApi.officialSuggestFee(initialPool.id)
+      .then((s) => {
+        if (!s || !(Number(s.shipping_fee_jpy) > 0)) return;
+        setFeeSuggest(s);
+        if (!initialPool.shipping_fee_jpy) {
+          setShippingFeeJpy(String(s.shipping_fee_jpy));
+          setFeeAutoCalced(true);
+        }
+      })
+      .catch(() => {});
+  }, [isOfficialPool, initialPool?.id]); // eslint-disable-line react-hooks/exhaustive-deps
   const [adminNote, setAdminNote] = useState(pool.admin_note || "");
   const [adminPackingNote, setAdminPackingNote] = useState(pool.admin_packing_note || "");
   const [actualShippingCostJpy, setActualShippingCostJpy] = useState(pool.actual_international_shipping_cost_jpy?.toString() || "");
@@ -1051,6 +1070,20 @@ export default function AdminShippingInfoPanel({
                   {matchedShippingMethod && calcResult && (
                     <p className="text-xs mt-0.5 text-blue-500">
                       按{matchedShippingMethod.name || pool.shipping_method}费率{feeAutoCalced ? "（已自动填入）" : `：${feeCurrency} ${calcResult.fee.toLocaleString()}`}
+                    </p>
+                  )}
+                  {feeSuggest && Number(feeSuggest.shipping_fee_jpy) > 0 && (
+                    <p className="text-xs mt-0.5 text-amber-600">
+                      按官方拼邮费率 ¥{feeSuggest.rate_per_unit}/{feeSuggest.unit_g}g 建议 ¥{Number(feeSuggest.shipping_fee_jpy).toLocaleString()}（
+                      {feeSuggest.source === "method" ? "运输方式设置" : feeSuggest.source === "global" ? "全局设置" : "默认费率"}
+                      ）
+                      {String(feeSuggest.shipping_fee_jpy) !== String(shippingFeeJpy) && (
+                        <button type="button" className="ml-1 underline hover:no-underline"
+                          onClick={() => { setShippingFeeJpy(String(feeSuggest.shipping_fee_jpy)); setFeeAutoCalced(true); }}>
+                          按此填入
+                        </button>
+                      )}
+                      ，可手动修改
                     </p>
                   )}
                 </div>

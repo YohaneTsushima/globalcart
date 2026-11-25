@@ -24,6 +24,10 @@ export default function OrderDetailDrawer({ order, currentUser, initialUserPrefe
   const { can } = usePermissions();
   const canNotifyShipment = can("shipping:notify_shipment");
   const canEditShipmentRequest = can("shipping:edit_shipment_request");
+  // 官方拼邮计划中的订单（已入库、未入池）：通知发货入口由管理员在看板统一处理
+  const inOfficialPoolPlan = order?.pre_shipment?.consType === "official_pool"
+    && !order?.consolidation_pool_id
+    && ["submitted", "pending_payment", "staged", "consumed"].includes(order?.pre_shipment_status);
   const [showMessages, setShowMessages] = useState(true);
   const [confirmingDelivered, setConfirmingDelivered] = useState(false);
   const [contactInfo, setContactInfo] = useState(initialUserPreference?.contact_info || "");
@@ -398,7 +402,7 @@ export default function OrderDetailDrawer({ order, currentUser, initialUserPrefe
                 <Upload className="w-4 h-4 mr-2" />重新提交付款凭证
               </Button>
             )}
-            {status === "in_warehouse" && canNotifyShipment && (
+            {status === "in_warehouse" && canNotifyShipment && !inOfficialPoolPlan && (
               <Button className="w-full bg-teal-600 hover:bg-teal-700 text-sm"
                 onClick={() => setShowShipment(true)}>
                 <Truck className="w-4 h-4 mr-2" />通知发货

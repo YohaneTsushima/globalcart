@@ -15,10 +15,12 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import CountrySelect from "@/components/common/CountrySelect";
 import { SHIPPING_METHODS } from "@/components/shippingpool/shippingFormConstants";
+import { toast } from "sonner";
 
 export default function CreateOfficialPoolModal({ onClose, onSuccess }) {
   const [user, setUser] = useState(null);
   const [transitLocations, setTransitLocations] = useState([]);
+  const [shippingMethods, setShippingMethods] = useState([]);
   const [submitting, setSubmitting] = useState(false);
   const [loading, setLoading] = useState(true);
 
@@ -49,10 +51,30 @@ export default function CreateOfficialPoolModal({ onClose, onSuccess }) {
       setUser(u);
 
       const locs = await tenantEntity.list('TransitLocation', { is_active: true });
-      setTransitLocations(locs);
+      // 只允许「用于官方拼邮」的中转地；未配置时（老数据）不限制
+      const settingRows = await tenantEntity.list('SiteSettings', { key: 'official_pool_transit_location_ids' }).catch(() => []);
+      let allowedIds = [];
+      try {
+        allowedIds = JSON.parse(settingRows?.[0]?.value || "[]");
+      } catch {
+        allowedIds = [];
+      }
+      const allowedSet = new Set((allowedIds || []).map(String));
+      const filteredLocs = allowedSet.size > 0
+        ? (locs || []).filter(l => allowedSet.has(String(l.id)))
+        : (locs || []);
+      setTransitLocations(filteredLocs);
+
+      // 运输方式取租户配置（只保留允许用于官方拼邮的），code 与订单预出货里的 shipping_method 保持一致
+      const methods = (await tenantEntity.list('ShippingMethod') || [])
+        .filter(m => m.is_active !== false && m.enabled_for_official_pool !== false);
+      setShippingMethods(methods);
+      if (methods.length === 1) {
+        setForm(p => ({ ...p, shipping_method: methods[0].code }));
+      }
 
       // Auto-select the default official pool transit location
-      const defaultLoc = locs.find(l => l.is_default_official_pool);
+      const defaultLoc = filteredLocs.find(l => l.is_default_official_pool) || filteredLocs[0];
       if (defaultLoc) {
         setForm(p => ({
           ...p,
@@ -70,33 +92,49 @@ export default function CreateOfficialPoolModal({ onClose, onSuccess }) {
   }, []);
 
   const handleSubmit = async () => {
-    if (!form.destination_country) return;
+    if (!form.destination_country) {
+      toast.error('请选择目的国家');
+      return;
+    }
+    if (!form.shipping_method) {
+      toast.error('请选择运输方式');
+      return;
+    }
     setSubmitting(true);
 
     const transitLoc = transitLocations.find(l => l.id === form.transit_location_id);
+    const methodRecord = shippingMethods.find(m => m.code === form.shipping_method) || null;
 
-    // Generate pool_code
-    const prefix = form.transit_location_id && transitLoc?.code_prefix ? transitLoc.code_prefix.toUpperCase() : "TYO";
-    const allPools = await shippingPoolApi.list();
-    const prefixPools = allPools.filter(p => p.pool_code && p.pool_code.startsWith(prefix));
-    const pool_code = `${prefix}${(prefixPools.length + 1).toString().padStart(5, "0")}`;
-
-    await shippingPoolApi.create({
-      ...form,
-      pool_code,
-      order_ids: [],
-      order_names: [],
-      creator_email: user.email,
-      creator_name: user.full_name || user.email,
-      is_admin_created: true,
-      total_weight_g: 0,
-      status: "pending",
-      transit_location_name: transitLoc?.name || "",
-      messages: [],
-      consolidation_type: "transit",
-    });
-
-    onSuccess?.();
+    try {
+      // 池号、计费、订单归属全部由后端生成
+      await shippingPoolApi.officialCreate({
+        title: form.title || "",
+        shipping_method: methodRecord?.code || form.shipping_method,
+        shipping_method_id: methodRecord?.id || null,
+        destination_country: form.destination_country,
+        transit_location_id: form.transit_location_id || null,
+        transit_location_name: transitLoc?.name || "",
+        scheduled_ship_date: form.scheduled_ship_date || "",
+        consolidation_deadline: form.consolidation_deadline || "",
+        consolidation_min_weight_g: form.consolidation_min_weight_g || 0,
+        recipient_name: form.recipient_name || "",
+        recipient_phone: form.recipient_phone || "",
+        address_line1: form.address_line1 || "",
+        address_line2: form.address_line2 || "",
+        city: form.city || "",
+        state: form.state || "",
+        postal_code: form.postal_code || "",
+        country: form.destination_country || "",
+        user_note: form.user_note || "",
+      });
+      toast.success('拼邮需求已创建');
+      onSuccess?.();
+    } catch (err) {
+      const message = err?.response?.data?.msg || err?.response?.data?.message || '创建失败，请稍后重试';
+      toast.error(message);
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   if (loading) {
@@ -175,7 +213,11 @@ export default function CreateOfficialPoolModal({ onClose, onSuccess }) {
               <Select value={form.shipping_method} onValueChange={v => f("shipping_method", v)}>
                 <SelectTrigger className="mt-1 h-8 text-sm"><SelectValue placeholder="选择..." /></SelectTrigger>
                 <SelectContent>
-                  {SHIPPING_METHODS.map(m => <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>)}
+                  {(shippingMethods.length > 0
+                    ? shippingMethods.map(m => ({ value: m.code, label: m.name }))
+                    : SHIPPING_METHODS).map(m => (
+                    <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
@@ -214,7 +256,7 @@ export default function CreateOfficialPoolModal({ onClose, onSuccess }) {
         <div className="px-6 py-4 border-t flex items-center justify-between">
           <Button variant="outline" size="sm" onClick={onClose}>取消</Button>
           <Button size="sm" className="bg-red-600 hover:bg-red-700"
-            disabled={submitting || !form.transit_location_id}
+            disabled={submitting || !form.transit_location_id || !form.shipping_method}
             onClick={handleSubmit}>
             {submitting ? "创建中..." : "创建拼邮需求"}
           </Button>

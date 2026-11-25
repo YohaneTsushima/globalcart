@@ -4,12 +4,11 @@
  */
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { base44 } from "@/api/base44Client";
 import { tenantEntity, transitLocationApi } from "@/lib/tenantApi";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { usePermissions } from "@/hooks/usePermissions";
 import {
-  MapPin, Package, CheckCircle, Truck, Loader2, ChevronRight, AlertCircle, Edit2, Trash2, X, LogIn, Plus, Check, Clock
+  MapPin, Package, CheckCircle, Truck, Loader2, ChevronRight, AlertCircle, Edit2, Trash2, X, LogIn, Plus, Clock, Layers
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -24,6 +23,7 @@ import { normalizeManagerEmails, hasManager } from "@/lib/managerUtils";
 import ConfirmDialog from "@/components/common/ConfirmDialog";
 import TransitPoolCard from "@/components/transit/TransitPoolCard";
 import { getCountry } from "@/lib/countries";
+import { toast } from "sonner";
 
 const TABS = [
   { key: "work", label: "工作总览" },
@@ -43,6 +43,9 @@ console.log(isAdmin)
   const [requestsByLocation, setRequestsByLocation] = useState({});
   const [allUsers, setAllUsers] = useState([]);
   const [transitMethods, setTransitMethods] = useState([]);
+  // 「用于官方拼邮」的中转地集合，存在 site_settings 里（JSON 数组），未配置表示不限制
+  const [officialPoolLocIds, setOfficialPoolLocIds] = useState([]);
+  const [officialPoolSettingRow, setOfficialPoolSettingRow] = useState(null);
   const [addonOptions, setAddonOptions] = useState([]);
 
   // Location form state
@@ -82,6 +85,7 @@ console.log(isAdmin)
   useEffect(() => {
     if (!user) return;
     fetchData();
+    loadOfficialPoolLocSetting();
   }, [user]);
 
   // Redirect if user doesn't have permission
@@ -121,6 +125,43 @@ console.log(isAdmin)
     const r = await transitLocationApi.workData();
     setRequestsByLocation(r?.requestsByLocation || r?.poolsByLocation || {});
     setLocations(r?.locations);
+  };
+
+  // 「用于官方拼邮」的中转地集合，存在 site_settings 里（JSON 数组），未配置表示不限制
+  const loadOfficialPoolLocSetting = async () => {
+    try {
+      const rows = await tenantEntity.list('SiteSettings', { key: 'official_pool_transit_location_ids' });
+      const row = rows?.[0] || null;
+      setOfficialPoolSettingRow(row);
+      setOfficialPoolLocIds(row?.value ? JSON.parse(row.value) : []);
+    } catch (err) {
+      console.error('load official pool transit setting failed', err);
+    }
+  };
+
+  const toggleOfficialPoolLoc = async (loc) => {
+    const id = String(loc.id);
+    const next = officialPoolLocIds.some(x => String(x) === id)
+      ? officialPoolLocIds.filter(x => String(x) !== id)
+      : [...officialPoolLocIds, id];
+    setOfficialPoolLocIds(next);
+    const value = JSON.stringify(next);
+    try {
+      if (officialPoolSettingRow?.id) {
+        await tenantEntity.update('SiteSettings', officialPoolSettingRow.id, { value });
+      } else {
+        const created = await tenantEntity.create('SiteSettings', {
+          key: 'official_pool_transit_location_ids',
+          value,
+          description: '可用于官方拼邮的中转地 id 列表（JSON 数组，空表示不限制）',
+          category: 'shipping',
+        });
+        setOfficialPoolSettingRow(created);
+      }
+    } catch (err) {
+      console.error('save official pool transit setting failed', err);
+      toast.error?.('保存失败，请重试');
+    }
   };
 
   const lf = (k, v) => setLocForm(p => ({ ...p, [k]: v }));
@@ -583,6 +624,9 @@ console.log(isAdmin)
                       {loc.is_default_official_pool && (
                         <Badge className="text-xs bg-orange-100 text-orange-700">⭐ 默认官方拼邮</Badge>
                       )}
+                      {officialPoolLocIds.some(x => String(x) === String(loc.id)) && (
+                        <Badge className="text-xs bg-purple-100 text-purple-700">可用于官方拼邮</Badge>
+                      )}
                       <Badge className={`text-xs ${loc.is_active ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500"}`}>
                         {loc.is_active ? "启用" : "停用"}
                       </Badge>
@@ -621,8 +665,7 @@ console.log(isAdmin)
                             className="p-1.5 rounded hover:bg-orange-50 text-gray-300 hover:text-orange-500">
                             <CheckCircle className="w-3.5 h-3.5" />
                           </button>
-                        )}
-                        {loc.is_default_official_pool && (
+                        )}                        {loc.is_default_official_pool && (
                           <button
                             title="取消默认官方拼邮中转地"
                             onClick={() => handleSetDefaultOfficialPool(loc)}
@@ -630,6 +673,12 @@ console.log(isAdmin)
                             <CheckCircle className="w-3.5 h-3.5" />
                           </button>
                         )}
+                        <button
+                          title={officialPoolLocIds.some(x => String(x) === String(loc.id)) ? "取消用于官方拼邮" : "用于官方拼邮"}
+                          onClick={() => toggleOfficialPoolLoc(loc)}
+                          className={`p-1.5 rounded hover:bg-purple-50 ${officialPoolLocIds.some(x => String(x) === String(loc.id)) ? "text-purple-600" : "text-gray-300 hover:text-purple-500"}`}>
+                          <Layers className="w-3.5 h-3.5" />
+                        </button>
                         <button onClick={() => handleLocToggle(loc)} className="p-1.5 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-700">
                           {loc.is_active ? <X className="w-3.5 h-3.5" /> : <CheckCircle className="w-3.5 h-3.5" />}
                         </button>

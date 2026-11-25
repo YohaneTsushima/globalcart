@@ -1,6 +1,6 @@
 import { 
   Package, CheckCircle, Clock, Truck, Calendar, 
-  MapPin, Scale, Image as ImageIcon, AlertCircle,
+  MapPin, Scale, Image as ImageIcon,
   ChevronRight
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -34,7 +34,8 @@ const POOL_STATUS_CONFIG = {
 
 export default function TransitPoolCard({ pool, transitStatus, isSelected, onToggleSelect, onClick }) {
   // Support both GroupBuyRequest and ShippingPool data structures
-  const isRequest = !!pool.title; // GroupBuyRequest has title, ShippingPool has pool_code
+  // 有 pool_code 的一定是发货池（包括管理员建的官方拼邮池，它也带 title），没有 pool_code 的才是拼单需求
+  const isRequest = !!pool.title && !pool.pool_code;
   const orderCount = isRequest ? (pool.entries?.length || pool.entry_count || pool.fee_breakdown_per_user?.length || 0) : (pool.order_ids || []).length;
   // 商品名来自 fee_breakdown_per_user[].user_orders[].product_name
   const productNames = [...new Set(

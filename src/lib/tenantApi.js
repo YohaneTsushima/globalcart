@@ -234,6 +234,14 @@ export const shippingPoolApi = {
   archived:                 (id, data)          => mutate('ShippingPool', 'archived', { id, data }).then(r => r),
   poolCreate:               (id, data)          => mutate('ShippingPool', 'poolCreate', { id, data }).then(r => r),
   handleCreate:             (data)              => mutate('ShippingPool', 'handleCreate', { data }).then(r => r),
+  // 官方拼邮看板：池创建 / 订单拖入 / 订单移出（后端直接挂在 /shipping/officialPool/*）
+  officialCreate:           (data)              => base44.functions.invoke('shipping/officialPool/create', data).then(r => r?.data || r),
+  officialList:             (orderId)           => base44.functions.invoke('shipping/officialPool/list', { order_id: orderId ?? null }).then(r => r?.data || []),
+  officialSuggestFee:       (poolId)            => base44.functions.invoke('shipping/officialPool/suggestFee', { pool_id: poolId ?? null }).then(r => r?.data || null),
+  officialMove:             (data)              => base44.functions.invoke('shipping/officialPool/moveOrders', data).then(r => r?.data ?? r),
+  officialRemove:           (data)              => base44.functions.invoke('shipping/officialPool/removeOrders', data).then(r => r?.data ?? r),
+  officialStage:            (data)              => base44.functions.invoke('shipping/officialPool/stage', data).then(r => r?.data ?? r),
+  officialUnstage:          (data)              => base44.functions.invoke('shipping/officialPool/unstage', data).then(r => r?.data ?? r),
 };
 
 // ─── ShippingPool Edit Request shortcuts ───────────────────────────────────────────────────

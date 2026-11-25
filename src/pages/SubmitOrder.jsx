@@ -6,7 +6,7 @@ import { useAuth } from "@/lib/AuthContext";
 import { timePage } from "@/lib/timing";
 import { useNavigate } from "react-router-dom";
 import { createPageUrl } from "@/utils";
-import { ShoppingBag, Info, Plus, X, HelpCircle, AlertTriangle, Lock, Truck, ChevronDown, Scissors } from "lucide-react";
+import { ShoppingBag, Info, Plus, X, HelpCircle, AlertTriangle, Lock, Truck, ChevronDown, Scissors, Star } from "lucide-react";
 import { usePermissions } from "@/hooks/usePermissions";
 import FeeCalculator from "@/components/orders/FeeCalculator";
 import PaymentSection from "@/components/orders/PaymentSection";
@@ -813,24 +813,34 @@ export default function SubmitOrder() {
               />
             </div>
 
-            {/* 增值服务 - 可折叠 */}
+            {/* 增值服务 - 高亮可折叠（与通知发货弹窗保持一致的视觉） */}
             {(pageDataLoading || addonOptions.length > 0) && canSelectOrderAddons && (
               <Collapsible open={addonsOpen} onOpenChange={setAddonsOpen}>
-                <div className="border-t border-gray-100 pt-3">
+                <div>
                   <CollapsibleTrigger asChild>
-                    <button type="button" className="flex items-center justify-between w-full mb-2 group">
-                      <div className="flex items-center gap-2">
-                        <Label className="text-sm font-medium cursor-pointer">{t("增值服务（可选）", locale)}</Label>
-                        {!pageDataLoading && selectedAddons.length > 0 && (
-                          <span className="inline-flex items-center justify-center h-5 min-w-5 px-1.5 rounded-full bg-red-500 text-white text-xs font-medium">
-                            {selectedAddons.length}
+                    <button
+                      type="button"
+                      className={`w-full flex items-center justify-between gap-2 px-3 py-2 rounded-lg border text-sm transition-colors ${
+                        selectedAddons.length > 0
+                          ? "border-yellow-400 bg-yellow-50 hover:bg-yellow-100"
+                          : "border-gray-200 bg-white hover:border-blue-300 hover:bg-gray-50"
+                      }`}
+                    >
+                      <div className="flex items-center gap-2 min-w-0 flex-wrap">
+                        <Star className="w-4 h-4 text-yellow-500 flex-shrink-0" />
+                        <span className="font-medium text-gray-800">{t("增值服务（可选）", locale)}</span>
+                        {!pageDataLoading && selectedAddons.length > 0 ? (
+                          <span className="inline-flex items-center px-1.5 py-0.5 rounded-full bg-yellow-200 text-yellow-800 border border-yellow-300 text-[11px] font-medium">
+                            已选 {selectedAddons.length} 项
                           </span>
+                        ) : (
+                          <span className="text-xs text-gray-400">如加固包装、拍照验货，按需勾选</span>
                         )}
                       </div>
-                      <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${addonsOpen ? 'rotate-180' : ''}`} />
+                      <ChevronDown className={`w-4 h-4 text-gray-400 flex-shrink-0 transition-transform ${addonsOpen ? 'rotate-180' : ''}`} />
                     </button>
                   </CollapsibleTrigger>
-                  <CollapsibleContent>
+                  <CollapsibleContent className="mt-2">
                     {pageDataLoading ? (
                       <div className="space-y-2">
                         {[1, 2, 3].map(i => (
