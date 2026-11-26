@@ -98,13 +98,14 @@ export async function fetchTenantConfig({ force = false } = {}) {
   const safeList = (entity, filter) =>
     tenantEntity.list(entity, filter).then((rows) => rows || []).catch(() => []);
 
-  const [layout, siteSettings, shippingMethods, transitMethods, transitLocations, addons] = await Promise.all([
+  const [layout, siteSettings, shippingMethods, transitMethods, transitLocations, addons, storeTagRules] = await Promise.all([
     tenantEntity.layoutConfig('SiteSettings').catch(() => null),
     safeList('SiteSettings'),
     safeList('ShippingMethod'),
     safeList('TransitMethod'),
     safeList('TransitLocation'),
     safeList('AddonOption'),
+    safeList('StoreTagRule'),
   ]);
 
   // layoutConfig 只返回布局相关的几条，其余开关/费率在 SiteSettings 全量里，按 key 合并（layout 优先）
@@ -134,6 +135,7 @@ export async function fetchTenantConfig({ force = false } = {}) {
     transitMethods,
     transitLocations,
     addons,
+    storeTagRules: (storeTagRules || []).filter((r) => r.is_active !== false),
     countriesConfig,
   };
   setTenantConfigCache(data);

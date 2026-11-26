@@ -206,15 +206,6 @@ export default function StorageSettingsManager({ onReload }) {
                 - 外箱模板可单独设置仓储费，优先级高于默认设置
               </AlertDescription>
             </Alert>
-
-            <Button 
-              className="bg-amber-600 hover:bg-amber-700 w-full" 
-              onClick={handleSave}
-              disabled={saving}
-            >
-              <DollarSign className="w-4 h-4 mr-2" />
-              {saving ? "保存中..." : "保存设置"}
-            </Button>
           </>
         ) : (
           <Alert className="border-gray-200 bg-gray-50">
@@ -225,6 +216,16 @@ export default function StorageSettingsManager({ onReload }) {
             </AlertDescription>
           </Alert>
         )}
+
+        {/* 保存按钮放在开关外面：关闭功能时也要能保存，否则刷新后会回到上次的开启状态 */}
+        <Button
+          className="bg-amber-600 hover:bg-amber-700 w-full"
+          onClick={handleSave}
+          disabled={saving}
+        >
+          <DollarSign className="w-4 h-4 mr-2" />
+          {saving ? "保存中..." : "保存设置"}
+        </Button>
       </CardContent>
     </Card>
   );

@@ -4,22 +4,21 @@
  * 参考票务订单详情面板布局设计
  */
 import { useState, useEffect } from "react";
-import { X, ShoppingBag, Package, CreditCard, FileText, Image as ImageIcon, MessageSquare, Upload, Pencil, Check, Truck, Scissors, ExternalLink, AlertTriangle } from "lucide-react";
+import { X, ShoppingBag, Package, CreditCard, FileText, Image as ImageIcon, Pencil, Check, ExternalLink, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ImageWithViewer } from "@/components/common/ImageViewer";
-import ReactMarkdown from "react-markdown";
 import OrderMessageThread from "@/components/orders/OrderMessageThread";
 import OrderCancellationModule from "@/components/orders/OrderCancellationModule";
+import OrderStorageInfo from "@/components/orders/OrderStorageInfo";
 import { useAuth } from "@/lib/AuthContext";
 import { usePermissions } from "@/hooks/usePermissions";
 import { base44 } from "@/api/base44Client";
 import { updateOrder, shippingPoolApi } from "@/lib/tenantApi";
 import { toast } from "sonner";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { getStatusLabel, getStatusColor } from "@/lib/orderStatus";
+import { resolveStoreTag, findMatchedRule, getOnlineStoreRules } from "@/lib/onlineStoreTag";
 
 const ORDER_STATUS_LABELS = {
   draft: "草稿",
@@ -79,6 +78,16 @@ export default function OrderDetailPanel({ orderId, onClose, onRefresh, currentU
   const [order, setOrder] = useState(null);
   const [loading, setLoading] = useState(true);
   const [poolFees, setPoolFees] = useState(null);
+  const [storeTagRules, setStoreTagRules] = useState([]);
+
+  // 商城标签规则：只用于给历史订单展示「识别依据」，不参与标签本身的计算
+  useEffect(() => {
+    let cancelled = false;
+    getOnlineStoreRules()
+      .then(rules => { if (!cancelled) setStoreTagRules(rules || []); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
     if (!orderId) return;
@@ -394,6 +403,20 @@ export default function OrderDetailPanel({ orderId, onClose, onRefresh, currentU
                     <span className="text-gray-500">商品名称</span>
                     <span className="font-medium text-gray-900">{order.product_name}</span>
                   </div>
+                  {(order.online_store_tag || order.product_url) && (() => {
+                    const storeTag = resolveStoreTag(order, storeTagRules);
+                    const firstUrl = String(order.product_url || "").split("\n").map(s => s.trim()).filter(Boolean)[0] || "";
+                    const keyword = storeTag.matched_rule?.keyword || findMatchedRule(firstUrl, storeTagRules)?.keyword;
+                    return (
+                      <div className="flex justify-between items-center">
+                        <span className="text-gray-500">商城标签</span>
+                        <span className="flex items-center gap-1.5">
+                          <Badge className={`text-xs ${storeTag.tag_color}`}>{storeTag.tag_label}</Badge>
+                          {keyword && <span className="text-[11px] text-gray-400">关键词：{keyword}</span>}
+                        </span>
+                      </div>
+                    );
+                  })()}
                   {/* <div className="flex justify-between">
                     <span className="text-gray-500">数量</span>
                     <span className="font-medium text-gray-900">×{order.quantity}</span>
@@ -414,6 +437,11 @@ export default function OrderDetailPanel({ orderId, onClose, onRefresh, currentU
                   )}
                 </div>
               </div>
+
+              {/* 仓储信息（入库后显示存放天数、期限与超期费用） */}
+              {order.in_warehouse_date && (
+                <OrderStorageInfo order={order} />
+              )}
 
               {/* Payment info */}
               {order.order_status !== 'payment_pending' && (

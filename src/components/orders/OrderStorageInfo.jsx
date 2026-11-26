@@ -5,6 +5,15 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 
+// 统一显示为 yyyy-MM-dd HH:mm:ss（本地时区），后端可能返回 ISO 字符串
+function formatDateTime(value) {
+  if (!value) return "-";
+  const date = new Date(String(value).replace(" ", "T"));
+  if (Number.isNaN(date.getTime())) return String(value);
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+}
+
 export default function OrderStorageInfo({ order, onReload }) {
   const [storageInfo, setStorageInfo] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -65,7 +74,7 @@ export default function OrderStorageInfo({ order, onReload }) {
             <Calendar className="w-4 h-4 text-gray-400" />
             <div>
               <p className="text-xs text-gray-500">入库日期</p>
-              <p className="text-gray-700 font-medium">{order.in_warehouse_date || '-'}</p>
+              <p className="text-gray-700 font-medium">{formatDateTime(order.in_warehouse_date)}</p>
             </div>
           </div>
 

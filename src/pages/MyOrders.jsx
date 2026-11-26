@@ -12,7 +12,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { ImageWithViewer } from "@/components/common/ImageViewer";
 import BulkPaymentModal from "@/components/orders/BulkPaymentModal";
 import StorageStatusBadge from "@/components/orders/StorageStatusBadge";
-import { matchStoreTagResult } from "@/lib/onlineStoreTag";
+import { resolveStoreTag } from "@/lib/onlineStoreTag";
 import { getPreferredLocale } from "@/lib/LocaleContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -40,6 +40,24 @@ import { persistentToastError } from "@/lib/toastUtils.jsx";
 import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogAction } from "@/components/ui/alert-dialog";
 
 const STORAGE_KEY = "my_orders_columns";
+
+// 存放天数提示：「存放 12 天 · 剩 78 天」，只在库内订单显示
+function getStorageHint(order) {
+  if (!order?.in_warehouse_date) return null;
+  if (!["in_warehouse", "in_storage"].includes(order.order_status)) return null;
+  const toTime = (v) => {
+    if (!v) return null;
+    const t = new Date(String(v).replace(" ", "T")).getTime();
+    return Number.isNaN(t) ? null : t;
+  };
+  const start = toTime(order.in_warehouse_date);
+  if (start === null) return null;
+  const days = Math.max(0, Math.floor((Date.now() - start) / 86400000));
+  const deadline = toTime(order.storage_deadline_at);
+  if (deadline === null) return `存放 ${days} 天`;
+  const remain = Math.ceil((deadline - Date.now()) / 86400000);
+  return remain >= 0 ? `存放 ${days} 天 · 剩 ${remain} 天` : `存放 ${days} 天 · 已超期 ${Math.abs(remain)} 天`;
+}
 
 // 分组里的订单列表：拼邮池分组用 pool_orders，拆单分组用 split_orders
 function groupOrdersOf(group) {
@@ -130,19 +148,28 @@ function CellValue({ col, order }) {
       const isSplitParent = order.has_split_marker && !order.parent_order_id && order.split_index === 0;
       return <span className="font-mono text-xs text-gray-500">{order.order_number ? `${order.order_number}${isSplitParent ? " - 00" : ""}` : "-"}</span>;
     }
-    case "product_name":
+    case "product_name": {
+      const storeTag = resolveStoreTag(order, col._rules || []);
       return (
-        <TooltipProvider delayDuration={1000}>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <span className="text-sm font-medium text-gray-900 truncate block">{order.product_name}</span>
-            </TooltipTrigger>
-            <TooltipContent side="top" className="max-w-xs">
-              <p>{order.product_name}</p>
-            </TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
+        <div className="flex items-center gap-1.5 min-w-0">
+          {storeTag.tag_label && storeTag.tag_label !== "其它" && (
+            <Badge className={`text-[10px] px-1.5 py-0 shrink-0 ${storeTag.tag_color}`}>
+              {storeTag.tag_label}
+            </Badge>
+          )}
+          <TooltipProvider delayDuration={1000}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="text-sm font-medium text-gray-900 truncate block">{order.product_name}</span>
+              </TooltipTrigger>
+              <TooltipContent side="top" className="max-w-xs">
+                <p>{order.product_name}</p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        </div>
       );
+    }
     case "payable_amount": {
       if (order.order_status === "payment_pending" || order.order_status === "awaiting_payment_confirmation") {
         return <span className="text-sm text-gray-400">-</span>;
@@ -175,6 +202,11 @@ function CellValue({ col, order }) {
             {getStatusLabel(order.order_status, "user")}
           </Badge>
           <StorageStatusBadge status={order.storage_status} feeAccrued={order.storage_fee_accrued} />
+          {getStorageHint(order) && (
+            <span className={`text-[11px] ${order.storage_status === "expired" ? "text-red-500" : "text-gray-500"}`}>
+              {getStorageHint(order)}
+            </span>
+          )}
         </div>
       );
     case "product_description":
@@ -204,9 +236,7 @@ function CellValue({ col, order }) {
     case "submit_date":
       return <span className="text-xs text-gray-700">{order.created_date ? new Date(order.created_date).toLocaleDateString("zh-CN") : "-"}</span>;
     case "online_store_tag": {
-      const tagRules = col._rules || [];
-      const firstUrl = (order.product_url || "").split("\n").map(s => s.trim()).filter(Boolean)[0] || "";
-      const tagResult = matchStoreTagResult(firstUrl, tagRules);
+      const tagResult = resolveStoreTag(order, col._rules || []);
       return <Badge className={`text-xs ${tagResult.tag_color}`}>{tagResult.tag_label}</Badge>;
     }
     case "purchased_date":
@@ -1318,6 +1348,11 @@ export default function MyOrders() {
                               {getStatusLabel(repr.order_status, "user")}
                             </Badge>
                             <StorageStatusBadge status={repr.storage_status} feeAccrued={repr.storage_fee_accrued} />
+                            {getStorageHint(repr) && (
+                              <span className={`text-[11px] ${repr.storage_status === "expired" ? "text-red-500" : "text-gray-500"}`}>
+                                {getStorageHint(repr)}
+                              </span>
+                            )}
                           </div>
                         </td>
                       ) : null

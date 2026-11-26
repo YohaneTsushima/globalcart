@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import ConfirmDialog from "@/components/common/ConfirmDialog";
@@ -54,6 +55,8 @@ export default function SubmitOrder() {
   const [urlMode, setUrlMode] = useState("multi");
   // 拆单：分割线条数（0 = 1 单，1 = 2 单，2 = 3 单……）
   const [splitIndex, setSplitIndex] = useState(0);
+  // 商品链接实时识别的商城标签（仅用于输入框下方预览）
+  const [urlTagPreview, setUrlTagPreview] = useState(null);
   const [addonOptions, setAddonOptions] = useState([]);
   const [selectedAddons, setSelectedAddons] = useState([]);
   const [addonCustomFees, setAddonCustomFees] = useState({});
@@ -225,6 +228,24 @@ export default function SubmitOrder() {
   };
 
   useEffect(() => { if (form.estimated_jpy) calculate(); }, [form.estimated_jpy, selectedAddons, addonCustomFees, settings, activeRule]);
+
+  // 商品链接变化时实时识别商城标签（防抖，只做展示，不影响提交逻辑）
+  useEffect(() => {
+    const urlsText = urlMode === "textarea"
+      ? (productUrls[0] || "").split("\n").map((s) => s.trim()).filter(Boolean).join("\n")
+      : productUrls.filter((u) => u.trim()).join("\n");
+    if (!urlsText.trim()) {
+      setUrlTagPreview(null);
+      return;
+    }
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      detectPrimaryStoreTagResult(urlsText)
+        .then((result) => { if (!cancelled) setUrlTagPreview(result); })
+        .catch(() => { if (!cancelled) setUrlTagPreview(null); });
+    }, 400);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [productUrls, urlMode]);
 
   const deleteImageByUrl = async (imageUrl, path = "submitOrder") => {
     if (!imageUrl) return;
@@ -703,6 +724,12 @@ export default function SubmitOrder() {
                       )}
                      </div>
                   ))}
+                </div>
+              )}
+              {urlTagPreview && (
+                <div className="mt-1.5 flex items-center gap-1.5">
+                  <span className="text-xs text-gray-400">{t("识别为", locale)}：</span>
+                  <Badge className={`text-xs ${urlTagPreview.tag_color}`}>{urlTagPreview.tag_label}</Badge>
                 </div>
               )}
               <p className="text-xs text-gray-400 mt-1.5">{t("Shift+Enter 添加下一条", locale)}</p>
