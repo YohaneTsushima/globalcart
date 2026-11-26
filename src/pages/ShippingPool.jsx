@@ -51,7 +51,15 @@ export default function ShippingPool() {
   const { user } = useCurrentUser();
   const { can, isAdmin } = usePermissions();
   const canManageTransitLocations = isAdmin || can("shipping:manage_transit_locations");
-  const [activeTab, setActiveTab] = useState("pools");
+  // 支持从外链直接定位到某个 tab：?tab=official_kanban / ?view=official
+  const [activeTab, setActiveTab] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    const tab = params.get("tab");
+    const allowed = ["pools", "consolidation", "official_kanban", "locations"];
+    if (tab && allowed.includes(tab)) return tab;
+    if (params.get("view") === "official") return "official_kanban";
+    return "pools";
+  });
   const [pools, setPools] = useState([]);
   const [locations, setLocations] = useState([]);
   const [loading, setLoading] = useState(true);

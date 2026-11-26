@@ -45,6 +45,8 @@ const notificationCategories = [
       { key: "order_purchased", label: "订单已下单" },
       { key: "order_in_warehouse", label: "订单已入库" },
       { key: "order_pre_shipment", label: "预出货已提交发货申请" },
+      { key: "storage_reminder", label: "库存即将到期" },
+      { key: "storage_expired", label: "库存已超期" },
       { key: "order_added_to_pool", label: "订单已添加至发货申请", default_off: true },
       { key: "order_request_edit_created", label: "订单更改创建" },
       { key: "order_request_edit_approved", label: "订单更改申请被批准" },

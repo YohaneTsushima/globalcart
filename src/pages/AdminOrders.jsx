@@ -495,10 +495,22 @@ export default function AdminOrders() {
     return shippingPools.find(p => (p.order_ids || []).some(id => String(id) === orderId)) || null;
   };
 
+  // 新窗口打开官方拼邮看板；被浏览器拦截时退回当前页打开
+  const openOfficialPoolBoard = () => {
+    const url = '/ShippingPool?view=official&tab=official_kanban';
+    const win = window.open(url, '_blank');
+    if (win) {
+      try { win.opener = null; } catch { /* ignore */ }
+      return;
+    }
+    toast.info('浏览器拦截了新窗口，已在当前页打开');
+    window.location.assign(url);
+  };
+
   const handleOpenPool = async (pool) => {
     const isOfficialPool = pool.is_admin_created === true;
     if (isOfficialPool) {
-      window.location.href = '/ShippingPool?view=official';
+      openOfficialPoolBoard();
       return;
     }
     setSelectedPool(pool);
@@ -961,15 +973,23 @@ export default function AdminOrders() {
                           const poolHasPendingEdit = pendingEditRequests.some(r => String(r.target_pool_id) === String(pool.id));
                           return (
                             <>
-                            <Button size="sm" variant="outline"
-                              className={`h-6 text-xs px-2 ${isOfficialPool ? "text-blue-600 border-blue-200 hover:bg-blue-50" : isConsolidation ? "text-purple-600 border-purple-200 hover:bg-purple-50" : "text-teal-600 border-teal-200 hover:bg-teal-50"}`}
-                              onClick={() => handleOpenPool(pool)}>
-                              {isOfficialPool
-                                ? <><Layers className="w-3 h-3 mr-1" />查看官方拼邮</>
-                                : isConsolidation
-                                ? <><Layers className="w-3 h-3 mr-1" />查看拼邮</>
-                                : <><Send className="w-3 h-3 mr-1" />查看发货申请</>}
-                            </Button>
+                            {/* 官方拼邮用真实链接 target=_blank，避免 window.open 被浏览器拦截 */}
+                            {isOfficialPool ? (
+                              <Button asChild size="sm" variant="outline"
+                                className="h-6 text-xs px-2 text-blue-600 border-blue-200 hover:bg-blue-50">
+                                <a href="/ShippingPool?view=official&tab=official_kanban" target="_blank" rel="noopener noreferrer">
+                                  <Layers className="w-3 h-3 mr-1" />查看官方拼邮
+                                </a>
+                              </Button>
+                            ) : (
+                              <Button size="sm" variant="outline"
+                                className={`h-6 text-xs px-2 ${isConsolidation ? "text-purple-600 border-purple-200 hover:bg-purple-50" : "text-teal-600 border-teal-200 hover:bg-teal-50"}`}
+                                onClick={() => handleOpenPool(pool)}>
+                                {isConsolidation
+                                  ? <><Layers className="w-3 h-3 mr-1" />查看拼邮</>
+                                  : <><Send className="w-3 h-3 mr-1" />查看发货申请</>}
+                              </Button>
+                            )}
                             {isOfficialPool && (
                               <Button size="sm" variant="outline"
                                 className="h-6 text-xs px-2 text-teal-600 border-teal-200 hover:bg-teal-50"
@@ -1116,7 +1136,7 @@ export default function AdminOrders() {
             if (!poolId) return;
             
             if (isOfficialPool) {
-              window.location.href = '/ShippingPool?view=official';
+              openOfficialPoolBoard();
               return;
             }
                         

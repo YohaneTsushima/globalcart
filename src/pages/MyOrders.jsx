@@ -11,6 +11,7 @@ import { usePermissions } from "@/hooks/usePermissions";
 import { Textarea } from "@/components/ui/textarea";
 import { ImageWithViewer } from "@/components/common/ImageViewer";
 import BulkPaymentModal from "@/components/orders/BulkPaymentModal";
+import StorageStatusBadge from "@/components/orders/StorageStatusBadge";
 import { matchStoreTagResult } from "@/lib/onlineStoreTag";
 import { getPreferredLocale } from "@/lib/LocaleContext";
 import { Button } from "@/components/ui/button";
@@ -169,9 +170,12 @@ function CellValue({ col, order }) {
       return <span className="text-sm text-gray-700">{order.weight_g ? `${order.weight_g}g` : "-"}</span>;
     case "order_status":
       return (
-        <Badge className={`text-xs ${getStatusColor(order.order_status, "user")}`}>
-          {getStatusLabel(order.order_status, "user")}
-        </Badge>
+        <div className="flex flex-col items-start gap-1">
+          <Badge className={`text-xs ${getStatusColor(order.order_status, "user")}`}>
+            {getStatusLabel(order.order_status, "user")}
+          </Badge>
+          <StorageStatusBadge status={order.storage_status} feeAccrued={order.storage_fee_accrued} />
+        </div>
       );
     case "product_description":
       return <span className="text-xs text-gray-600 line-clamp-2 max-w-[200px]">{order.product_description || "-"}</span>;
@@ -1309,9 +1313,12 @@ export default function MyOrders() {
                     col.key === "order_status" ? (
                       idx === 0 ? (
                         <td key={col.key} className="px-3 py-3 align-middle" rowSpan={span}>
-                          <Badge className={`text-xs ${getStatusColor(repr.order_status, "user")}`}>
-                            {getStatusLabel(repr.order_status, "user")}
-                          </Badge>
+                          <div className="flex flex-col items-start gap-1">
+                            <Badge className={`text-xs ${getStatusColor(repr.order_status, "user")}`}>
+                              {getStatusLabel(repr.order_status, "user")}
+                            </Badge>
+                            <StorageStatusBadge status={repr.storage_status} feeAccrued={repr.storage_fee_accrued} />
+                          </div>
                         </td>
                       ) : null
                     ) : (

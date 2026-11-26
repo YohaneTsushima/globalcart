@@ -24,22 +24,41 @@ import OfficialPoolOrderDetailModal from "@/components/shippingpool/OfficialPool
 import CreateOfficialPoolModal from "@/components/shippingpool/CreateOfficialPoolModal";
 import PrivacyAwareOrderInfo from "@/components/shippingpool/PrivacyAwareOrderInfo";
 
+// 与后端 ShippingPoolStatus 枚举保持一致
 const STATUS_COLORS = {
+  open: "bg-blue-100 text-blue-700",
   pending: "bg-gray-100 text-gray-600",
+  processing: "bg-amber-100 text-amber-700",
   awaiting_payment: "bg-orange-100 text-orange-700",
+  awaiting_confirmation: "bg-blue-100 text-blue-700",
   awaiting_payment_confirmation: "bg-blue-100 text-blue-700",
+  paid: "bg-cyan-100 text-cyan-700",
   ready_to_ship: "bg-teal-100 text-teal-700",
+  transited: "bg-indigo-100 text-indigo-700",
+  transit_forwarded: "bg-violet-100 text-violet-700",
+  transit_arrived: "bg-sky-100 text-sky-700",
   shipped: "bg-green-100 text-green-700",
   delivered: "bg-emerald-100 text-emerald-700",
+  archived: "bg-gray-100 text-gray-500",
+  completed: "bg-emerald-100 text-emerald-700",
 };
 
 const STATUS_LABELS = {
+  open: "招募中",
   pending: "待处理",
+  processing: "处理中",
   awaiting_payment: "待付款",
-  awaiting_payment_confirmation: "待确认",
+  awaiting_confirmation: "待确认",
+  awaiting_payment_confirmation: "待确认付款",
+  paid: "已付款",
   ready_to_ship: "待发货",
+  transited: "已向中转地发货",
+  transit_forwarded: "中转地已发货",
+  transit_arrived: "中转地已收货",
   shipped: "已发货",
-  delivered: "已签收",
+  delivered: "已收货",
+  archived: "已存档",
+  completed: "已完成",
 };
 
 const ORDER_STATUS_LABELS = {
@@ -417,11 +436,11 @@ function AddToStagingModal({ allOrders, availableOrders = null, officialPools, c
         </div>
         <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
           <div>
-            <p className="text-xs font-medium text-gray-500 mb-2">预计加入的拼邮需求（可选）</p>
+            <p className="text-xs font-medium text-gray-500 mb-2">预计加入的拼邮需求（可选，仅作参考）</p>
             <div className="space-y-1.5">
               <label className={`flex items-center gap-3 p-2.5 rounded-lg border cursor-pointer transition-colors ${!selectedPoolId ? "border-blue-300 bg-blue-50" : "border-gray-200 hover:bg-gray-50"}`}>
                 <input type="radio" checked={!selectedPoolId} onChange={() => setSelectedPoolId("")} className="accent-blue-600" />
-                <span className="text-sm text-gray-600">未指定（入库后由系统自动匹配）</span>
+                <span className="text-sm text-gray-600">未指定（入库后进入暂存区，由管理员拖入拼邮池）</span>
               </label>
               {realOfficialPools.map(pool => (
                 <label key={pool.id} className={`flex items-center gap-3 p-2.5 rounded-lg border cursor-pointer transition-colors ${selectedPoolId === pool.id ? "border-blue-300 bg-blue-50" : "border-gray-200 hover:bg-gray-50"}`}>
@@ -524,7 +543,7 @@ function PoolColumn({ pool, allOrders, currentUser, isAdmin, shippingAddons, sav
   const draggableItems = [];
   enhancedGroups.forEach(group => {
     const entries = group.order_entries || [];
-    if (entries.length >= 2) {
+    if (entries.length >= 1) {
       draggableItems.push({ type: "group", group });
     } else if (entries.length === 1) {
       draggableItems.push({ type: "entry", group, entry: entries[0] });
@@ -542,11 +561,11 @@ function PoolColumn({ pool, allOrders, currentUser, isAdmin, shippingAddons, sav
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-sm font-semibold text-gray-800 truncate">{pool.title || pool.pool_code}</span>
             {pool.pool_code && pool.title && <span className="text-xs font-mono text-gray-400">{pool.pool_code}</span>}
+          </div>
+          <div className="flex items-center gap-2 flex-wrap mt-1.5 text-xs text-gray-400">
             <Badge className={`text-xs ${STATUS_COLORS[pool.status] || "bg-gray-100 text-gray-600"}`}>
               {STATUS_LABELS[pool.status] || pool.status}
             </Badge>
-          </div>
-          <div className="flex items-center gap-3 mt-1 text-xs text-gray-400">
             <span className="flex items-center gap-1"><Users className="w-3 h-3" />{perUserGroups.length}人</span>
             <span className="flex items-center gap-1"><Scale className="w-3 h-3" />{totalWeight}g</span>
             {pool.consolidation_deadline && (

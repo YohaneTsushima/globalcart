@@ -36,14 +36,14 @@ export default function StorageSettingsManager({ onReload }) {
 
   const loadSettings = async () => {
     try {
-      const response = await base44.functions.invoke('getStorageSettings');
-      if (response.success && response.settings) {
-        const s = response.settings;
+      const response = await base44.functions.invoke('config/storage/getSettings', {});
+      const s = response?.data;
+      if (s) {
         setFormData({
-          storage_enabled: s.storage_enabled || false,
-          default_storage_days: s.default_storage_days || 90,
-          default_reminder_days: s.default_reminder_days || 60,
-          default_storage_fee_per_day: s.default_storage_fee_per_day || 0,
+          storage_enabled: s.storage_enabled ?? false,
+          default_storage_days: s.default_storage_days ?? 90,
+          default_reminder_days: s.default_reminder_days ?? 60,
+          default_storage_fee_per_day: s.default_storage_fee_per_day ?? 0,
           storage_fee_currency: s.storage_fee_currency || 'JPY',
           on_deadline_action: s.on_deadline_action || 'change_status',
           deadline_status: s.deadline_status || 'expired'
@@ -61,15 +61,15 @@ export default function StorageSettingsManager({ onReload }) {
   const handleSave = async () => {
     setSaving(true);
     try {
-      const response = await base44.functions.invoke('manageStorageSettings', formData);
-      if (response.success) {
+      const response = await base44.functions.invoke('config/storage/saveSettings', formData);
+      if (response?.data) {
         toast.success('库存设置已保存');
         if (onReload) await onReload();
       } else {
-        toast.error('保存失败：' + (response.error || '未知错误'));
+        toast.error('保存失败：' + (response?.msg || '未知错误'));
       }
     } catch (error) {
-      toast.error('保存失败：' + error.message);
+      toast.error('保存失败：' + (error?.response?.data?.message || error.message));
     } finally {
       setSaving(false);
     }

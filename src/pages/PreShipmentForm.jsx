@@ -356,6 +356,8 @@ export default function PreShipmentForm() {
       if (consType === "official_pool") return true;
       return isAddressFormValid(address);
     }
+    // 官方拼邮的最后一程运输方式由管理员在中转地工作面板统一安排，这里不强制选择
+    if (consType === "official_pool") return true;
     // Otherwise, shipping method is required unless specific pool selected
     if (!specificPoolSelected && !shippingMethod) return false;
     if (consType === "transit") {
@@ -1294,8 +1296,26 @@ export default function PreShipmentForm() {
         </CardHeader>
         <CardContent className="space-y-3">
           <div>
-            <Label className="text-xs text-gray-500">运输方式 *</Label>
+            <Label className="text-xs text-gray-500">
+              运输方式 {consType === "official_pool" ? "（由管理员安排）" : "*"}
+            </Label>
+            {consType === "official_pool" && (
+              <div className="mt-1 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2">
+                <div className="flex items-center gap-1.5 text-xs font-medium text-blue-700">
+                  <Truck className="w-3.5 h-3.5" /> 最后一程运输方式由管理员统一安排
+                </div>
+                <p className="mt-1 text-xs leading-relaxed text-blue-600">
+                  官方拼邮会在中转地统一打包发货，运输方式由管理员在中转地工作面板决定，这里不需要选择
+                  {(() => {
+                    const pool = officialPools.find(p => String(p.id) === String(selectedPoolId));
+                    return pool?.shipping_method ? `；当前拼邮池：${pool.shipping_method}` : "。";
+                  })()}
+                </p>
+              </div>
+            )}
             {(() => {
+              // 官方拼邮：运输方式由管理员统一安排，不渲染选择器
+              if (consType === "official_pool") return null;
               // Filter shipping methods based on consType and their enabled settings
               let filteredMethods = shippingMethods;
               if (consType === "") {

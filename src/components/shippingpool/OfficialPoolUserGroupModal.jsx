@@ -13,7 +13,6 @@ import { EMPTY_ADDRESS_FORM } from "@/components/common/AddressForm";
 import AddressForm from "@/components/common/AddressForm";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
 import { X, MapPin, Users, Loader2, CopyCheck, PlusCircle, MessageSquare, Upload, Send } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 

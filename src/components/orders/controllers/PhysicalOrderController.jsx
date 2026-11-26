@@ -12,9 +12,8 @@ import { Package } from "lucide-react";
 import { getStatusLabel, getStatusColor } from "@/lib/orderStatus";
 import { ImageWithViewer } from "@/components/common/ImageViewer";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import PreShipmentBadge from "@/components/admin/PreShipmentBadge";
+import StorageStatusBadge from "@/components/orders/StorageStatusBadge";
 import { matchStoreTagResult } from "@/lib/onlineStoreTag";
 import { t, getLocale } from "@/lib/i18n";
 
@@ -144,6 +143,7 @@ export const PhysicalOrderController = {
             {order.order_status === "shipping_fee_pending" && (
               <Badge className="text-xs bg-orange-100 text-orange-700 w-fit">待付运费</Badge>
             )}
+            <StorageStatusBadge status={order.storage_status} feeAccrued={order.storage_fee_accrued} className="w-fit" />
           </div>
         );
       

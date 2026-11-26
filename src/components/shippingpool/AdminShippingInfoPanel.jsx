@@ -9,6 +9,7 @@
  */
 import { useState, useMemo, useEffect, useRef } from "react";
 import { shippingPoolApi } from "@/lib/tenantApi";
+import { base44 } from "@/api/base44Client";
 import { toast } from "sonner";
 import { persistentToastError } from "@/lib/toastUtils.jsx";
 import { Button } from "@/components/ui/button";
@@ -100,6 +101,25 @@ function PaymentProofImage({ url }) {
       )}
     </>
   );
+}
+
+/**
+ * 把仓储超期费并入「该用户自己的」费用明细（不平摊，谁的东西向谁收）。
+ * 后端发布费用时也会算一次；这里用于前端实时预览与调整弹窗保持一致。
+ */
+function withStorageFees(breakdowns, storageFeeByEmail) {
+  const entries = Object.entries(storageFeeByEmail || {});
+  if (!entries.length || !Array.isArray(breakdowns)) return breakdowns;
+  return breakdowns.map(userFee => {
+    const extra = Number(storageFeeByEmail?.[userFee.user_email] || 0);
+    if (!extra) return userFee;
+    return {
+      ...userFee,
+      items: [...(userFee.items || []), { label: "仓储超期费", amount_jpy: extra, is_addon: false }],
+      personal_total_jpy: (userFee.personal_total_jpy || 0) + extra,
+      total_jpy: (userFee.total_jpy || 0) + extra,
+    };
+  });
 }
 
 export default function AdminShippingInfoPanel({
@@ -421,10 +441,20 @@ export default function AdminShippingInfoPanel({
   const transitLocation = transitLocations.find(l => l.id === parseInt(pool.transit_location_id)) || null;
   const transitShippingMethod = transitShippingMethods.find(m => m.id === parseInt(pool.transit_shipping_method_id)) || null;
 
+  // 每个用户的仓储超期费（按池汇总，谁的东西向谁收）
+  const [storageFeeByEmail, setStorageFeeByEmail] = useState({});
+  useEffect(() => {
+    const poolId = initialPool?.id;
+    if (!poolId) return;
+    base44.functions.invoke('config/storage/poolFees', { pool_id: poolId })
+      .then(res => setStorageFeeByEmail(res?.data || {}))
+      .catch(() => setStorageFeeByEmail({}));
+  }, [initialPool?.id]);
+
   // Live fee breakdown calculation (includes packing fees, transit fees with currency conversion)
   const feeBreakdowns = useMemo(() => {
     if (orders.length === 0) return [];
-    return calcFeeBreakdownPerUser({
+    const base = calcFeeBreakdownPerUser({
       pool,
       orders,
       shippingFeeJpy: parseFloat(shippingFeeJpy) || 0,
@@ -437,13 +467,14 @@ export default function AdminShippingInfoPanel({
       exchangeRates,
       transitHandlingFeeSplit,
     });
-  }, [orders, shippingFeeJpy, boxPrice, basePackingFee, effectivePackingFeesPerUser, pool.selected_addons, pool.transit_location_id, pool.transit_shipping_method_id, pool.transit_shipping, transitShippingMethods, exchangeRates, transitHandlingFeeSplit]);
+    return withStorageFees(base, storageFeeByEmail);
+  }, [orders, shippingFeeJpy, boxPrice, basePackingFee, effectivePackingFeesPerUser, pool.selected_addons, pool.transit_location_id, pool.transit_shipping_method_id, pool.transit_shipping, transitShippingMethods, exchangeRates, transitHandlingFeeSplit, storageFeeByEmail]);
 
   // Grand total = sum of all users' total_jpy from the live breakdown
   const grandTotalJpy = feeBreakdowns.reduce((s, b) => s + (b.total_jpy || 0), 0);
 
   // 费用调整弹窗的预览：用弹窗里的输入重新算一份 breakdown（不写库）
-  const buildFeePreview = (baseFeeJpy, extrasByEmail) => calcFeeBreakdownPerUser({
+  const buildFeePreview = (baseFeeJpy, extrasByEmail) => withStorageFees(calcFeeBreakdownPerUser({
     pool,
     orders,
     shippingFeeJpy: parseFloat(shippingFeeJpy) || 0,
@@ -459,7 +490,7 @@ export default function AdminShippingInfoPanel({
     transitShippingMethods,
     exchangeRates,
     transitHandlingFeeSplit,
-  });
+  }), storageFeeByEmail);
 
   // Previously notified/paid total = sum of saved fee_breakdown_per_user (the actual amount user was told to pay)
   // Fall back to shipping_fee_jpy only if no breakdown exists (legacy data)
@@ -488,7 +519,7 @@ export default function AdminShippingInfoPanel({
 
   const buildUpdatePayload = () => {
     const btId = boxTemplateId === "none" ? "" : boxTemplateId;
-    const breakdowns = calcFeeBreakdownPerUser({
+    const breakdowns = withStorageFees(calcFeeBreakdownPerUser({
       pool,
       orders,
       shippingFeeJpy: parseFloat(shippingFeeJpy) || 0,
@@ -500,7 +531,7 @@ export default function AdminShippingInfoPanel({
       transitShippingMethods,
       exchangeRates,
       transitHandlingFeeSplit,
-    });
+    }), storageFeeByEmail);
     return {
       tracking_number: trackingNumber,
       box_template_id: btId,

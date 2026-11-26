@@ -7,7 +7,6 @@ import { useState, useEffect } from "react";
 import { X, ExternalLink, MessageCircle, Truck, CheckCircle, CreditCard, Upload, Edit2, Package, Scissors } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { ImageWithViewer } from "@/components/common/ImageViewer";
-import { base44 } from "@/api/base44Client";
 import { updateOrder, fetchShippingPools, tenantEntity } from "@/lib/tenantApi";
 import { usePermissions } from "@/hooks/usePermissions";
 import { Button } from "@/components/ui/button";
@@ -75,17 +74,22 @@ export default function OrderDetailDrawer({ order, currentUser, initialUserPrefe
         .catch(() => {});
     }
 
-    // Fetch user profile map for message displays only if not pre-supplied by parent
+    // 用户展示信息直接用订单自带字段，避免调用不存在的 getTenantUsers 接口
     if (Object.keys(initialUserProfileMap).length === 0) {
-      base44.functions.invoke('getTenantUsers', {})
-        .then(r => {
-          const profileMap = {};
-          (r.data?.users || []).forEach(u => {
-            if (u.email) profileMap[u.email] = { display_name: u.display_name || u.full_name || null, avatar_url: u.avatar_url || null };
-          });
-          setUserProfileMap(profileMap);
-        })
-        .catch(() => {});
+      const fallback = {};
+      if (order.user_email) {
+        fallback[order.user_email] = {
+          display_name: order.user_name || order.user_email.split('@')[0],
+          avatar_url: order.user_avatar || null,
+        };
+      }
+      if (currentUser?.email) {
+        fallback[currentUser.email] = {
+          display_name: currentUser.full_name || currentUser.display_name || currentUser.email.split('@')[0],
+          avatar_url: currentUser.avatar_url || null,
+        };
+      }
+      setUserProfileMap(fallback);
     }
   }, [currentUser.email, order.order_status]);
 
@@ -170,16 +174,20 @@ export default function OrderDetailDrawer({ order, currentUser, initialUserPrefe
                 </div>
               </div>
             )}
-            {order.paid_amount > 0 && (
-              <div className="bg-green-50 rounded-lg p-3">
-                <div className="text-xs text-gray-400">已付金额</div>
-                <div className="font-medium text-green-700">
-                  {order.prepayment_currency === "JPY"
-                    ? `${Math.round(order.paid_amount).toLocaleString()} yen`
-                    : `${order.prepayment_currency} ${Math.round(order.paid_amount)}`}
+            {Number(order.paid_amount) > 0 && (() => {
+              const paidCurrency = order.prepayment_currency || order.payment_currency || order.payment_currency_type || "JPY";
+              const paidValue = Number(order.paid_amount) || 0;
+              // 日元取整，外币保留两位小数（避免 0.26 被 Math.round 成 0）
+              const paidText = paidCurrency === "JPY"
+                ? `${Math.round(paidValue).toLocaleString()} yen`
+                : `${paidCurrency} ${paidValue.toFixed(2)}`;
+              return (
+                <div className="bg-green-50 rounded-lg p-3">
+                  <div className="text-xs text-gray-400">已付金额</div>
+                  <div className="font-medium text-green-700">{paidText}</div>
                 </div>
-              </div>
-            )}
+              );
+            })()}
             {order.balance_credit > 0 && (
               <div className="bg-blue-50 rounded-lg p-3">
                 <div className="text-xs text-gray-400">余额（可抵运费）</div>

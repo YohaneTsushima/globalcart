@@ -4,7 +4,6 @@ import { Package, Clock, DollarSign, AlertTriangle, Calendar } from "lucide-reac
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import moment from "moment";
 
 export default function OrderStorageInfo({ order, onReload }) {
   const [storageInfo, setStorageInfo] = useState(null);
@@ -15,11 +14,11 @@ export default function OrderStorageInfo({ order, onReload }) {
     
     const loadStorageInfo = async () => {
       try {
-        const response = await base44.functions.invoke('calculateStorageFee', {
+        const response = await base44.functions.invoke('config/storage/orderFee', {
           order_id: order.id
         });
-        if (response.success) {
-          setStorageInfo(response);
+        if (response?.data) {
+          setStorageInfo(response.data);
         }
       } catch (error) {
         console.error('加载仓储信息失败:', error);
@@ -99,11 +98,11 @@ export default function OrderStorageInfo({ order, onReload }) {
           </div>
         </div>
 
-        {isOverdue && storageInfo.accrued_fee > 0 && (
+        {isOverdue && storageInfo.total_fee > 0 && (
           <Alert className="border-red-200 bg-white">
             <AlertTriangle className="h-4 w-4 text-red-600" />
             <AlertDescription className="text-sm text-red-700 ml-2">
-              <strong>逾期费用：¥{storageInfo.accrued_fee} JPY</strong>
+              <strong>逾期费用：¥{storageInfo.total_fee} {storageInfo.currency || 'JPY'}</strong>
               <p className="text-xs mt-1">
                 超期 {storageInfo.overdue_days} 天 × ¥{storageInfo.storage_fee_per_day}/天
               </p>
